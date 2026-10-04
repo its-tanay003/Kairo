@@ -3,7 +3,14 @@ name: Kali Linux VM Sandbox Execution Adapter
 version: 1.0.0
 description: Executes a typed command inside the isolated Kali Linux VM via the guest worker agent with process supervision, live stream capture, and VM snapshot isolation.
 category: sandbox_execution
-parameters:
+binary: /bin/bash
+capabilities:
+  - vm_snapshot_isolation
+  - guest_worker_execution
+  - network_recon
+  - kali_security_tools
+
+inputs:
   type: object
   properties:
     command:
@@ -29,7 +36,94 @@ parameters:
       default: true
   required:
     - command
+
+outputs:
+  type: object
+  properties:
+    stdout:
+      type: string
+      description: Live captured stdout stream from the VM guest worker
+    stderr:
+      type: string
+      description: Live captured stderr stream from the VM guest worker
+    exit_code:
+      type: integer
+      description: Process exit code from inside Kali
+    process_id:
+      type: integer
+      description: Guest PID within the Kali Linux kernel namespace
+    duration_ms:
+      type: number
+      description: Execution duration in milliseconds
+    pre_snapshot:
+      type: string
+      description: Name of the pre-task snapshot created for rollback
+
+side_effects:
+  - vm_filesystem_modification
+  - network_outbound_probes
+
+privilege: guest
+gui: false
+
+parser:
+  type: json_stream
+  format: worker_agent_chunk_protocol
+
+prerequisites:
+  - virtualbox_or_qemu
+  - kali_linux_vm_running
+  - guest_worker_agent_port_9999
+
+docs:
+  summary: Executes typed security commands inside an isolated Kali Linux virtual machine with automated snapshot creation, live stream capture, and one-click rollback.
+  usage: Specify target Kali command (e.g. nmap, whoami, ip) and arguments.
+  examples:
+    - command: nmap
+      args: ["-sS", "192.168.56.1", "-p", "80,443"]
+
+success_signals:
+  exit_codes:
+    - 0
+
+failure_signals:
+  exit_codes:
+    - 1
+    - 2
+    - 127
+  timeout: true
+  vm_unreachable: true
+
+rollback:
+  supported: true
+  strategy: vm_snapshot_revert
+  snapshot_type: pre_task_state
+  action: orchestrator.vm_manager.rollback_vm()
+
+version_compatibility:
+  min_agent_version: 1.0.0
+  target_vm: kali-linux-rolling-amd64
+  guest_agent_version: 1.0.0
+
 timeout_ms: 60000
+parameters:
+  type: object
+  properties:
+    command:
+      type: string
+    args:
+      type: array
+      items:
+        type: string
+    cwd:
+      type: string
+    timeout_ms:
+      type: integer
+    snapshot_before:
+      type: boolean
+  required:
+    - command
+
 metadata:
   adapter: kali.exec.v1
   target_os: Kali Linux (Debian-based)

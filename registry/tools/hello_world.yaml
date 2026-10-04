@@ -3,7 +3,13 @@ name: Hello World Tool
 version: 1.0.0
 description: A minimal verification tool that returns a greeting and verifies service boundary execution.
 category: utility
-parameters:
+binary: internal://builtin/hello_world
+capabilities:
+  - greeting
+  - boundary_test
+  - service_verification
+
+inputs:
   type: object
   properties:
     message:
@@ -16,7 +22,60 @@ parameters:
       default: "World"
   required:
     - message
+
+outputs:
+  type: object
+  properties:
+    greeting:
+      type: string
+      description: Formatted greeting response
+    status:
+      type: string
+      description: Verification status result
+
+side_effects: []
+
+privilege: user
+gui: false
+
+parser:
+  type: plain_text
+
+prerequisites: []
+
+docs:
+  summary: Minimal verification tool returning a greeting and validating agent tool dispatch.
+  usage: Provide message and optional target.
+  examples:
+    - message: "Hello Kairo"
+      target: "Engine"
+
+success_signals:
+  exit_codes:
+    - 0
+
+failure_signals:
+  exit_codes:
+    - 1
+
+rollback:
+  supported: false
+  strategy: none
+
+version_compatibility:
+  min_agent_version: 1.0.0
+
 timeout_ms: 5000
+parameters:
+  type: object
+  properties:
+    message:
+      type: string
+    target:
+      type: string
+  required:
+    - message
+
 metadata:
   author: system
   tags:

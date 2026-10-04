@@ -1,0 +1,131 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://kairo.dev/schemas/toolspec.v1.json",
+  "title": "ToolSpec",
+  "description": "Declarative ToolSpec schema defining all 16 specification attributes for Kairo agent tools.",
+  "type": "object",
+  "required": [
+    "id",
+    "binary",
+    "category",
+    "capabilities",
+    "inputs",
+    "outputs",
+    "side_effects",
+    "privilege",
+    "gui",
+    "parser",
+    "prerequisites",
+    "docs",
+    "success_signals",
+    "failure_signals",
+    "rollback",
+    "version_compatibility"
+  ],
+  "properties": {
+    "id": {
+      "type": "string",
+      "pattern": "^[a-zA-Z0-9_.-]+$",
+      "minLength": 1,
+      "description": "Unique identifier for the tool (e.g., shell.run.v1, kali.exec.v1)"
+    },
+    "binary": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Executable command path, name, or internal protocol handler"
+    },
+    "category": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Classification category (e.g., execution, sandbox_execution, utility, diagnostic)"
+    },
+    "capabilities": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "description": "Array of capability tokens declaring functionality"
+    },
+    "inputs": {
+      "type": "object",
+      "description": "Schema definition of accepted input parameters, types, defaults, and requirements"
+    },
+    "outputs": {
+      "type": "object",
+      "description": "Schema definition of generated output fields, formats, and artifacts"
+    },
+    "side_effects": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "description": "Declared external side effects (e.g., filesystem modifications, network traffic)"
+    },
+    "privilege": {
+      "type": "string",
+      "enum": ["user", "root", "admin", "elevated", "kernel", "guest"],
+      "description": "Required privilege level for tool execution"
+    },
+    "gui": {
+      "type": ["boolean", "object"],
+      "description": "GUI requirement flag or GUI display configuration"
+    },
+    "parser": {
+      "type": ["string", "object"],
+      "description": "Output parser identifier or parser configuration specification"
+    },
+    "prerequisites": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "description": "Required runtime dependencies, host binaries, or environment capabilities"
+    },
+    "docs": {
+      "type": ["string", "object"],
+      "description": "Embedded reference documentation, usage guide, and examples"
+    },
+    "success_signals": {
+      "type": "object",
+      "description": "Signals, exit codes, and output patterns indicating successful execution"
+    },
+    "failure_signals": {
+      "type": "object",
+      "description": "Signals, error codes, and patterns indicating failure or abort conditions"
+    },
+    "rollback": {
+      "type": ["object", "string"],
+      "description": "Rollback capability declaration, strategy, or compensating command"
+    },
+    "version_compatibility": {
+      "type": ["object", "string"],
+      "description": "Supported runtime version matrix, OS compatibility, or min agent version"
+    },
+    "name": {
+      "type": "string",
+      "description": "Human-friendly display name of the tool"
+    },
+    "version": {
+      "type": "string",
+      "description": "Semantic version of the tool specification"
+    },
+    "description": {
+      "type": "string",
+      "description": "Detailed human-readable summary of the tool"
+    },
+    "timeout_ms": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "Default timeout in milliseconds before execution terminates"
+    },
+    "parameters": {
+      "type": "object",
+      "description": "Backward-compatible alias for inputs"
+    },
+    "metadata": {
+      "type": "object",
+      "description": "Arbitrary metadata key-value pairs"
+    }
+  },
+  "additionalProperties": true
+}

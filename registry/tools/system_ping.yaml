@@ -3,14 +3,69 @@ name: System Ping Tool
 version: 1.0.0
 description: Emits a ping with timestamp, host status, and process health to confirm orchestrator readiness.
 category: diagnostic
-parameters:
+binary: internal://builtin/system_ping
+capabilities:
+  - diagnostic
+  - process_health
+  - heartbeat
+
+inputs:
   type: object
   properties:
     echo_token:
       type: string
       description: Unique echo verification token
   required: []
+
+outputs:
+  type: object
+  properties:
+    status:
+      type: string
+      description: Process status code
+    timestamp:
+      type: string
+      description: ISO timestamp string
+
+side_effects: []
+
+privilege: user
+gui: false
+
+parser:
+  type: plain_text
+
+prerequisites: []
+
+docs:
+  summary: Diagnostic heartbeat tool checking orchestrator readiness.
+  usage: Pass optional echo_token.
+  examples:
+    - echo_token: "ping_test_1"
+
+success_signals:
+  exit_codes:
+    - 0
+
+failure_signals:
+  exit_codes:
+    - 1
+
+rollback:
+  supported: false
+  strategy: none
+
+version_compatibility:
+  min_agent_version: 1.0.0
+
 timeout_ms: 3000
+parameters:
+  type: object
+  properties:
+    echo_token:
+      type: string
+  required: []
+
 metadata:
   author: system
   tags:

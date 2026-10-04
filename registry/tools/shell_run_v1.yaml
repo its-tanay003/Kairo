@@ -3,7 +3,14 @@ name: Shell Execution Adapter v1
 version: 1.0.0
 description: Executes a single command string with arguments under process supervisor control with a hard timeout.
 category: execution
-parameters:
+binary: python
+capabilities:
+  - command_execution
+  - process_supervision
+  - sigkill_control
+  - stdout_stderr_capture
+
+inputs:
   type: object
   properties:
     command:
@@ -21,7 +28,88 @@ parameters:
       default: 10000
   required:
     - command
+
+outputs:
+  type: object
+  properties:
+    stdout:
+      type: string
+      description: Standard output text captured from the process
+    stderr:
+      type: string
+      description: Standard error text captured from the process
+    exit_code:
+      type: integer
+      description: Process termination exit status code
+    process_id:
+      type: integer
+      description: Supervised OS Process ID
+    duration_ms:
+      type: number
+      description: Wall clock execution time in milliseconds
+
+side_effects:
+  - process_creation
+  - local_filesystem_access
+
+privilege: user
+gui: false
+
+parser:
+  type: raw_stream
+  capture_stdout: true
+  capture_stderr: true
+
+prerequisites:
+  - "python >= 3.10"
+
+docs:
+  summary: Executes a single command string with arguments under process supervisor control with a hard timeout.
+  usage: Provide executable name in 'command' and arguments array in 'args'.
+  examples:
+    - command: python
+      args: ["-c", "print('Executed via shell.run.v1 adapter')"]
+
+success_signals:
+  exit_codes:
+    - 0
+
+failure_signals:
+  exit_codes:
+    - 1
+    - 2
+    - 126
+    - 127
+    - 137
+  timeout: true
+
+rollback:
+  supported: false
+  strategy: none
+  note: Unsandboxed local process execution cannot automatically be unwound.
+
+version_compatibility:
+  min_agent_version: 1.0.0
+  os:
+    - windows
+    - linux
+    - darwin
+
 timeout_ms: 15000
+parameters:
+  type: object
+  properties:
+    command:
+      type: string
+    args:
+      type: array
+      items:
+        type: string
+    timeout_ms:
+      type: integer
+  required:
+    - command
+
 metadata:
   adapter: shell.run.v1
   supervisor: true
