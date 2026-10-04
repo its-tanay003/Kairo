@@ -19,12 +19,14 @@ ROOT_DIR = Path(__file__).resolve().parent.parent
 if str(ROOT_DIR) not in sys.path:
     sys.path.insert(0, str(ROOT_DIR))
 
-from events.db import Event, insert_event, init_db
+from dataclasses import asdict
+from events.db import Event, insert_event, init_db, record_tool_execution, get_tool_memory
 from registry.loader import ToolRegistry, ToolSpec
 from orchestrator.llama_client import LlamaCppClient
 from orchestrator.models import LLMResponse
 from orchestrator.process_supervisor import supervisor, ProcessResult
 from orchestrator.vm_manager import vm_manager
+from orchestrator.tool_selector import tool_selector
 
 logger = logging.getLogger("orchestrator.agent")
 
@@ -57,45 +59,46 @@ class AgentLoop:
         tools = self.registry.list_tools()
         llm_response: Optional[LLMResponse] = None
         used_llm = False
+        tool_selection_data: Optional[Dict[str, Any]] = None
 
         # Check explicit tool invocation request
         if explicit_tool:
             tool_id = explicit_tool
             requested_args = explicit_args or {}
+            try:
+                sel_res = tool_selector.select(goal=message, session_id=session_id)
+                tool_selection_data = sel_res.to_dict()
+            except Exception as e:
+                logger.warning(f"Could not calculate candidate scores for explicit tool: {e}")
         else:
             # Check prompt for direct tool syntax
             if "kali" in message.lower() or "sandbox" in message.lower() or "kali.exec.v1" in message.lower():
                 tool_id = "kali.exec.v1"
                 requested_args = self._extract_kali_args(message)
+                try:
+                    sel_res = tool_selector.select(goal=message, session_id=session_id)
+                    tool_selection_data = sel_res.to_dict()
+                except Exception:
+                    pass
             elif "shell.run.v1" in message.lower() or "run command" in message.lower() or "execute command" in message.lower():
                 tool_id = "shell.run.v1"
                 requested_args = self._extract_shell_args(message)
+                try:
+                    sel_res = tool_selector.select(goal=message, session_id=session_id)
+                    tool_selection_data = sel_res.to_dict()
+                except Exception:
+                    pass
             else:
-                # Attempt grammar-constrained inference via local llama.cpp server
-                if self.llama_client.is_healthy():
-                    try:
-                        llm_response = self.llama_client.generate_constrained(
-                            user_message=message,
-                            tools=tools,
-                        )
-                        used_llm = True
-                    except Exception as e:
-                        logger.warning(f"Llama.cpp generation error, falling back to rule-based: {e}")
-
-                if llm_response and llm_response.is_tool_call() and llm_response.tool_call:
-                    tool_id = llm_response.tool_call.tool_id
-                    requested_args = llm_response.tool_call.arguments
-                elif llm_response and not llm_response.is_tool_call():
-                    tool_id = None
-                    requested_args = {}
-                else:
-                    # Fallback rule-based
-                    if "ping" in message.lower():
-                        tool_id = "system_ping"
-                        requested_args = {}
-                    else:
-                        tool_id = "hello_world"
-                        requested_args = {"input": message, "target": "BoundaryVerification"}
+                # Use Hybrid Tool Selection Scorer
+                try:
+                    sel_res = tool_selector.select(goal=message, session_id=session_id)
+                    tool_selection_data = sel_res.to_dict()
+                    tool_id = sel_res.selected_tool.tool_id
+                    requested_args = sel_res.selected_tool.inferred_args
+                except Exception as e:
+                    logger.warning(f"Tool selector error, falling back to default: {e}")
+                    tool_id = "hello_world"
+                    requested_args = {"input": message, "target": "BoundaryVerification"}
 
         # Branch 1: Tool Execution
         if tool_id:
@@ -277,6 +280,20 @@ class AgentLoop:
             )
             event_id = insert_event(event, self.db_path)
 
+            # Update Tool Memory Store (global system state)
+            try:
+                record_tool_execution(
+                    tool_id=tool_id,
+                    success=(exit_code == 0),
+                    duration_ms=round((time.time() - t0) * 1000, 2),
+                    exit_code=exit_code,
+                    timed_out=bool(execution_details.get("timed_out")),
+                    metadata={"task_id": task_id, "session_id": session_id},
+                    db_path=self.db_path,
+                )
+            except Exception as e:
+                logger.warning(f"Failed to record tool memory: {e}")
+
             return {
                 "session_id": session_id,
                 "task_id": task_id,
@@ -287,10 +304,11 @@ class AgentLoop:
                     "name": spec.name if spec else tool_id,
                 },
                 "execution": execution_details,
+                "tool_selection": tool_selection_data,
                 "event_id": event_id,
                 "event": as_dict_event(event),
                 "duration_ms": round((time.time() - t0) * 1000, 2),
-                "model_status": "llama.cpp_grammar_constrained" if used_llm else ("explicit" if explicit_tool else "rule_fallback"),
+                "model_status": "hybrid_tool_selection",
             }
 
         # Branch 2: Conversational Plain Text
@@ -388,3 +406,6 @@ def as_dict_event(event: Event) -> Dict[str, Any]:
         "confidence": event.confidence,
         "parent_event": event.parent_event,
     }
+
+
+AgentOrchestrator = AgentLoop

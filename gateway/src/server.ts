@@ -252,6 +252,34 @@ const server = http.createServer(async (req, res) => {
     }
   }
 
+  // Tools routes: /tools/select, /tools/memory, /tools/memory/:id
+  if (url.pathname.startsWith("/tools")) {
+    try {
+      if (req.method === "GET") {
+        const response = await fetch(`${ORCHESTRATOR_URL}${url.pathname}${url.search}`);
+        const data = await response.json();
+        res.writeHead(response.status, { "Content-Type": "application/json" });
+        res.end(JSON.stringify(data));
+        return;
+      } else if (req.method === "POST") {
+        const body = await parseJsonBody(req);
+        const response = await fetch(`${ORCHESTRATOR_URL}${url.pathname}`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(body),
+        });
+        const data = await response.json();
+        res.writeHead(response.status, { "Content-Type": "application/json" });
+        res.end(JSON.stringify(data));
+        return;
+      }
+    } catch (err: any) {
+      res.writeHead(502, { "Content-Type": "application/json" });
+      res.end(JSON.stringify({ error: `Tools Proxy error: ${err.message}` }));
+      return;
+    }
+  }
+
   res.writeHead(404, { "Content-Type": "application/json" });
   res.end(JSON.stringify({ error: "Not Found" }));
 });
@@ -444,6 +472,34 @@ wss.on("connection", (ws: WebSocket, req) => {
         return;
       }
 
+      // Query Tool Selection via WebSocket: { type: "tool_selection_query" | "tool_select", intent: "...", capability: "..." }
+      if (payload.type === "tool_selection_query" || payload.type === "tool_select") {
+        try {
+          const resp = await fetch(`${ORCHESTRATOR_URL}/tools/select`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              intent: payload.intent || payload.query || "",
+              capability: payload.capability,
+              environment: payload.environment,
+              budget: payload.budget,
+              session_id: payload.sessionId || sessionId,
+            }),
+          });
+          const selectData = await resp.json();
+          ws.send(
+            JSON.stringify({
+              type: "tool_selection_result",
+              data: selectData,
+              timestamp: new Date().toISOString(),
+            })
+          );
+        } catch (err: any) {
+          ws.send(JSON.stringify({ type: "error", error: `Tool selection failed: ${err.message}` }));
+        }
+        return;
+      }
+
       // Execute in Kali with live terminal streaming: { type: "kali_exec", command: "...", args: [...], taskId: "..." }
       if (payload.type === "kali_exec") {
         const taskId = payload.taskId || `task_kali_${randomUUID().slice(0, 8)}`;
@@ -593,6 +649,7 @@ wss.on("connection", (ws: WebSocket, req) => {
               eventId: result.event_id,
               event: result.event,
               durationMs: result.duration_ms,
+              toolSelection: result.tool_selection,
               timestamp: new Date().toISOString(),
             })
           );
@@ -654,6 +711,7 @@ wss.on("connection", (ws: WebSocket, req) => {
               eventId: result.event_id,
               event: result.event,
               durationMs: result.duration_ms,
+              toolSelection: result.tool_selection,
               timestamp: new Date().toISOString(),
             })
           );

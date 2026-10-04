@@ -344,3 +344,37 @@ Task graphs and capability nodes are stored in SQLite (`events/events.db`):
 - `GET /planner/plans/{plan_id}`: Retrieves DAG with node statuses and topological depth layers.
 - `POST /planner/plans/{plan_id}/nodes/{node_id}/status`: Updates execution status of a specific node.
 - `GET /planner/plans/{plan_id}/ready`: Queries unblocked nodes whose prerequisites have all completed successfully.
+
+---
+
+## Hybrid Tool Selection Engine & Tool Memory Store
+
+Unlike black-box agents that arbitrarily pick tools via opaque prompts, Kairo evaluates all registered candidates across a 7-factor empirical utility function and exposes the full breakdown for the top 3 candidates in the UI.
+
+### Mathematical Scoring Function
+
+$$\text{Score}(tool) = 0.30 \cdot \text{semantic\_fit} + 0.20 \cdot \text{capability\_coverage} + 0.15 \cdot \text{environment\_compatibility} + 0.10 \cdot \text{expected\_signal} + 0.10 \cdot \text{reliability\_history} + 0.05 \cdot \text{execution\_cost} + 0.10 \cdot \text{prior\_task\_success}$$
+
+| Factor | Weight | Evaluation Basis | Empirical Signal Example |
+| :--- | :--- | :--- | :--- |
+| **`semantic_fit`** | **0.30** | Lexical & keyword affinity match across tool spec name, description, category, and usage docs. | `matched 4 semantic terms (scan, port, nmap, network); keyword affinity for network scan` |
+| **`capability_coverage`** | **0.20** | Direct match or designated primary/secondary affinity for the requested abstract DAG capability. | `exact match for capability 'network_port_scan'` |
+| **`environment_compatibility`** | **0.15** | Host OS, Kali VM worker readiness, user/root privilege requirement, and binary existence. | `compatible with Linux (Kali VM online), privilege 'root' supported, prerequisites verified` |
+| **`expected_signal`** | **0.10** | Downstream observation utility (Tier 1 structured JSON/XML parsers vs Tier 2 stdout streams). | `Tier 1 native structured XML output parsed into typed observation records` |
+| **`reliability_history`** | **0.10** | Empirical historical pass rate retrieved from persistent **Tool Memory** store. | `succeeded 23/25 prior runs (historical reliability = 0.92, 0 timeouts)` |
+| **`execution_cost`** | **0.05** | Resource penalty based on execution timeout, CPU profile, and active vs passive footprint. | `moderate cost, active reconnaissance probe (timeout 120s, bounded probes)` |
+| **`prior_task_success`** | **0.10** | Success/failure rate of this specific tool within the current active session. | `tool succeeded 2/2 times in current session (session reliability = 1.00)` |
+
+### Tool Memory Store (Global System State)
+
+Per the architecture's memory model, `reliability_history` is persisted globally in SQLite:
+- **`tool_memory` Table**: `(tool_id PRIMARY KEY, total_runs, successful_runs, failed_runs, timeout_runs, avg_duration_ms, last_run_at, last_status, reliability_score, metadata)`
+- **Dynamic Updates**: Updated after every execution by `record_tool_execution(tool_id, success, duration_ms, exit_code, timed_out)`.
+- **Realistic Baselines**: Seeded with empirical priors across all 18 registered security tools (e.g. Nmap: 23/25 = 0.92, WHOIS: 30/30 = 1.00, Gobuster: 17/18 = 0.94).
+
+### Observability: "Why This Tool" UI Panel
+
+- Rendered as an expandable card accordion on every tool execution card and DAG node in the UI.
+- Displays selectable tabs for the **Top 3 Evaluated Candidates** (`#1`, `#2`, `#3`).
+- Visual progress bars for all 7 factors with percentage badges, weighted contribution points, and raw empirical signals.
+- Inferred argument preview detailing synthesized CLI flags and target addresses.

@@ -3,6 +3,7 @@
 import React, { useEffect, useRef, useState } from "react";
 import TerminalProcessView from "./components/TerminalProcessView";
 import TaskGraphView from "./components/TaskGraphView";
+import WhyThisToolPanel, { ToolSelectionResult } from "./components/WhyThisToolPanel";
 
 interface EventRecord {
   id?: number;
@@ -111,6 +112,7 @@ interface ChatMessage {
   };
   execution?: ExecutionDetails;
   durationMs?: number;
+  toolSelection?: ToolSelectionResult;
 }
 
 export default function Home() {
@@ -194,6 +196,7 @@ export default function Home() {
                 tool: data.toolExecuted,
                 execution: data.execution,
                 durationMs: data.durationMs,
+                toolSelection: data.toolSelection || data.tool_selection,
               },
             ]);
             if (data.event) {
@@ -712,8 +715,14 @@ export default function Home() {
 
                 {/* Tool Tag */}
                 {msg.tool && !msg.execution && (
-                  <div className="tool-tag">
-                    <span>⚡ Tool: {msg.tool.name} (v{msg.tool.version})</span>
+                  <div>
+                    <div className="tool-tag">
+                      <span>⚡ Tool: {msg.tool.name} (v{msg.tool.version})</span>
+                    </div>
+                    <WhyThisToolPanel
+                      toolSelection={msg.toolSelection}
+                      toolId={msg.tool.id}
+                    />
                   </div>
                 )}
 
@@ -760,6 +769,12 @@ export default function Home() {
                         <pre className="terminal-stderr">{msg.execution.stderr}</pre>
                       </div>
                     ) : null}
+
+                    {/* Expandable Why This Tool Score Breakdown */}
+                    <WhyThisToolPanel
+                      toolSelection={msg.toolSelection}
+                      toolId={msg.tool?.id || msg.execution.adapter}
+                    />
                   </div>
                 )}
               </div>

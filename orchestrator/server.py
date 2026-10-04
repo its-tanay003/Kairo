@@ -17,6 +17,7 @@ from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
+from dataclasses import asdict
 from events.db import (
     Event,
     insert_event,
@@ -29,12 +30,16 @@ from events.db import (
     list_plans,
     update_node_status,
     get_ready_nodes,
+    list_tool_memories,
+    get_tool_memory,
+    record_tool_execution,
 )
 from orchestrator.agent import AgentLoop
 from orchestrator.model_center import model_center
 from orchestrator.planner import planner
 from orchestrator.process_supervisor import supervisor
 from orchestrator.vm_manager import vm_manager
+from orchestrator.tool_selector import tool_selector
 
 app = FastAPI(title="Agent Orchestrator Service", version="1.0.0")
 
@@ -101,6 +106,17 @@ class PlanNodeStatusRequest(BaseModel):
     status: str
     result: Optional[Any] = None
     assigned_tool: Optional[str] = None
+
+
+class ToolSelectRequest(BaseModel):
+    goal: Optional[str] = None
+    intent: Optional[str] = None
+    required_capability: Optional[str] = None
+    capability: Optional[str] = None
+    session_id: Optional[str] = "default_session"
+    top_k: Optional[int] = 3
+    environment: Optional[Dict[str, Any]] = None
+    budget: Optional[float] = None
 
 
 @app.get("/health")
@@ -341,6 +357,20 @@ def vm_execute(req: VMExecuteRequest):
     except Exception as e:
         print(f"[Orchestrator] Warning: could not log event: {e}")
 
+    # Update Tool Memory store
+    try:
+        record_tool_execution(
+            tool_id="kali.exec.v1",
+            success=(result.get("exit_code") == 0),
+            duration_ms=float(result.get("duration_ms") or 0.0),
+            exit_code=result.get("exit_code"),
+            timed_out=bool(result.get("timed_out")),
+            metadata={"command": req.command, "task_id": tid},
+            db_path=agent.db_path,
+        )
+    except Exception as e:
+        print(f"[Orchestrator] Warning: could not update tool memory: {e}")
+
     return result
 
 
@@ -425,6 +455,36 @@ def get_planner_ready_nodes(plan_id: str):
     """Returns all queued nodes whose dependencies are satisfied and ready for parallel execution."""
     ready = get_ready_nodes(plan_id, db_path=agent.db_path)
     return {"plan_id": plan_id, "ready_count": len(ready), "ready_nodes": ready}
+
+
+# Hybrid Tool Selection & Tool Memory Endpoints
+@app.post("/tools/select")
+def select_tool_endpoint(req: ToolSelectRequest):
+    """Evaluates candidate tools using the hybrid scoring function and returns top 3 with full breakdown."""
+    goal = req.goal or req.intent or ""
+    if not goal.strip():
+        raise HTTPException(status_code=400, detail="Missing required 'goal' or 'intent'")
+    cap = req.required_capability or req.capability
+    res = tool_selector.select(
+        goal=goal,
+        required_capability=cap,
+        session_id=req.session_id or "default_session",
+        top_k=req.top_k or 3,
+    )
+    return res.to_dict()
+
+
+@app.get("/tools/memory")
+def get_tools_memory_endpoint():
+    """Returns historical execution and reliability memory for all registered tools."""
+    tools = list_tool_memories(agent.db_path)
+    return {"tools": tools, "count": len(tools)}
+
+
+@app.get("/tools/memory/{tool_id}")
+def get_single_tool_memory_endpoint(tool_id: str):
+    """Returns reliability and performance memory for a single tool."""
+    return get_tool_memory(tool_id, agent.db_path)
 
 
 if __name__ == "__main__":

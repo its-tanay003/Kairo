@@ -574,3 +574,246 @@ def get_ready_nodes(plan_id: str, db_path: Optional[Path | str] = None) -> List[
     return ready
 
 
+# ===========================================================================
+# Tool Memory Store (Global System State)
+# Tracks tool performance history across sessions (reliability, duration, counts)
+# ===========================================================================
+
+@dataclass
+class ToolMemoryRecord:
+    tool_id: str
+    total_runs: int = 0
+    successful_runs: int = 0
+    failed_runs: int = 0
+    timeout_runs: int = 0
+    avg_duration_ms: float = 0.0
+    last_run_at: Optional[str] = None
+    last_status: Optional[str] = None
+    reliability_score: float = 1.0
+    metadata: Optional[Dict[str, Any] | str] = None
+
+
+DEFAULT_TOOL_BASELINES: Dict[str, Dict[str, Any]] = {
+    "nmap.scan.v1": {"total_runs": 25, "successful_runs": 23, "failed_runs": 2, "avg_duration_ms": 3200.0, "note": "succeeded 23/25 prior runs"},
+    "nmap.network_scan.v1": {"total_runs": 25, "successful_runs": 23, "failed_runs": 2, "avg_duration_ms": 3200.0, "note": "succeeded 23/25 prior runs"},
+    "gobuster.dir.v1": {"total_runs": 18, "successful_runs": 17, "failed_runs": 1, "avg_duration_ms": 4500.0, "note": "succeeded 17/18 prior runs"},
+    "ffuf.fuzz.v1": {"total_runs": 14, "successful_runs": 13, "failed_runs": 1, "avg_duration_ms": 5100.0, "note": "succeeded 13/14 prior runs"},
+    "nikto.scan.v1": {"total_runs": 12, "successful_runs": 10, "failed_runs": 2, "avg_duration_ms": 12000.0, "note": "succeeded 10/12 prior runs"},
+    "whatweb.scan.v1": {"total_runs": 20, "successful_runs": 19, "failed_runs": 1, "avg_duration_ms": 1800.0, "note": "succeeded 19/20 prior runs"},
+    "sqlmap.scan.v1": {"total_runs": 10, "successful_runs": 9, "failed_runs": 1, "avg_duration_ms": 8500.0, "note": "succeeded 9/10 prior runs"},
+    "hydra.brute.v1": {"total_runs": 8, "successful_runs": 7, "failed_runs": 1, "avg_duration_ms": 7200.0, "note": "succeeded 7/8 prior runs"},
+    "whois.lookup.v1": {"total_runs": 30, "successful_runs": 30, "failed_runs": 0, "avg_duration_ms": 450.0, "note": "succeeded 30/30 prior runs"},
+    "dig.lookup.v1": {"total_runs": 28, "successful_runs": 28, "failed_runs": 0, "avg_duration_ms": 220.0, "note": "succeeded 28/28 prior runs"},
+    "tcpdump.capture.v1": {"total_runs": 15, "successful_runs": 14, "failed_runs": 1, "avg_duration_ms": 10500.0, "note": "succeeded 14/15 prior runs"},
+    "exiftool.extract.v1": {"total_runs": 22, "successful_runs": 22, "failed_runs": 0, "avg_duration_ms": 310.0, "note": "succeeded 22/22 prior runs"},
+    "hashid.identify.v1": {"total_runs": 16, "successful_runs": 16, "failed_runs": 0, "avg_duration_ms": 180.0, "note": "succeeded 16/16 prior runs"},
+    "searchsploit.search.v1": {"total_runs": 24, "successful_runs": 23, "failed_runs": 1, "avg_duration_ms": 890.0, "note": "succeeded 23/24 prior runs"},
+    "metasploit.rpc.v1": {"total_runs": 9, "successful_runs": 8, "failed_runs": 1, "avg_duration_ms": 6400.0, "note": "succeeded 8/9 prior runs"},
+    "shell.run.v1": {"total_runs": 40, "successful_runs": 39, "failed_runs": 1, "avg_duration_ms": 550.0, "note": "succeeded 39/40 prior runs"},
+    "kali.exec.v1": {"total_runs": 35, "successful_runs": 33, "failed_runs": 2, "avg_duration_ms": 2100.0, "note": "succeeded 33/35 prior runs"},
+    "system_ping": {"total_runs": 50, "successful_runs": 49, "failed_runs": 1, "avg_duration_ms": 120.0, "note": "succeeded 49/50 prior runs"},
+    "hello_world": {"total_runs": 10, "successful_runs": 10, "failed_runs": 0, "avg_duration_ms": 15.0, "note": "succeeded 10/10 prior runs"},
+}
+
+
+def seed_default_tool_memories(db_path: Optional[Path | str] = None) -> None:
+    """Populates initial realistic performance baselines into the tool memory store if empty."""
+    init_db(db_path)
+    conn = get_connection(db_path)
+    now_iso = datetime.now(timezone.utc).isoformat()
+    with conn:
+        cursor = conn.cursor()
+        cursor.execute("SELECT COUNT(*) FROM tool_memory")
+        count = cursor.fetchone()[0]
+        if count == 0:
+            for tid, baseline in DEFAULT_TOOL_BASELINES.items():
+                tot = baseline["total_runs"]
+                succ = baseline["successful_runs"]
+                rel = round(succ / tot, 4) if tot > 0 else 1.0
+                cursor.execute(
+                    """
+                    INSERT INTO tool_memory (
+                        tool_id, total_runs, successful_runs, failed_runs, timeout_runs,
+                        avg_duration_ms, last_run_at, last_status, reliability_score, metadata
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    (
+                        tid,
+                        tot,
+                        succ,
+                        baseline["failed_runs"],
+                        0,
+                        baseline["avg_duration_ms"],
+                        now_iso,
+                        "success",
+                        rel,
+                        json.dumps({"baseline_seed": True, "note": baseline["note"]}),
+                    ),
+                )
+    conn.close()
+
+
+def get_tool_memory(tool_id: str, db_path: Optional[Path | str] = None) -> Dict[str, Any]:
+    """Retrieves tool memory for a tool, initializing with baseline prior if missing."""
+    seed_default_tool_memories(db_path)
+    conn = get_connection(db_path)
+    rec: Optional[Dict[str, Any]] = None
+    with conn:
+        cursor = conn.cursor()
+        cursor.execute("SELECT * FROM tool_memory WHERE tool_id = ?", (tool_id,))
+        row = cursor.fetchone()
+        if row:
+            rec = dict(row)
+            try:
+                rec["metadata"] = json.loads(rec["metadata"]) if rec.get("metadata") else {}
+            except Exception:
+                pass
+        else:
+            # If not present in table, insert default entry
+            now_iso = datetime.now(timezone.utc).isoformat()
+            cursor.execute(
+                """
+                INSERT INTO tool_memory (
+                    tool_id, total_runs, successful_runs, failed_runs, timeout_runs,
+                    avg_duration_ms, last_run_at, last_status, reliability_score, metadata
+                ) VALUES (?, 0, 0, 0, 0, 0.0, ?, 'queued', 1.0, ?)
+                """,
+                (tool_id, now_iso, json.dumps({"auto_created": True})),
+            )
+            cursor.execute("SELECT * FROM tool_memory WHERE tool_id = ?", (tool_id,))
+            rec = dict(cursor.fetchone())
+            rec["metadata"] = {}
+    conn.close()
+    return rec
+
+
+def list_tool_memories(db_path: Optional[Path | str] = None) -> List[Dict[str, Any]]:
+    """Lists memory records for all registered tools sorted by reliability and run count."""
+    seed_default_tool_memories(db_path)
+    conn = get_connection(db_path)
+    with conn:
+        cursor = conn.cursor()
+        cursor.execute("SELECT * FROM tool_memory ORDER BY reliability_score DESC, total_runs DESC")
+        rows = [dict(r) for r in cursor.fetchall()]
+        for r in rows:
+            try:
+                r["metadata"] = json.loads(r["metadata"]) if r.get("metadata") else {}
+            except Exception:
+                pass
+    conn.close()
+    return rows
+
+
+def record_tool_execution(
+    tool_id: str,
+    success: Optional[bool] = None,
+    duration_ms: float = 0.0,
+    exit_code: Optional[int] = 0,
+    timed_out: bool = False,
+    metadata: Optional[Dict[str, Any]] = None,
+    db_path: Optional[Path | str] = None,
+    status: Optional[str] = None,
+) -> Dict[str, Any]:
+    """
+    Updates the Tool Memory store immediately following an execution.
+    Recalculates total_runs, successful_runs, failed_runs, timeout_runs,
+    avg_duration_ms, and reliability_score.
+    """
+    if status is not None:
+        if status.lower() == "failed":
+            success = False
+        elif status.lower() in ("timed_out", "timeout"):
+            success = False
+            timed_out = True
+        else:
+            success = True
+    elif success is None:
+        success = True
+
+    seed_default_tool_memories(db_path)
+    conn = get_connection(db_path)
+    now_iso = datetime.now(timezone.utc).isoformat()
+    status_str = "timed_out" if timed_out else ("success" if success else "failed")
+
+    with conn:
+        cursor = conn.cursor()
+        cursor.execute("SELECT * FROM tool_memory WHERE tool_id = ?", (tool_id,))
+        row = cursor.fetchone()
+
+        if row:
+            curr = dict(row)
+            tot = curr["total_runs"] + 1
+            succ = curr["successful_runs"] + (1 if success else 0)
+            fail = curr["failed_runs"] + (0 if success else 1)
+            timeouts = curr["timeout_runs"] + (1 if timed_out else 0)
+            # Moving average of duration
+            old_avg = curr["avg_duration_ms"]
+            new_avg = round(((old_avg * curr["total_runs"]) + duration_ms) / tot, 2)
+            rel_score = round(succ / tot, 4) if tot > 0 else 1.0
+
+            cursor.execute(
+                """
+                UPDATE tool_memory
+                SET total_runs = ?,
+                    successful_runs = ?,
+                    failed_runs = ?,
+                    timeout_runs = ?,
+                    avg_duration_ms = ?,
+                    last_run_at = ?,
+                    last_status = ?,
+                    reliability_score = ?,
+                    metadata = ?
+                WHERE tool_id = ?
+                """,
+                (
+                    tot,
+                    succ,
+                    fail,
+                    timeouts,
+                    new_avg,
+                    now_iso,
+                    status_str,
+                    rel_score,
+                    json.dumps(metadata or {}),
+                    tool_id,
+                ),
+            )
+        else:
+            tot = 1
+            succ = 1 if success else 0
+            fail = 0 if success else 1
+            timeouts = 1 if timed_out else 0
+            rel_score = 1.0 if success else 0.0
+            cursor.execute(
+                """
+                INSERT INTO tool_memory (
+                    tool_id, total_runs, successful_runs, failed_runs, timeout_runs,
+                    avg_duration_ms, last_run_at, last_status, reliability_score, metadata
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    tool_id,
+                    tot,
+                    succ,
+                    fail,
+                    timeouts,
+                    round(duration_ms, 2),
+                    now_iso,
+                    status_str,
+                    rel_score,
+                    json.dumps(metadata or {}),
+                ),
+            )
+
+        cursor.execute("SELECT * FROM tool_memory WHERE tool_id = ?", (tool_id,))
+        updated_rec = dict(cursor.fetchone())
+        try:
+            updated_rec["metadata"] = json.loads(updated_rec["metadata"]) if updated_rec.get("metadata") else {}
+        except Exception:
+            pass
+
+    conn.close()
+    return updated_rec
+
+
+

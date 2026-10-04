@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useEffect, useState, useMemo, useCallback } from "react";
+import WhyThisToolPanel from "./WhyThisToolPanel";
 
 export interface PlanNode {
   node_id: string;
@@ -669,7 +670,7 @@ export default function TaskGraphView({
             justifyContent: "space-between",
             alignItems: "flex-start",
             gap: "16px",
-            maxHeight: "160px",
+            maxHeight: "340px",
             overflowY: "auto",
           }}
         >
@@ -693,7 +694,7 @@ export default function TaskGraphView({
               </p>
             )}
             {selectedNode.expected_outputs && selectedNode.expected_outputs.length > 0 && (
-              <div style={{ display: "flex", gap: "4px", alignItems: "center", flexWrap: "wrap" }}>
+              <div style={{ display: "flex", gap: "4px", alignItems: "center", flexWrap: "wrap", marginBottom: "8px" }}>
                 <span style={{ fontSize: "10px", color: "#64748b", textTransform: "uppercase", fontWeight: 700 }}>
                   Expected Outputs:
                 </span>
@@ -714,6 +715,11 @@ export default function TaskGraphView({
                 ))}
               </div>
             )}
+
+            {/* Why This Tool Breakdown Panel */}
+            <WhyThisToolPanel
+              toolId={selectedNode.assigned_tool || `${selectedNode.capability}.v1`}
+            />
           </div>
 
           <div style={{ display: "flex", flexDirection: "column", gap: "6px", alignItems: "flex-end" }}>

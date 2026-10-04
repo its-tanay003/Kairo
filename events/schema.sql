@@ -80,3 +80,20 @@ CREATE TABLE IF NOT EXISTS task_nodes (
 CREATE INDEX IF NOT EXISTS idx_task_nodes_plan_id ON task_nodes(plan_id);
 CREATE INDEX IF NOT EXISTS idx_task_nodes_status ON task_nodes(status);
 
+-- Tool Memory Store: Global system state tracking historical reliability and performance per tool
+CREATE TABLE IF NOT EXISTS tool_memory (
+    tool_id TEXT PRIMARY KEY,
+    total_runs INTEGER NOT NULL DEFAULT 0,
+    successful_runs INTEGER NOT NULL DEFAULT 0,
+    failed_runs INTEGER NOT NULL DEFAULT 0,
+    timeout_runs INTEGER NOT NULL DEFAULT 0,
+    avg_duration_ms REAL NOT NULL DEFAULT 0.0,
+    last_run_at TEXT,
+    last_status TEXT,
+    reliability_score REAL NOT NULL DEFAULT 1.0,
+    metadata TEXT
+);
+
+CREATE INDEX IF NOT EXISTS idx_tool_memory_reliability ON tool_memory(reliability_score);
+
+
