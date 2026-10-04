@@ -48,6 +48,10 @@ from orchestrator.planner import planner
 from orchestrator.process_supervisor import supervisor
 from orchestrator.vm_manager import vm_manager
 from orchestrator.tool_selector import tool_selector
+from orchestrator.observer import observer
+from orchestrator.critic import critic
+from orchestrator.recovery_agent import recovery_agent
+from orchestrator.cognitive_engine import cognitive_engine
 
 app = FastAPI(title="Agent Orchestrator Service", version="1.0.0")
 
@@ -140,6 +144,42 @@ class ScopeValidateRequest(BaseModel):
     target: Optional[str] = None
     tool_id: Optional[str] = None
     tool_tier: Optional[int] = None
+
+
+class ObserverRequest(BaseModel):
+    tool_id: str
+    stdout: str
+    stderr: Optional[str] = ""
+    exit_code: Optional[int] = 0
+    meta: Optional[Dict[str, Any]] = None
+    duration_ms: Optional[float] = 0.0
+
+
+class CriticRequest(BaseModel):
+    node: Dict[str, Any]
+    plan_goal: str
+    observation: Dict[str, Any]
+    previous_observations: Optional[List[Dict[str, Any]]] = None
+    attempt_number: Optional[int] = 1
+
+
+class RecoveryRequest(BaseModel):
+    plan_id: str
+    node: Dict[str, Any]
+    current_tool: str
+    current_args: Dict[str, Any]
+    stdout: str
+    stderr: Optional[str] = ""
+    exit_code: Optional[int] = 1
+    timed_out: Optional[bool] = False
+    parser_mismatch: Optional[bool] = False
+    critic_status: Optional[str] = ""
+    critique_msg: Optional[str] = ""
+    session_id: Optional[str] = "recovery_session"
+
+
+class NodeExecuteRequest(BaseModel):
+    max_attempts: Optional[int] = 3
 
 
 @app.get("/health")
@@ -613,61 +653,14 @@ def execute_task_graph_endpoint(plan_id: str):
     executed_nodes = []
 
     for node in ready_nodes:
-        node_id = node["node_id"]
-        # Select best tool for capability
-        sel = tool_selector.select(
-            goal=f"Execute capability: {node['capability']} - {node.get('label', '')}",
-            required_capability=node["capability"],
-            session_id=plan.get("session_id", "plan_session"),
-            top_k=1,
-        )
-        chosen_tool = sel.selected_tool.tool_id
-        tool_tier = get_tool_tier(chosen_tool)
-
-        # Validate tool tier against Scope Contract
-        if tool_tier not in contract.get("allowed_tool_tiers", []):
-            reason_msg = f"Blocked by Scope Contract: Tool '{chosen_tool}' is Tier {tool_tier}, outside authorized tiers {contract.get('allowed_tool_tiers')}"
-            update_node_status(
-                plan_id=plan_id,
-                node_id=node_id,
-                status="failed",
-                result=reason_msg,
-                assigned_tool=chosen_tool,
-                db_path=agent.db_path,
-            )
-            rejection_event = Event.create(
-                session_id=plan.get("session_id", "plan_session"),
-                task_id=f"{plan_id}_{node_id}",
-                actor="gateway:scope_guard",
-                tool_id=chosen_tool,
-                exit_code=403,
-                result_summary=f"SCOPE_REJECTION: Node {node_id} blocked. Tool tier {tool_tier} not permitted.",
-                confidence=0.0,
-                network_context={"plan_id": plan_id, "node_id": node_id, "tool_tier": tool_tier, "authorized": False},
-            )
-            insert_event(rejection_event, agent.db_path)
-            executed_nodes.append({"node_id": node_id, "tool": chosen_tool, "status": "failed", "error": reason_msg})
-            continue
-
-        # Execute node
-        update_node_status(plan_id=plan_id, node_id=node_id, status="running", assigned_tool=chosen_tool, db_path=agent.db_path)
-        res = agent.execute_task(
-            session_id=plan.get("session_id", "plan_session"),
-            message=f"Execute capability '{node['capability']}' with {chosen_tool}",
-            task_id=f"{plan_id}_{node_id}",
-            explicit_tool=chosen_tool,
-            explicit_args=sel.selected_tool.inferred_args,
-        )
-        status = "failed" if (res.get("status") == "rejected" or res.get("error")) else "success"
-        update_node_status(
+        node_res = cognitive_engine.execute_node(
             plan_id=plan_id,
-            node_id=node_id,
-            status=status,
-            result=res.get("reply", "Executed"),
-            assigned_tool=chosen_tool,
-            db_path=agent.db_path,
+            node=node,
+            plan=plan,
+            contract=contract,
+            max_attempts=3,
         )
-        executed_nodes.append({"node_id": node_id, "tool": chosen_tool, "status": status, "result": res})
+        executed_nodes.append(node_res)
 
     return {
         "status": "executed",
@@ -678,6 +671,95 @@ def execute_task_graph_endpoint(plan_id: str):
         "executed_nodes": executed_nodes,
         "updated_plan": get_plan(plan_id, db_path=agent.db_path),
     }
+
+
+@app.post("/planner/plans/{plan_id}/nodes/{node_id}/execute")
+def execute_single_node_endpoint(plan_id: str, node_id: str, req: NodeExecuteRequest = NodeExecuteRequest()):
+    """
+    Executes a single DAG node through the cognitive loop:
+    Tool Selection -> Scope Verification -> Execution -> Observer -> Critic -> Recovery Agent (cap: 3).
+    """
+    contract = get_active_scope_contract(agent.db_path)
+    if not contract:
+        contract = seed_default_scope_contract(agent.db_path)
+
+    plan = get_plan(plan_id, db_path=agent.db_path)
+    if not plan:
+        raise HTTPException(status_code=404, detail=f"Plan '{plan_id}' not found")
+
+    target_node = None
+    for n in plan.get("nodes", []):
+        if n["node_id"] == node_id:
+            target_node = n
+            break
+
+    if not target_node:
+        raise HTTPException(status_code=404, detail=f"Node '{node_id}' not found in plan '{plan_id}'")
+
+    res = cognitive_engine.execute_node(
+        plan_id=plan_id,
+        node=target_node,
+        plan=plan,
+        contract=contract,
+        max_attempts=req.max_attempts or 3,
+    )
+    return {
+        "plan_id": plan_id,
+        "node_id": node_id,
+        "execution_result": res,
+        "updated_plan": get_plan(plan_id, db_path=agent.db_path),
+    }
+
+
+# ==============================================================================
+# OBSERVER, CRITIC, AND RECOVERY AGENT DIRECT ENDPOINTS
+# ==============================================================================
+
+@app.post("/observer/observe")
+def observer_observe_endpoint(req: ObserverRequest):
+    """Translates raw command execution stdout/stderr into structured observation facts."""
+    obs = observer.observe(
+        tool_id=req.tool_id,
+        stdout=req.stdout,
+        stderr=req.stderr or "",
+        exit_code=req.exit_code or 0,
+        meta=req.meta or {},
+        duration_ms=req.duration_ms or 0.0,
+    )
+    return obs.to_dict()
+
+
+@app.post("/critic/evaluate")
+def critic_evaluate_endpoint(req: CriticRequest):
+    """Evaluates whether an observation moved the task graph toward the goal or flags no-progress."""
+    res = critic.evaluate(
+        node=req.node,
+        plan_goal=req.plan_goal,
+        observation=req.observation,
+        previous_observations=req.previous_observations,
+        attempt_number=req.attempt_number or 1,
+    )
+    return res.to_dict()
+
+
+@app.post("/recovery/recover")
+def recovery_recover_endpoint(req: RecoveryRequest):
+    """Formulates a recovery plan per the blueprint's Reliability table with 3-attempt capping."""
+    res = recovery_agent.formulate_recovery(
+        plan_id=req.plan_id,
+        node=req.node,
+        current_tool=req.current_tool,
+        current_args=req.current_args,
+        stdout=req.stdout,
+        stderr=req.stderr or "",
+        exit_code=req.exit_code,
+        timed_out=req.timed_out or False,
+        parser_mismatch=req.parser_mismatch or False,
+        critic_status=req.critic_status or "",
+        critique_msg=req.critique_msg or "",
+        session_id=req.session_id or "recovery_session",
+    )
+    return res.to_dict()
 
 
 if __name__ == "__main__":

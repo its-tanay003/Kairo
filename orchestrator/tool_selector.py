@@ -20,6 +20,7 @@ from dataclasses import dataclass, asdict
 from typing import Any, Dict, List, Optional, Tuple
 from pathlib import Path
 
+import time
 from registry.loader import ToolSpec, ToolRegistry
 from events.db import get_tool_memory, get_events_by_session, DEFAULT_DB_PATH
 from orchestrator.vm_manager import vm_manager
@@ -208,10 +209,12 @@ class HybridToolSelector:
         session_id: str = "default_session",
         target_override: Optional[str] = None,
         top_k: int = 3,
+        exclude: Optional[List[str]] = None,
         **kwargs,
     ) -> ToolSelectionResult:
         """
         Calculates scores for all registered tools and returns top_k candidates with full breakdowns.
+        Supports excluding specific tool IDs (used by Recovery Agent to select alternate tools).
         """
         if goal is None:
             goal = kwargs.get("intent") or kwargs.get("message") or ""
@@ -221,6 +224,13 @@ class HybridToolSelector:
         tools = self.registry.list_tools()
         if not tools:
             raise ValueError("No tools registered in ToolRegistry")
+
+        if exclude:
+            exclude_set = set(exclude)
+            tools = [t for t in tools if t.id not in exclude_set and t.name not in exclude_set]
+            if not tools:
+                # If everything excluded, fallback to all tools
+                tools = self.registry.list_tools()
 
         scored_candidates: List[ToolCandidateScore] = []
 
@@ -440,7 +450,11 @@ class HybridToolSelector:
     # Factor 3: Environment Compatibility (0.15)
     # -------------------------------------------------------------------------
     def _calc_environment_compatibility(self, tool: ToolSpec) -> Tuple[float, str]:
-        vm_stat = vm_manager.get_status()
+        now = time.time()
+        if not hasattr(self, "_cached_vm_stat") or (now - getattr(self, "_vm_stat_time", 0)) > 10.0:
+            self._cached_vm_stat = vm_manager.get_status()
+            self._vm_stat_time = now
+        vm_stat = self._cached_vm_stat
         is_vm_online = vm_stat.get("worker_online", False)
 
         supported_os = tool.version_compatibility.get("os", ["linux"])

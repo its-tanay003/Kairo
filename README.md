@@ -429,3 +429,68 @@ Every security tool is strictly categorized into three risk tiers:
 - **Always Visible**: Positioned prominently in the top header (`🛡️ Scope: 192.168.1.0/24 (+4) | Tiers [1,2,3] | ⏳ 7h 42m remaining (secops_lead) [HMAC-SHA256 ✓]`).
 - **Live Countdown Timer**: Updates every second, alerting operators to expiring shifts.
 - **Interactive Modal**: Clicking the chip opens the Scope Contract Inspector where operators can review the raw HMAC signature, modify target subnets, change network scope zones, adjust allowed tool tiers, or execute one-click shift renewal (+8h).
+
+---
+
+## 10. Observer, Critic & Recovery Agent: Autonomous Cognitive Loop & Self-Healing
+
+Kairo moves beyond simple linear scripts or black-box single-prompt ReAct loops by implementing an explicit, three-tier cognitive control loop: **The Observer**, **The Critic**, and **The Recovery Agent**.
+
+```text
+  ┌──────────────────────────────────────────────────────────────────┐
+  │                         COGNITIVE LOOP                           │
+  │                                                                  │
+  │   [Task Graph Node] ──► [Tool Selector] ──► [Scope Contract]     │
+  │                                                      │           │
+  │                                                      ▼           │
+  │   [Structured Facts] ◄── [Observer] ◄── [Process Supervisor]     │
+  │            │              (Adapters)                             │
+  │            ▼                                                     │
+  │        [Critic] ──► (Progress? Yes) ──► Node Success             │
+  │            │                                                     │
+  │       (No / Error)                                               │
+  │            ▼                                                     │
+  │     [Recovery Agent] ──► [Attempts < 3] ──► Auto-Repair / Retry  │
+  │            │                                                     │
+  │     [Attempts >= 3] ──► Surfaced to Operator (Cap Exceeded)      │
+  └──────────────────────────────────────────────────────────────────┘
+```
+
+### 1. The Observer (`orchestrator/observer.py`)
+Converts raw, unstructured execution outputs (`stdout`, `stderr`, exit code) into structured, queryable **Observation Facts**:
+- **Reuses Adapter Parsers**: Integrates directly with all 14 tool adapters (`nmap`, `gobuster`, `ffuf`, `nikto`, `sqlmap`, `hydra`, `searchsploit`, `whois`, `dig`, `exiftool`, `hashid`, `metasploit`, `system_ping`, `hello_world`).
+- **Normalized Fact Schemas**: Normalizes findings into categorized facts:
+  - `ports`: open/filtered ports, services, protocols, states.
+  - `endpoints`: paths, HTTP response codes, response sizes.
+  - `vulnerabilities`: CVE identifiers, SQLi injection points, XSS, outdated server banners.
+  - `technologies`: server frameworks, CMS, backend databases, operating systems.
+  - `credentials`: discovered usernames, passwords, service hashes.
+- **Robust Fallback Engine**: If a custom tool lacks an adapter or a parser error occurs, `_fallback_extract_facts` extracts key security indicators using hardened regex patterns.
+
+### 2. The Critic (`orchestrator/critic.py`)
+Evaluates whether an observation moved the task graph closer to the overall engagement objective:
+- **Progress Assessment (`has_progress`)**:
+  - `progress`: High-value findings (e.g. open ports, endpoints, vulnerabilities, credentials, valid responses).
+  - `no_progress`: Zero findings, uninformative outputs, or repetitive responses across consecutive runs.
+  - `failed`: Crashes, non-zero error exit codes, timeouts, or execution errors with zero actionable data.
+  - `blocked`: Network unreachable, scope contract violation, or authentication barriers.
+- **Circular Finding Detection**: Tracks finding hashes across executions to detect circular or stagnant loops.
+- **Actionable Critique & Suggested Actions**: Returns structured suggestions (e.g. *"Switch to directory fuzzer (ffuf/gobuster)"*, *"Enumerate web directories or services on open ports"*).
+
+### 3. The Recovery Agent (`orchestrator/recovery_agent.py`)
+Implements the blueprint's **Reliability & Error Recovery** specification to handle execution anomalies autonomously:
+
+| Error Category | Diagnostic Cause | Autonomous Self-Healing Strategy |
+| :--- | :--- | :--- |
+| **`timeout`** | Tool execution exceeded assigned time budget | Automatically backs off: increases timeout budget by 50%, switches to lighter CLI flags (e.g. `-T4`, `--top-ports 100`, lighter thread counts), or falls back to an alternate tool. |
+| **`malformed_args`** | Invalid/extraneous CLI arguments or schema violations | Inspects tool parameter schema, strips unsupported parameters, repairs formatting (e.g., URL protocols, IP masks), and retries execution. |
+| **`missing_tool`** | Required binary unavailable in current runtime/VM environment | Invokes Tool Selector with `exclude=[current_tool]` to choose an alternative tool possessing the required capability (e.g., swapping `gobuster` for `ffuf`). |
+| **`parser_mismatch`** | Raw output failed schema validation or crashed adapter parser | Falls back to generic regex fact extraction; if unresolvable, selects an alternate tool for the same capability. |
+| **`no_progress`** | Observation yielded zero progress or stagnant state | Replaces tool with an alternate candidate from the Tool Selector or prompts for modified scan targets. |
+
+### 4. Recovery Attempt Cap (Anti-Looping Circuit Breaker)
+To prevent infinite retry loops common in black-box ReAct agents:
+- **Maximum 3 Recovery Attempts**: Each task graph node is strictly capped at **3 recovery attempts**.
+- **Operator Surfacing**: Upon reaching attempt 3 without moving the graph forward, recovery halts immediately. The node status is updated to `failed`, error code is set to `RECOVERY_EXHAUSTED`, and full diagnostic telemetry (attempt history, failure reasons, and suggested manual operator actions) is surfaced in the UI.
+- **Audit Logging**: Logs a structured event (`recovery_agent:cap_exceeded`) to the immutable SQLite event store for post-incident review.
+

@@ -17,6 +17,54 @@ export interface PlanNode {
   result?: Record<string, unknown>;
 }
 
+export interface FactPort {
+  port: number | string;
+  protocol?: string;
+  service?: string;
+  state?: string;
+}
+
+export interface FactEndpoint {
+  path?: string;
+  url?: string;
+  status?: number | string;
+  length?: number;
+}
+
+export interface FactVuln {
+  id?: string;
+  type?: string;
+  severity?: string;
+  description?: string;
+}
+
+export interface ObservationFacts {
+  ports?: FactPort[];
+  endpoints?: FactEndpoint[];
+  vulnerabilities?: FactVuln[];
+  hosts?: Array<Record<string, unknown>>;
+  technologies?: string[];
+  credentials?: Array<Record<string, unknown>>;
+}
+
+export interface NodeCritique {
+  status?: string;
+  has_progress?: boolean;
+  score?: number;
+  critique?: string;
+  suggested_action?: string;
+}
+
+export interface NodeResultData {
+  error?: string;
+  reason?: string;
+  attempts?: number;
+  critique?: NodeCritique;
+  facts?: ObservationFacts;
+  summary?: string;
+  [key: string]: unknown;
+}
+
 export interface PlanDAG {
   plan_id: string;
   goal: string;
@@ -73,6 +121,7 @@ export default function TaskGraphView({
   const [goal, setGoal] = useState<string>(PRESET_GOALS[0].goal);
   const [preferLlm, setPreferLlm] = useState<boolean>(true);
   const [isPlanning, setIsPlanning] = useState<boolean>(false);
+  const [isExecutingGraph, setIsExecutingGraph] = useState<boolean>(false);
   const [currentPlan, setCurrentPlan] = useState<PlanDAG | null>(null);
   const [recentPlans, setRecentPlans] = useState<PlanSummary[]>([]);
   const [selectedNode, setSelectedNode] = useState<PlanNode | null>(null);
@@ -268,6 +317,68 @@ export default function TaskGraphView({
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : String(err);
       setErrorMsg(`Error updating node: ${msg}`);
+    }
+  };
+
+  const handleExecuteTaskGraph = async () => {
+    if (!currentPlan) return;
+    setIsExecutingGraph(true);
+    setErrorMsg(null);
+    try {
+      const res = await fetch(`http://localhost:4000/planner/plans/${currentPlan.plan_id}/execute`, {
+        method: "POST",
+      });
+      if (res.ok) {
+        const data = await res.json();
+        if (data.updated_plan) {
+          setCurrentPlan(data.updated_plan);
+          fetchReadyNodes(currentPlan.plan_id);
+        }
+        showNotification(
+          `Executed ${data.executed_count || 0} node(s) through Observer, Critic & Recovery Agent.`
+        );
+      } else {
+        const err = await res.json().catch(() => ({}));
+        setErrorMsg(err.detail || "Task graph execution failed");
+      }
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err);
+      setErrorMsg(`Error executing task graph: ${msg}`);
+    } finally {
+      setIsExecutingGraph(false);
+    }
+  };
+
+  const handleExecuteSingleNode = async (nodeId: string) => {
+    if (!currentPlan) return;
+    try {
+      const res = await fetch(
+        `http://localhost:4000/planner/plans/${currentPlan.plan_id}/nodes/${nodeId}/execute`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ max_attempts: 3 }),
+        }
+      );
+      if (res.ok) {
+        const data = await res.json();
+        if (data.updated_plan) {
+          setCurrentPlan(data.updated_plan);
+          fetchReadyNodes(currentPlan.plan_id);
+          const updatedTarget = data.updated_plan.nodes?.find((n: PlanNode) => n.node_id === nodeId);
+          if (updatedTarget) setSelectedNode(updatedTarget);
+        }
+        const execRes = data.execution_result || {};
+        showNotification(
+          `Node #${nodeId} execution complete (${execRes.status || "done"}) in ${execRes.attempts || 1} attempt(s).`
+        );
+      } else {
+        const err = await res.json().catch(() => ({}));
+        setErrorMsg(err.detail || `Node execution failed for #${nodeId}`);
+      }
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err);
+      setErrorMsg(`Error executing node: ${msg}`);
     }
   };
 
@@ -482,6 +593,22 @@ export default function TaskGraphView({
           </div>
 
           <div style={{ display: "flex", gap: "6px" }}>
+            <button
+              className="quick-btn"
+              style={{
+                padding: "2px 10px",
+                fontSize: "10px",
+                fontWeight: 700,
+                background: "rgba(16, 185, 129, 0.2)",
+                borderColor: "#10b981",
+                color: "#6ee7b7",
+              }}
+              onClick={handleExecuteTaskGraph}
+              disabled={isExecutingGraph}
+              title="Execute unblocked DAG nodes through Observer, Critic & Recovery Agent"
+            >
+              {isExecutingGraph ? "⚙️ Executing DAG..." : "▶ Execute DAG"}
+            </button>
             <button
               className="quick-btn secondary"
               style={{
@@ -716,6 +843,213 @@ export default function TaskGraphView({
               </div>
             )}
 
+            {/* Cognitive Results / Facts / Critique / Recovery Status */}
+            {(() => {
+              if (!selectedNode.result) return null;
+              let resObj: NodeResultData = {};
+              if (typeof selectedNode.result === "string") {
+                try {
+                  resObj = JSON.parse(selectedNode.result) as NodeResultData;
+                } catch {
+                  resObj = { text: selectedNode.result };
+                }
+              } else if (typeof selectedNode.result === "object" && selectedNode.result !== null) {
+                resObj = selectedNode.result as NodeResultData;
+              }
+              const isRecoveryExhausted =
+                resObj.error === "RECOVERY_EXHAUSTED" ||
+                (typeof resObj.reason === "string" && resObj.reason.includes("RECOVERY_EXHAUSTED"));
+              const critique = resObj.critique;
+              const facts = resObj.facts;
+              const attempts = typeof resObj.attempts === "number" ? resObj.attempts : 1;
+              const reasonText =
+                typeof resObj.reason === "string"
+                  ? resObj.reason
+                  : "Node reached maximum recovery attempt cap (3/3) without moving the task graph forward.";
+              const critiqueText = typeof critique?.critique === "string" ? critique.critique : "";
+              const suggestedActionText = typeof critique?.suggested_action === "string" ? critique.suggested_action : "";
+              const summaryText = typeof resObj.summary === "string" ? resObj.summary : "";
+
+              return (
+                <div style={{ marginTop: "10px", display: "flex", flexDirection: "column", gap: "8px" }}>
+                  {/* Recovery Exhausted Cap Warning */}
+                  {isRecoveryExhausted && (
+                    <div
+                      style={{
+                        background: "rgba(239, 68, 68, 0.15)",
+                        border: "1px solid rgba(239, 68, 68, 0.4)",
+                        padding: "8px 10px",
+                        borderRadius: "6px",
+                        color: "#fca5a5",
+                        fontSize: "11px",
+                      }}
+                    >
+                      <div
+                        style={{
+                          fontWeight: 700,
+                          display: "flex",
+                          alignItems: "center",
+                          gap: "6px",
+                          marginBottom: "3px",
+                        }}
+                      >
+                        <span>🚨 RECOVERY EXHAUSTED (3/3 attempts)</span>
+                        <span
+                          style={{
+                            fontSize: "10px",
+                            background: "rgba(239, 68, 68, 0.3)",
+                            padding: "1px 5px",
+                            borderRadius: "3px",
+                          }}
+                        >
+                          SURFACED TO OPERATOR
+                        </span>
+                      </div>
+                      <div>{reasonText}</div>
+                    </div>
+                  )}
+
+                  {/* Critic Evaluation */}
+                  {critique && (
+                    <div
+                      style={{
+                        background: "rgba(30, 41, 59, 0.8)",
+                        border: "1px solid rgba(255, 255, 255, 0.1)",
+                        padding: "8px 10px",
+                        borderRadius: "6px",
+                        fontSize: "11px",
+                      }}
+                    >
+                      <div
+                        style={{
+                          display: "flex",
+                          justifyContent: "space-between",
+                          alignItems: "center",
+                          marginBottom: "4px",
+                        }}
+                      >
+                        <span style={{ color: "var(--accent-cyan)", fontWeight: 700 }}>⚖️ Critic Evaluation</span>
+                        <div style={{ display: "flex", gap: "6px", alignItems: "center" }}>
+                          <span
+                            className={`dag-status-pill ${critique.has_progress ? "success" : "warning"}`}
+                            style={{ fontSize: "9px" }}
+                          >
+                            {critique.status || (critique.has_progress ? "progress" : "no_progress")}
+                          </span>
+                          <span style={{ fontSize: "10px", color: "var(--text-muted)" }}>
+                            Attempts: {attempts}/3
+                          </span>
+                        </div>
+                      </div>
+                      <p style={{ color: "#e2e8f0", margin: "2px 0 4px 0" }}>{critiqueText}</p>
+                      {suggestedActionText && (
+                        <p style={{ color: "#fbbf24", margin: 0, fontStyle: "italic", fontSize: "10px" }}>
+                          💡 Suggested Action: {suggestedActionText}
+                        </p>
+                      )}
+                    </div>
+                  )}
+
+                  {/* Observer Structured Facts Summary */}
+                  {facts && (
+                    <div
+                      style={{
+                        background: "rgba(15, 23, 42, 0.7)",
+                        border: "1px solid rgba(255, 255, 255, 0.08)",
+                        padding: "8px 10px",
+                        borderRadius: "6px",
+                        fontSize: "11px",
+                      }}
+                    >
+                      <span
+                        style={{
+                          color: "var(--accent-emerald)",
+                          fontWeight: 700,
+                          display: "block",
+                          marginBottom: "4px",
+                        }}
+                      >
+                        🔬 Observer Structured Facts:
+                      </span>
+                      {facts.ports && facts.ports.length > 0 && (
+                        <div style={{ marginBottom: "3px" }}>
+                          <strong style={{ color: "#94a3b8" }}>Open Ports: </strong>
+                          {facts.ports.map((p: FactPort, i: number) => (
+                            <span
+                              key={i}
+                              style={{
+                                fontFamily: "var(--font-mono)",
+                                background: "rgba(16, 185, 129, 0.15)",
+                                color: "#34d399",
+                                padding: "1px 4px",
+                                borderRadius: "3px",
+                                marginRight: "4px",
+                                fontSize: "10px",
+                              }}
+                            >
+                              {p.port}/{p.service || "unknown"}
+                            </span>
+                          ))}
+                        </div>
+                      )}
+                      {facts.endpoints && facts.endpoints.length > 0 && (
+                        <div style={{ marginBottom: "3px" }}>
+                          <strong style={{ color: "#94a3b8" }}>Endpoints: </strong>
+                          {facts.endpoints.slice(0, 4).map((e: FactEndpoint, i: number) => (
+                            <span
+                              key={i}
+                              style={{
+                                fontFamily: "var(--font-mono)",
+                                background: "rgba(56, 189, 248, 0.15)",
+                                color: "#38bdf8",
+                                padding: "1px 4px",
+                                borderRadius: "3px",
+                                marginRight: "4px",
+                                fontSize: "10px",
+                              }}
+                            >
+                              {e.path || e.url || "endpoint"} [{e.status || 200}]
+                            </span>
+                          ))}
+                          {facts.endpoints.length > 4 && (
+                            <span style={{ color: "var(--text-muted)", fontSize: "10px" }}>
+                              +{facts.endpoints.length - 4} more
+                            </span>
+                          )}
+                        </div>
+                      )}
+                      {facts.vulnerabilities && facts.vulnerabilities.length > 0 && (
+                        <div style={{ marginBottom: "3px" }}>
+                          <strong style={{ color: "#fca5a5" }}>Vulnerabilities: </strong>
+                          {facts.vulnerabilities.map((v: FactVuln, i: number) => (
+                            <span
+                              key={i}
+                              style={{
+                                fontFamily: "var(--font-mono)",
+                                background: "rgba(244, 63, 94, 0.2)",
+                                color: "#fca5a5",
+                                padding: "1px 4px",
+                                borderRadius: "3px",
+                                marginRight: "4px",
+                                fontSize: "10px",
+                              }}
+                            >
+                              {v.id || v.type || "vuln"}
+                            </span>
+                          ))}
+                        </div>
+                      )}
+                      {summaryText && (
+                        <div style={{ color: "#cbd5e1", fontSize: "11px", marginTop: "4px" }}>
+                          {summaryText}
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
+              );
+            })()}
+
             {/* Why This Tool Breakdown Panel */}
             <WhyThisToolPanel
               toolId={selectedNode.assigned_tool || `${selectedNode.capability}.v1`}
@@ -729,6 +1063,19 @@ export default function TaskGraphView({
               onClick={() => setSelectedNode(null)}
             >
               ✕ Close
+            </button>
+            <button
+              className="quick-btn"
+              style={{
+                fontSize: "10px",
+                padding: "3px 8px",
+                background: "rgba(6, 182, 212, 0.2)",
+                borderColor: "var(--accent-cyan)",
+                color: "#67e8f9",
+              }}
+              onClick={() => handleExecuteSingleNode(selectedNode.node_id)}
+            >
+              ▶ Run Cognitive Loop
             </button>
             <div style={{ display: "flex", gap: "4px" }}>
               <button

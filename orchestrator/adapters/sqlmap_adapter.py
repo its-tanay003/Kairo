@@ -92,7 +92,7 @@ class SqlmapAdapter(ToolAdapter):
                 injection_points[-1]["payload"] = m3.group(1).strip()
 
             # DBMS detection
-            m4 = re.search(r"back-end DBMS:\s+(.+)", line_stripped, re.I)
+            m4 = re.search(r"(?:the\s+)?back-end DBMS(?:\s+is|:)\s+(.+)", line_stripped, re.I)
             if m4:
                 dbms_detected = m4.group(1).strip()
 
