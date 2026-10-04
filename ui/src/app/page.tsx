@@ -2,6 +2,7 @@
 
 import React, { useEffect, useRef, useState } from "react";
 import TerminalProcessView from "./components/TerminalProcessView";
+import TaskGraphView from "./components/TaskGraphView";
 
 interface EventRecord {
   id?: number;
@@ -119,7 +120,7 @@ export default function Home() {
   const [inputVal, setInputVal] = useState<string>("");
   const [latestEvent, setLatestEvent] = useState<EventRecord | null>(null);
   const [allEvents, setAllEvents] = useState<EventRecord[]>([]);
-  const [activeTab, setActiveTab] = useState<"terminal_process" | "model_center" | "vm_sandbox" | "latest" | "all">("terminal_process");
+  const [activeTab, setActiveTab] = useState<"terminal_process" | "task_graph" | "model_center" | "vm_sandbox" | "latest" | "all">("task_graph");
   const [modelCenter, setModelCenter] = useState<ModelCenterStatus | null>(null);
   const [vmStatus, setVmStatus] = useState<VMStatus | null>(null);
   const [isRollingBack, setIsRollingBack] = useState<boolean>(false);
@@ -809,7 +810,9 @@ export default function Home() {
         <aside className={`inspector-pane ${isTerminalMaximized && activeTab === "terminal_process" ? "maximized-overlay" : ""}`}>
           <div className="inspector-header">
             <h2>
-              {activeTab === "terminal_process"
+              {activeTab === "task_graph"
+                ? "Task Graph (DAG Planner)"
+                : activeTab === "terminal_process"
                 ? "Live Terminal (xterm.js) & Process Tree"
                 : activeTab === "model_center"
                 ? "Model Center (Phase 4 Manager)"
@@ -818,6 +821,18 @@ export default function Home() {
                 : "SQLite Event Store Inspector"}
             </h2>
             <div style={{ display: "flex", gap: "6px", flexWrap: "wrap" }}>
+              <button
+                className={`quick-btn ${activeTab === "task_graph" ? "" : "secondary"}`}
+                style={{
+                  padding: "3px 8px",
+                  fontSize: "11px",
+                  borderColor: activeTab === "task_graph" ? "var(--accent-cyan)" : undefined,
+                  background: activeTab === "task_graph" ? "rgba(6, 182, 212, 0.15)" : undefined,
+                }}
+                onClick={() => setActiveTab("task_graph")}
+              >
+                🕸️ Task Graph (DAG)
+              </button>
               <button
                 className={`quick-btn ${activeTab === "terminal_process" ? "" : "secondary"}`}
                 style={{
@@ -862,7 +877,14 @@ export default function Home() {
           </div>
 
           <div className="inspector-content">
-            {activeTab === "terminal_process" ? (
+            {activeTab === "task_graph" ? (
+              <div style={{ height: "calc(100vh - 190px)", minHeight: "560px", display: "flex", flexDirection: "column" }}>
+                <TaskGraphView
+                  ws={socket || wsRef.current}
+                  activeSessionId={sessionId}
+                />
+              </div>
+            ) : activeTab === "terminal_process" ? (
               <div style={{ height: isTerminalMaximized ? "calc(100vh - 120px)" : "calc(100vh - 190px)", minHeight: "560px", display: "flex", flexDirection: "column" }}>
                 <TerminalProcessView
                   ws={socket || wsRef.current}

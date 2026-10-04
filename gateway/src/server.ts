@@ -224,6 +224,34 @@ const server = http.createServer(async (req, res) => {
     }
   }
 
+  // Planner routes: /planner/decompose, /planner/plans, /planner/plans/:id, /planner/plans/:id/nodes/:nid/status, /planner/plans/:id/ready
+  if (url.pathname.startsWith("/planner")) {
+    try {
+      if (req.method === "GET") {
+        const response = await fetch(`${ORCHESTRATOR_URL}${url.pathname}${url.search}`);
+        const data = await response.json();
+        res.writeHead(response.status, { "Content-Type": "application/json" });
+        res.end(JSON.stringify(data));
+        return;
+      } else if (req.method === "POST") {
+        const body = await parseJsonBody(req);
+        const response = await fetch(`${ORCHESTRATOR_URL}${url.pathname}`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(body),
+        });
+        const data = await response.json();
+        res.writeHead(response.status, { "Content-Type": "application/json" });
+        res.end(JSON.stringify(data));
+        return;
+      }
+    } catch (err: any) {
+      res.writeHead(502, { "Content-Type": "application/json" });
+      res.end(JSON.stringify({ error: `Planner Proxy error: ${err.message}` }));
+      return;
+    }
+  }
+
   res.writeHead(404, { "Content-Type": "application/json" });
   res.end(JSON.stringify({ error: "Not Found" }));
 });
@@ -754,6 +782,94 @@ wss.on("connection", (ws: WebSocket, req) => {
             JSON.stringify({
               type: "error",
               error: `Failed to rollback VM: ${err.message}`,
+            })
+          );
+        }
+        return;
+      }
+
+      // Planner: Decompose goal into DAG
+      if (payload.type === "planner_decompose") {
+        try {
+          const response = await fetch(`${ORCHESTRATOR_URL}/planner/decompose`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              goal: payload.goal,
+              session_id: payload.sessionId || sessionId,
+              prefer_llm: payload.prefer_llm !== false,
+            }),
+          });
+          const plan = (await response.json()) as any;
+          ws.send(
+            JSON.stringify({
+              type: "planner_plan_created",
+              plan,
+              timestamp: new Date().toISOString(),
+            })
+          );
+        } catch (err: any) {
+          ws.send(
+            JSON.stringify({
+              type: "error",
+              error: `Planner decomposition failed: ${err.message}`,
+            })
+          );
+        }
+        return;
+      }
+
+      // Planner: Fetch specific plan
+      if (payload.type === "get_plan") {
+        try {
+          const planId = payload.planId || payload.plan_id;
+          const response = await fetch(`${ORCHESTRATOR_URL}/planner/plans/${planId}`);
+          const plan = (await response.json()) as any;
+          ws.send(
+            JSON.stringify({
+              type: "planner_plan_details",
+              plan,
+              timestamp: new Date().toISOString(),
+            })
+          );
+        } catch (err: any) {
+          ws.send(
+            JSON.stringify({
+              type: "error",
+              error: `Failed to fetch plan: ${err.message}`,
+            })
+          );
+        }
+        return;
+      }
+
+      // Planner: Update node status
+      if (payload.type === "update_plan_node") {
+        try {
+          const planId = payload.planId || payload.plan_id;
+          const nodeId = payload.nodeId || payload.node_id;
+          const response = await fetch(`${ORCHESTRATOR_URL}/planner/plans/${planId}/nodes/${nodeId}/status`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              status: payload.status,
+              result: payload.result,
+              assigned_tool: payload.assigned_tool,
+            }),
+          });
+          const plan = (await response.json()) as any;
+          ws.send(
+            JSON.stringify({
+              type: "planner_plan_updated",
+              plan,
+              timestamp: new Date().toISOString(),
+            })
+          );
+        } catch (err: any) {
+          ws.send(
+            JSON.stringify({
+              type: "error",
+              error: `Failed to update plan node: ${err.message}`,
             })
           );
         }

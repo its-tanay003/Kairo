@@ -25,9 +25,14 @@ from events.db import (
     get_artifacts_by_task,
     get_artifact_by_id,
     verify_artifact_file,
+    get_plan,
+    list_plans,
+    update_node_status,
+    get_ready_nodes,
 )
 from orchestrator.agent import AgentLoop
 from orchestrator.model_center import model_center
+from orchestrator.planner import planner
 from orchestrator.process_supervisor import supervisor
 from orchestrator.vm_manager import vm_manager
 
@@ -85,6 +90,17 @@ class ArtifactVerifyRequest(BaseModel):
     expected_sha256: Optional[str] = None
     artifact_id: Optional[int] = None
 
+
+class PlanDecomposeRequest(BaseModel):
+    goal: str
+    session_id: Optional[str] = None
+    prefer_llm: Optional[bool] = True
+
+
+class PlanNodeStatusRequest(BaseModel):
+    status: str
+    result: Optional[Any] = None
+    assigned_tool: Optional[str] = None
 
 
 @app.get("/health")
@@ -360,7 +376,58 @@ def vm_kill(task_id: str):
     return vm_manager.kill_task_in_vm(task_id)
 
 
+# Planner Endpoints: DAG Decomposition, Graph Query, and Node Status Updates
+@app.post("/planner/decompose")
+def planner_decompose(req: PlanDecomposeRequest):
+    """Decomposes a natural language goal into a validated DAG plan stored in the event store."""
+    if not req.goal or not req.goal.strip():
+        raise HTTPException(status_code=400, detail="Missing required 'goal'")
+    plan = planner.decompose(goal=req.goal, session_id=req.session_id, prefer_llm=req.prefer_llm)
+    return plan
+
+
+@app.get("/planner/plans")
+def list_planner_plans(limit: int = 20):
+    """Lists recent task graph plans."""
+    return {"plans": list_plans(limit=limit, db_path=agent.db_path)}
+
+
+@app.get("/planner/plans/{plan_id}")
+def get_planner_plan(plan_id: str):
+    """Retrieves a specific task graph DAG with its nodes and execution statuses."""
+    plan = get_plan(plan_id, db_path=agent.db_path)
+    if not plan:
+        raise HTTPException(status_code=404, detail=f"Plan '{plan_id}' not found")
+    return plan
+
+
+@app.post("/planner/plans/{plan_id}/nodes/{node_id}/status")
+def update_planner_node_status(plan_id: str, node_id: str, req: PlanNodeStatusRequest):
+    """Updates status for a specific DAG node (queued, running, success, warning, failed)."""
+    valid_statuses = ("queued", "running", "success", "warning", "failed")
+    if req.status not in valid_statuses:
+        raise HTTPException(status_code=400, detail=f"Status must be one of {valid_statuses}")
+    ok = update_node_status(
+        plan_id=plan_id,
+        node_id=node_id,
+        status=req.status,
+        result=req.result,
+        assigned_tool=req.assigned_tool,
+        db_path=agent.db_path,
+    )
+    if not ok:
+        raise HTTPException(status_code=404, detail=f"Node '{node_id}' in plan '{plan_id}' not found")
+    return get_plan(plan_id, db_path=agent.db_path)
+
+
+@app.get("/planner/plans/{plan_id}/ready")
+def get_planner_ready_nodes(plan_id: str):
+    """Returns all queued nodes whose dependencies are satisfied and ready for parallel execution."""
+    ready = get_ready_nodes(plan_id, db_path=agent.db_path)
+    return {"plan_id": plan_id, "ready_count": len(ready), "ready_nodes": ready}
+
 
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run("orchestrator.server:app", host="127.0.0.1", port=8000, reload=False)
+

@@ -313,3 +313,34 @@ Actively enforced on both host and inside the guest worker agent:
 - **Cryptographic Hashing**: Every captured output is hashed with SHA-256 in 64KB chunks.
 - **SQLite Persistence**: Stored in the `artifacts` table (`task_id`, `filename`, `filepath`, `size_bytes`, `sha256`, `mime_type`, `created_at`) and referenced in `events.artifact_refs`.
 - **Integrity Verification**: `POST /artifacts/verify` endpoint verifies on-disk file contents against stored SHA-256 checksums, flagging any post-capture tampering.
+
+---
+
+## Autonomous Planner & Task Graph (DAG) Engine
+
+The Planner decomposes a high-level natural language goal into a Directed Acyclic Graph (DAG) of abstract capabilities stored in the event store and rendered interactively in the UI.
+
+### Architectural Differentiation: DAG vs. Linear Chains
+
+| Dimension | PentestGPT | HexStrike | Kairo DAG Planner |
+| :--- | :--- | :--- | :--- |
+| **Execution Topology** | Single-agent sequential ReAct loop (`tool -> obs -> tool`) | Fixed linear pipeline (`recon -> scan -> exploit -> report`) | **Directed Acyclic Graph (DAG)** with topological concurrency |
+| **Parallel Execution** | No (strictly serial) | No (strictly sequential stages) | **Yes**: independent recon axes run concurrently (`dependencies: []`) |
+| **Branch Convergence** | None | Rigid single-stream | **Multi-parent convergence**: correlation waits on multiple parallel branches |
+| **Capability Abstraction** | Binds directly to bash commands | Pre-selected fixed tool scripts | **Abstract capabilities** (`network_port_scan`, `web_directory_enum`), tool agnostic |
+| **Cycle Prevention** | None (prone to infinite loops) | Hardcoded stages | **Kahn's algorithm validation** rejecting cycles at plan generation time |
+
+### Schema & Event Store Persistence
+
+Task graphs and capability nodes are stored in SQLite (`events/events.db`):
+- **`task_graphs` Table**: `(plan_id, session_id, goal, status, created_at, updated_at, node_count, edge_count, metadata)`
+- **`task_nodes` Table**: `(plan_id, node_id, capability, label, description, dependencies, status, result, assigned_tool, started_at, completed_at)`
+- **Node Statuses**: `queued` ➔ `running` ➔ `success` / `warning` / `failed`
+
+### Planner API Endpoints
+
+- `POST /planner/decompose`: Decomposes goal into validated DAG plan via local LLM or domain template fallback.
+- `GET /planner/plans`: Lists recent task graph plans.
+- `GET /planner/plans/{plan_id}`: Retrieves DAG with node statuses and topological depth layers.
+- `POST /planner/plans/{plan_id}/nodes/{node_id}/status`: Updates execution status of a specific node.
+- `GET /planner/plans/{plan_id}/ready`: Queries unblocked nodes whose prerequisites have all completed successfully.

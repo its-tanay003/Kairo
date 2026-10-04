@@ -44,3 +44,39 @@ CREATE TABLE IF NOT EXISTS artifacts (
 CREATE INDEX IF NOT EXISTS idx_artifacts_task_id ON artifacts(task_id);
 CREATE INDEX IF NOT EXISTS idx_artifacts_sha256 ON artifacts(sha256);
 
+CREATE TABLE IF NOT EXISTS task_graphs (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    plan_id TEXT UNIQUE NOT NULL,
+    session_id TEXT NOT NULL,
+    goal TEXT NOT NULL,
+    status TEXT NOT NULL DEFAULT 'queued',
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL,
+    node_count INTEGER NOT NULL DEFAULT 0,
+    edge_count INTEGER NOT NULL DEFAULT 0,
+    metadata TEXT
+);
+
+CREATE INDEX IF NOT EXISTS idx_task_graphs_plan_id ON task_graphs(plan_id);
+CREATE INDEX IF NOT EXISTS idx_task_graphs_session_id ON task_graphs(session_id);
+
+CREATE TABLE IF NOT EXISTS task_nodes (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    plan_id TEXT NOT NULL,
+    node_id TEXT NOT NULL,
+    capability TEXT NOT NULL,
+    label TEXT NOT NULL,
+    description TEXT,
+    dependencies TEXT NOT NULL DEFAULT '[]',
+    status TEXT NOT NULL DEFAULT 'queued',
+    started_at TEXT,
+    completed_at TEXT,
+    result TEXT,
+    assigned_tool TEXT,
+    created_at TEXT NOT NULL,
+    UNIQUE(plan_id, node_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_task_nodes_plan_id ON task_nodes(plan_id);
+CREATE INDEX IF NOT EXISTS idx_task_nodes_status ON task_nodes(status);
+
