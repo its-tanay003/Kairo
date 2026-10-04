@@ -99,6 +99,19 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
+  if (url.pathname === "/model-center" || url.pathname === "/models") {
+    try {
+      const response = await fetch(`${ORCHESTRATOR_URL}/model-center`);
+      const data = await response.json();
+      res.writeHead(200, { "Content-Type": "application/json" });
+      res.end(JSON.stringify(data));
+    } catch (err: any) {
+      res.writeHead(502, { "Content-Type": "application/json" });
+      res.end(JSON.stringify({ error: "Failed to connect to orchestrator model-center", details: err.message }));
+    }
+    return;
+  }
+
   if (url.pathname === "/events") {
     try {
       const response = await fetch(`${ORCHESTRATOR_URL}/events`);
@@ -364,6 +377,28 @@ wss.on("connection", (ws: WebSocket, req) => {
             JSON.stringify({
               type: "error",
               error: `Failed to fetch events: ${err.message}`,
+            })
+          );
+        }
+        return;
+      }
+
+      if (payload.type === "get_model_center" || payload.type === "model_center") {
+        try {
+          const response = await fetch(`${ORCHESTRATOR_URL}/model-center`);
+          const data = (await response.json()) as any;
+          ws.send(
+            JSON.stringify({
+              type: "model_center_status",
+              data,
+              timestamp: new Date().toISOString(),
+            })
+          );
+        } catch (err: any) {
+          ws.send(
+            JSON.stringify({
+              type: "error",
+              error: `Failed to fetch model center status: ${err.message}`,
             })
           );
         }

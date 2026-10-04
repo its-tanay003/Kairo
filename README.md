@@ -118,19 +118,40 @@ The Orchestrator wires to a local LLM running in `llama-server` mode with GBNF g
 
 2. **Model Swapping**:
    - Initialized with quantized `Qwen2.5-0.5B-Instruct-Q4_K_M.gguf` for sub-500ms plumbing verification.
-   - Ready for `Qwen3-Coder-30B-A3B-Instruct` in Task 0.4 by pointing `-m` to the model file.
+   - Configured with `Qwen3-Coder-30B-A3B-Instruct` (MoE 30B, 3.3B active parameters) for production coding and fallback verification model.
+
+3. **Model Center & Runtime Configuration (`models.yaml`)**:
+   - Model config file ([models.yaml](file:///c:/New%20Volume%20%28D%29/dev/models.yaml)) tracks:
+     - `model_id`: `Qwen3-Coder-30B-A3B-Instruct` (Primary) & `Qwen2.5-0.5B-Instruct` (Fallback)
+     - `runtime`: `llama.cpp`
+     - `quantization`: `Q4_K_M`
+     - `context_length`: `32768` tokens (32K)
+     - `role`: `fallback` / `primary`
+   - Real-time status endpoint `/model-center` (orchestrator + gateway proxy) reporting:
+     - Currently loaded model and active role
+     - Context limit (tokens)
+     - GPU VRAM metrics (`total_mb`, `used_mb`, `free_mb`, `utilization_pct`) via `nvidia-smi`
+     - Host system RAM metrics via Windows `GlobalMemoryStatusEx`
+     - Model catalog definitions
+   - Next.js Phase 4 Model Manager UI panel displaying live telemetry gauges, active model cards, and catalog.
 
 ---
 
 ## Quickstart
 
-### Automated End-to-End Verification Test
+### Automated End-to-End Verification Tests
 
-Run the automated test script to verify `llama-server`, `orchestrator`, `gateway`, WebSocket communication, grammar-constrained model output, and SQLite storage:
+1. **Verify Model Center & Telemetry**:
 
-```bash
-python test_boundary.py
-```
+   ```bash
+   python test_model_center.py
+   ```
+
+2. **Verify Full Monorepo Boundary**:
+
+   ```bash
+   python test_boundary.py
+   ```
 
 ### Running Services Manually
 

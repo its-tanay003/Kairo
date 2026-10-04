@@ -18,6 +18,7 @@ from pydantic import BaseModel
 
 from events.db import get_events_by_session, get_recent_events
 from orchestrator.agent import AgentLoop
+from orchestrator.model_center import model_center
 from orchestrator.process_supervisor import supervisor
 
 app = FastAPI(title="Agent Orchestrator Service", version="1.0.0")
@@ -58,6 +59,12 @@ def health():
         "registered_tools": [t.id for t in agent.registry.list_tools()],
         "active_processes": len(supervisor.list_active()),
     }
+
+
+@app.get("/model-center")
+def get_model_center_status():
+    """Reports which model is currently loaded, VRAM/RAM usage, and context length."""
+    return model_center.get_status(llama_url=agent.llama_client.base_url)
 
 
 @app.post("/run")
