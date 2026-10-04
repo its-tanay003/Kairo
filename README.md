@@ -103,30 +103,59 @@ sequenceDiagram
 
 ---
 
+## Local Model Plumbing (`llama.cpp` Server Mode)
+
+The Orchestrator wires to a local LLM running in `llama-server` mode with GBNF grammar-constrained generation:
+
+1. **Grammar & Schema Constraint**:
+   - Uses `build_tool_call_json_schema` from [orchestrator/schema_gen.py](file:///c:/New%20Volume%20%28D%29/dev/orchestrator/schema_gen.py).
+   - Constrains output structurally to either:
+     - `action: "message"` with plain text `content`
+     - `action: "tool_call"` with `tool_id` (strictly constrained to registered tools) and `arguments`.
+   - Constrained at the token sampling level by `llama.cpp`'s internal GBNF grammar converter, making malformed outputs structurally impossible.
+
+2. **Model Swapping**:
+   - Initialized with quantized `Qwen2.5-0.5B-Instruct-Q4_K_M.gguf` for sub-500ms plumbing verification.
+   - Ready for `Qwen3-Coder-30B-A3B-Instruct` in Task 0.4 by pointing `-m` to the model file.
+
+---
+
 ## Quickstart
 
 ### Automated End-to-End Verification Test
-Run the automated test script to launch services, dispatch a WebSocket message, write an event, and verify the SQLite schema:
+
+Run the automated test script to verify `llama-server`, `orchestrator`, `gateway`, WebSocket communication, grammar-constrained model output, and SQLite storage:
+
 ```bash
 python test_boundary.py
 ```
 
 ### Running Services Manually
 
-#### Terminal 1: Orchestrator
+#### Terminal 1: Llama Server (Local Model)
+
+```bash
+llama-server -m models/qwen2.5-0.5b-instruct-q4_k_m.gguf --host 127.0.0.1 --port 8080 -c 2048 -ngl 99
+```
+
+#### Terminal 2: Orchestrator
+
 ```bash
 python -m uvicorn orchestrator.server:app --host 127.0.0.1 --port 8000
 ```
 
-#### Terminal 2: Session Gateway
+#### Terminal 3: Session Gateway
+
 ```bash
 cd gateway
 npm run dev
 ```
 
-#### Terminal 3: UI
+#### Terminal 4: UI
+
 ```bash
 cd ui
 npm run dev
 ```
+
 Open [http://localhost:3000](http://localhost:3000) in your browser.

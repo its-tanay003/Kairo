@@ -58,7 +58,7 @@ export default function Home() {
 
   // Connect WebSocket
   useEffect(() => {
-    let reconnectTimeout: any;
+    let reconnectTimeout: ReturnType<typeof setTimeout> | undefined;
 
     function connect() {
       setWsStatus("connecting");
@@ -171,15 +171,13 @@ export default function Home() {
     );
   };
 
-  const loadPastEvents = async () => {
+  const refreshEvents = async () => {
     try {
       const res = await fetch("http://localhost:8000/events");
       const data = await res.json();
       if (data.events) {
         setAllEvents(data.events);
-        if (data.events.length > 0 && !latestEvent) {
-          setLatestEvent(data.events[0]);
-        }
+        setLatestEvent((prev) => prev || (data.events.length > 0 ? data.events[0] : null));
       }
     } catch (e) {
       console.error("Failed to fetch past events", e);
@@ -187,7 +185,20 @@ export default function Home() {
   };
 
   useEffect(() => {
-    loadPastEvents();
+    let ignore = false;
+    fetch("http://localhost:8000/events")
+      .then((res) => res.json())
+      .then((data) => {
+        if (!ignore && data.events) {
+          setAllEvents(data.events);
+          setLatestEvent((prev) => prev || (data.events.length > 0 ? data.events[0] : null));
+        }
+      })
+      .catch((err) => console.error("Failed to fetch past events", err));
+
+    return () => {
+      ignore = true;
+    };
   }, []);
 
   return (
@@ -203,6 +214,10 @@ export default function Home() {
         </div>
 
         <div className="status-badges">
+          <div className="status-chip" style={{ borderColor: "rgba(16, 185, 129, 0.4)" }}>
+            <span className="dot connected" />
+            <span>llama.cpp: Qwen (GBNF)</span>
+          </div>
           <div className="status-chip">
             <span className={`dot ${wsStatus}`} />
             <span>Gateway WS: {wsStatus}</span>
@@ -220,21 +235,28 @@ export default function Home() {
           <div className="action-bar">
             <button
               className="quick-btn"
-              onClick={() => sendMessage("Hello World")}
+              onClick={() => sendMessage("Please execute hello_world tool for Tanay")}
               disabled={wsStatus !== "connected"}
             >
-              🚀 Verify Boundary (Hello World)
+              ⚡ Tool Call: hello_world
             </button>
             <button
               className="quick-btn secondary"
-              onClick={() => sendMessage("Ping system status")}
+              onClick={() => sendMessage("Run system ping diagnostic")}
               disabled={wsStatus !== "connected"}
             >
-              📡 Ping System Diagnostic
+              📡 Tool Call: system_ping
             </button>
             <button
               className="quick-btn secondary"
-              onClick={loadPastEvents}
+              onClick={() => sendMessage("Hello! What is your role as an assistant?")}
+              disabled={wsStatus !== "connected"}
+            >
+              💬 Chat Message (No Tool)
+            </button>
+            <button
+              className="quick-btn secondary"
+              onClick={refreshEvents}
             >
               🔄 Refresh Events
             </button>

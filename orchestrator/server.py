@@ -43,6 +43,10 @@ def health():
     return {
         "status": "healthy",
         "service": "orchestrator",
+        "llama_cpp": {
+            "healthy": agent.llama_client.is_healthy(),
+            "url": agent.llama_client.base_url,
+        },
         "registered_tools": [t.id for t in agent.registry.list_tools()],
     }
 
