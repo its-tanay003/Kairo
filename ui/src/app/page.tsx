@@ -4,6 +4,7 @@ import React, { useEffect, useRef, useState } from "react";
 import TerminalProcessView from "./components/TerminalProcessView";
 import TaskGraphView from "./components/TaskGraphView";
 import WhyThisToolPanel, { ToolSelectionResult } from "./components/WhyThisToolPanel";
+import ScopeContractChip from "./components/ScopeContractChip";
 
 interface EventRecord {
   id?: number;
@@ -225,6 +226,18 @@ export default function Home() {
                 timestamp: new Date().toLocaleTimeString(),
               },
             ]);
+          } else if (data.type === "scope_violation") {
+            setActiveTaskId(null);
+            setMessages((prev) => [
+              ...prev,
+              {
+                id: `msg_${Date.now()}_scope_err`,
+                sender: "system",
+                text: `⛔ [GATEWAY SCOPE CONTRACT VIOLATION] Execution Blocked!\nTool: ${data.tool || "unknown"}${data.target ? ` | Target: ${data.target}` : ""}\nReason: ${data.reason}`,
+                timestamp: new Date().toLocaleTimeString(),
+              },
+            ]);
+            refreshEvents();
           } else if (data.type === "vm_status") {
             setVmStatus(data.status);
           } else if (data.type === "vm_snapshot_created") {
@@ -531,6 +544,9 @@ export default function Home() {
         </div>
 
         <div className="status-badges">
+          {/* Persistent Scope Contract Chip */}
+          <ScopeContractChip />
+
           <div className="status-chip" style={{ borderColor: "rgba(16, 185, 129, 0.4)" }}>
             <span className="dot connected" />
             <span>

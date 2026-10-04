@@ -20,7 +20,16 @@ if str(ROOT_DIR) not in sys.path:
     sys.path.insert(0, str(ROOT_DIR))
 
 from dataclasses import asdict
-from events.db import Event, insert_event, init_db, record_tool_execution, get_tool_memory
+from events.db import (
+    Event,
+    insert_event,
+    init_db,
+    record_tool_execution,
+    get_tool_memory,
+    validate_scope_request,
+    extract_host_from_target,
+    seed_default_scope_contract,
+)
 from registry.loader import ToolRegistry, ToolSpec
 from orchestrator.llama_client import LlamaCppClient
 from orchestrator.models import LLMResponse
@@ -42,6 +51,7 @@ class AgentLoop:
         self.llama_client = LlamaCppClient(base_url=llama_url)
         self.supervisor = supervisor
         init_db(self.db_path)
+        seed_default_scope_contract(self.db_path)
 
     def execute_task(
         self,
@@ -104,6 +114,79 @@ class AgentLoop:
         if tool_id:
             spec: Optional[ToolSpec] = self.registry.get(tool_id)
             tool_version = spec.version if spec else "1.0.0"
+
+            # Scope Contract Enforcement:
+            # Execution gateway must reject any tool call whose target or tier falls outside active Scope Contract
+            target_candidate = None
+            if isinstance(requested_args, dict):
+                for k in ("target", "host", "url", "domain", "ip", "filepath", "rhost", "rhosts"):
+                    if requested_args.get(k):
+                        target_candidate = str(requested_args[k]).strip()
+                        break
+                if not target_candidate and "args" in requested_args and isinstance(requested_args["args"], list):
+                    for a in requested_args["args"]:
+                        sa = str(a).strip()
+                        if any(c in sa for c in [".", ":", "/"]) and not sa.startswith("-"):
+                            clean_a = extract_host_from_target(sa)
+                            if clean_a and not clean_a.endswith((".py", ".sh", ".json")):
+                                target_candidate = clean_a
+                                break
+
+            # Also check prompt for explicit IPs or domain names if target_candidate is not found
+            if not target_candidate:
+                import re
+                ip_match = re.search(r'\b(?:\d{1,3}\.){3}\d{1,3}(?:/\d{1,2})?\b', message)
+                if ip_match:
+                    target_candidate = ip_match.group(0)
+
+            scope_check = validate_scope_request(target=target_candidate, tool_id=tool_id, db_path=self.db_path)
+            if not scope_check.get("authorized", False):
+                rejection_reason = scope_check.get("reason", "Scope violation detected by execution gateway.")
+                logger.warning(f"[ScopeGuard] Rejected tool call '{tool_id}' on target '{target_candidate}': {rejection_reason}")
+
+                # The execution gateway MUST log the rejection as an event
+                rejection_event = Event.create(
+                    session_id=session_id,
+                    task_id=task_id,
+                    actor="gateway:scope_guard",
+                    tool_id=tool_id,
+                    tool_version=tool_version,
+                    requested_args=requested_args,
+                    exit_code=403,
+                    result_summary=f"SCOPE_REJECTION: {rejection_reason}",
+                    confidence=0.0,
+                    network_context={
+                        "target": target_candidate,
+                        "tool_tier": scope_check.get("tool_tier"),
+                        "scope_contract_id": scope_check.get("scope_contract_id"),
+                        "rejection_reason": rejection_reason,
+                        "authorized": False,
+                    },
+                )
+                rejection_event_id = insert_event(rejection_event, self.db_path)
+
+                return {
+                    "status": "rejected",
+                    "authorized": False,
+                    "error": "SCOPE_VIOLATION",
+                    "reply": f"⛔ Execution Gateway Rejected Tool '{tool_id}':\n{rejection_reason}",
+                    "scope_violation": {
+                        "reason": rejection_reason,
+                        "scope_contract_id": scope_check.get("scope_contract_id"),
+                        "target": target_candidate,
+                        "tool_id": tool_id,
+                        "tool_tier": scope_check.get("tool_tier"),
+                    },
+                    "tool_executed": {
+                        "id": tool_id,
+                        "name": spec.name if spec else tool_id,
+                        "version": tool_version,
+                    },
+                    "event_id": rejection_event_id,
+                    "event": asdict(rejection_event),
+                    "tool_selection": tool_selection_data,
+                    "duration_ms": 0,
+                }
 
             stdout_output = ""
             stderr_output: Optional[str] = None

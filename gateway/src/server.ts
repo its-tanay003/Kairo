@@ -280,6 +280,34 @@ const server = http.createServer(async (req, res) => {
     }
   }
 
+  // Scope Contract routes: /scope/active, /scope/contract, /scope/contracts, /scope/validate
+  if (url.pathname.startsWith("/scope")) {
+    try {
+      if (req.method === "GET") {
+        const response = await fetch(`${ORCHESTRATOR_URL}${url.pathname}${url.search}`);
+        const data = await response.json();
+        res.writeHead(response.status, { "Content-Type": "application/json" });
+        res.end(JSON.stringify(data));
+        return;
+      } else if (req.method === "POST") {
+        const body = await parseJsonBody(req);
+        const response = await fetch(`${ORCHESTRATOR_URL}${url.pathname}`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(body),
+        });
+        const data = await response.json();
+        res.writeHead(response.status, { "Content-Type": "application/json" });
+        res.end(JSON.stringify(data));
+        return;
+      }
+    } catch (err: any) {
+      res.writeHead(502, { "Content-Type": "application/json" });
+      res.end(JSON.stringify({ error: `Scope Proxy error: ${err.message}` }));
+      return;
+    }
+  }
+
   res.writeHead(404, { "Content-Type": "application/json" });
   res.end(JSON.stringify({ error: "Not Found" }));
 });
@@ -500,6 +528,71 @@ wss.on("connection", (ws: WebSocket, req) => {
         return;
       }
 
+      // Scope Contract WebSocket Handlers
+      if (payload.type === "get_scope" || payload.type === "get_active_scope") {
+        try {
+          const resp = await fetch(`${ORCHESTRATOR_URL}/scope/active`);
+          const data = await resp.json();
+          ws.send(
+            JSON.stringify({
+              type: "active_scope_contract",
+              contract: data,
+              timestamp: new Date().toISOString(),
+            })
+          );
+        } catch (err: any) {
+          ws.send(JSON.stringify({ type: "error", error: `Failed to fetch active scope: ${err.message}` }));
+        }
+        return;
+      }
+
+      if (payload.type === "create_scope" || payload.type === "update_scope") {
+        try {
+          const resp = await fetch(`${ORCHESTRATOR_URL}/scope/contract`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(payload.contract || payload),
+          });
+          const data = await resp.json();
+          const updateMsg = JSON.stringify({
+            type: "scope_contract_updated",
+            contract: data,
+            timestamp: new Date().toISOString(),
+          });
+          for (const s of sessions.values()) {
+            if (s.ws.readyState === WebSocket.OPEN) s.ws.send(updateMsg);
+          }
+        } catch (err: any) {
+          ws.send(JSON.stringify({ type: "error", error: `Failed to create scope contract: ${err.message}` }));
+        }
+        return;
+      }
+
+      if (payload.type === "validate_scope") {
+        try {
+          const resp = await fetch(`${ORCHESTRATOR_URL}/scope/validate`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              target: payload.target,
+              tool_id: payload.tool_id || payload.tool,
+              tool_tier: payload.tool_tier,
+            }),
+          });
+          const data = await resp.json();
+          ws.send(
+            JSON.stringify({
+              type: "scope_validation_result",
+              result: data,
+              timestamp: new Date().toISOString(),
+            })
+          );
+        } catch (err: any) {
+          ws.send(JSON.stringify({ type: "error", error: `Scope validation failed: ${err.message}` }));
+        }
+        return;
+      }
+
       // Execute in Kali with live terminal streaming: { type: "kali_exec", command: "...", args: [...], taskId: "..." }
       if (payload.type === "kali_exec") {
         const taskId = payload.taskId || `task_kali_${randomUUID().slice(0, 8)}`;
@@ -508,6 +601,45 @@ wss.on("connection", (ws: WebSocket, req) => {
         const cwd = payload.cwd || "/home/kali";
         const timeoutMs = payload.timeout_ms || 30000;
         const snapshotBefore = Boolean(payload.snapshot_before);
+
+        // Scope check for Tier 3 Kali Execution
+        try {
+          let kaliTarget: string | undefined = undefined;
+          if (Array.isArray(args)) {
+            for (const a of args) {
+              const sa = String(a).trim();
+              if ((sa.includes(".") || sa.includes("/")) && !sa.startsWith("-") && !sa.endsWith(".sh")) {
+                kaliTarget = sa;
+                break;
+              }
+            }
+          }
+          const scopeResp = await fetch(`${ORCHESTRATOR_URL}/scope/validate`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ target: kaliTarget, tool_id: "kali.exec.v1", tool_tier: 3 }),
+          });
+          const scopeVal = (await scopeResp.json()) as any;
+          if (scopeVal && scopeVal.authorized === false) {
+            ws.send(
+              JSON.stringify({
+                type: "scope_violation",
+                sessionId,
+                taskId,
+                tool: "kali.exec.v1",
+                toolTier: 3,
+                target: kaliTarget,
+                error: "SCOPE_VIOLATION",
+                reason: scopeVal.reason,
+                scopeContractId: scopeVal.scope_contract_id,
+                timestamp: new Date().toISOString(),
+              })
+            );
+            return;
+          }
+        } catch (e: any) {
+          console.warn("[Gateway] Scope check warning in kali_exec:", e.message);
+        }
 
         ws.send(
           JSON.stringify({
@@ -605,6 +737,54 @@ wss.on("connection", (ws: WebSocket, req) => {
           return;
         }
 
+        // Scope Contract validation: Gateway MUST reject if outside active Scope Contract
+        try {
+          let toolTarget: string | undefined =
+            toolArgs.target ||
+            toolArgs.host ||
+            toolArgs.url ||
+            toolArgs.domain ||
+            toolArgs.ip ||
+            toolArgs.filepath ||
+            toolArgs.rhost ||
+            toolArgs.rhosts;
+
+          if (!toolTarget && Array.isArray(toolArgs.args)) {
+            for (const a of toolArgs.args) {
+              const sa = String(a).trim();
+              if ((sa.includes(".") || sa.includes("/")) && !sa.startsWith("-") && !sa.endsWith(".py") && !sa.endsWith(".sh")) {
+                toolTarget = sa;
+                break;
+              }
+            }
+          }
+
+          const scopeResp = await fetch(`${ORCHESTRATOR_URL}/scope/validate`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ target: toolTarget, tool_id: toolId }),
+          });
+          const scopeVal = (await scopeResp.json()) as any;
+          if (scopeVal && scopeVal.authorized === false) {
+            ws.send(
+              JSON.stringify({
+                type: "scope_violation",
+                sessionId: customSessionId,
+                taskId,
+                tool: toolId,
+                target: toolTarget,
+                error: "SCOPE_VIOLATION",
+                reason: scopeVal.reason,
+                scopeContractId: scopeVal.scope_contract_id,
+                timestamp: new Date().toISOString(),
+              })
+            );
+            return;
+          }
+        } catch (e: any) {
+          console.warn("[Gateway] Scope validation warning for tool_call:", e.message);
+        }
+
         ws.send(
           JSON.stringify({
             type: "status",
@@ -612,7 +792,7 @@ wss.on("connection", (ws: WebSocket, req) => {
             sessionId: customSessionId,
             taskId,
             tool: toolId,
-            text: `Gateway validated ${toolId} schema. Executing via orchestrator...`,
+            text: `Gateway validated ${toolId} scope & schema. Executing via orchestrator...`,
           })
         );
 

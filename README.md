@@ -378,3 +378,54 @@ Per the architecture's memory model, `reliability_history` is persisted globally
 - Displays selectable tabs for the **Top 3 Evaluated Candidates** (`#1`, `#2`, `#3`).
 - Visual progress bars for all 7 factors with percentage badges, weighted contribution points, and raw empirical signals.
 - Inferred argument preview detailing synthesized CLI flags and target addresses.
+
+---
+
+## 9. Scope Contract: Cryptographic Authorization Boundary & Execution Gateway Gate
+
+Kairo implements the blueprint's **"Authorization Context"** as a visible, enforceable, first-class security feature: **no task graph node or tool call can execute without a cryptographically signed, unexpired Scope Contract**.
+
+### Scope Contract Schema & HMAC-SHA256 Signing
+
+A Scope Contract is a signed JSON object stored in the SQLite event store (`scope_contracts` table):
+
+```json
+{
+  "contract_id": "scope_8b417c2f0d91",
+  "targets": ["127.0.0.1", "192.168.1.0/24", "lab.internal", "*.corp.local"],
+  "network_scope": "authorized_lab",
+  "time_window": "8h",
+  "allowed_tool_tiers": [1, 2, 3],
+  "authorized_by": "secops_lead@kairo.internal",
+  "created_at": "2026-10-04T18:00:00Z",
+  "expires_at": "2026-10-05T02:00:00Z",
+  "signature": "e7b8f9c1d2e3...",
+  "is_active": true
+}
+```
+
+- **HMAC-SHA256 Digital Signature**: Computed over canonical, sorted-key JSON representation of `{ targets, network_scope, time_window, allowed_tool_tiers, authorized_by, created_at, expires_at }`. Any tampering with authorized targets, tiers, or timestamps immediately invalidates the signature.
+- **CIDR Subnet & Wildcard Domain Validation**: Supports exact IPs (`192.168.1.50`), IPv4/IPv6 subnets (`192.168.1.0/24`), exact hosts (`localhost`), and wildcard domains (`*.corp.local`).
+
+### Tool Authorization Tiers
+
+Every security tool is strictly categorized into three risk tiers:
+
+| Tier | Category | Risk Profile | Permitted Tools |
+| :--- | :--- | :--- | :--- |
+| **Tier 1** | **Passive Reconnaissance / OSINT** | Zero active network traffic to target. Offline or registry lookups. | `whois.lookup.v1`, `dig.lookup.v1`, `exiftool.extract.v1`, `hashid.identify.v1`, `searchsploit.search.v1`, `system_ping`, `hello_world` |
+| **Tier 2** | **Active Scanning & Enumeration** | Controlled network probes, port discovery, and service enumeration. | `nmap.scan.v1`, `gobuster.dir.v1`, `ffuf.fuzz.v1`, `whatweb.scan.v1`, `nikto.scan.v1`, `tcpdump.capture.v1` |
+| **Tier 3** | **Intrusive Testing & Remote Execution** | Automated exploitation, brute-forcing, injection, or arbitrary guest shell execution. | `sqlmap.scan.v1`, `hydra.brute.v1`, `metasploit.rpc.v1`, `kali.exec.v1`, `shell.run.v1` |
+
+### Execution Gateway Enforcement & Audit Event Logging
+
+- **Mandatory Gateway Check**: Before dispatching any tool (`tool_call`, `kali_exec`, `/run`, or task graph node), the gateway extracts the target and evaluates it against `is_target_in_scope()` and `get_tool_tier()`.
+- **Hard Rejection**: If the target is out of scope or the tool tier exceeds permitted tiers, the execution gateway immediately rejects the request with HTTP 403 / `SCOPE_VIOLATION`.
+- **Audit Logging**: The gateway logs a structured event in `events.db` (`actor: "gateway:scope_guard"`, `exit_code: 403`, `result_summary: "SCOPE_REJECTION: ..."`).
+- **Task Graph Execution Gating**: Task graph DAGs (`/planner/plans/{id}/execute`) are blocked if no valid, unexpired, signed contract exists.
+
+### Persistent UI Header Chip & Inspection Modal
+
+- **Always Visible**: Positioned prominently in the top header (`🛡️ Scope: 192.168.1.0/24 (+4) | Tiers [1,2,3] | ⏳ 7h 42m remaining (secops_lead) [HMAC-SHA256 ✓]`).
+- **Live Countdown Timer**: Updates every second, alerting operators to expiring shifts.
+- **Interactive Modal**: Clicking the chip opens the Scope Contract Inspector where operators can review the raw HMAC signature, modify target subnets, change network scope zones, adjust allowed tool tiers, or execute one-click shift renewal (+8h).

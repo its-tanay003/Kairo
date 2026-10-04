@@ -33,6 +33,14 @@ from events.db import (
     list_tool_memories,
     get_tool_memory,
     record_tool_execution,
+    ScopeContract,
+    create_scope_contract,
+    get_active_scope_contract,
+    list_scope_contracts,
+    seed_default_scope_contract,
+    validate_scope_request,
+    get_tool_tier,
+    is_target_in_scope,
 )
 from orchestrator.agent import AgentLoop
 from orchestrator.model_center import model_center
@@ -117,6 +125,21 @@ class ToolSelectRequest(BaseModel):
     top_k: Optional[int] = 3
     environment: Optional[Dict[str, Any]] = None
     budget: Optional[float] = None
+
+
+class ScopeContractCreateRequest(BaseModel):
+    targets: List[str]
+    network_scope: str = "authorized_lab"
+    time_window: str = "8h"
+    allowed_tool_tiers: List[int] = [1, 2, 3]
+    authorized_by: str = "secops_lead@kairo.internal"
+    metadata: Optional[Dict[str, Any]] = None
+
+
+class ScopeValidateRequest(BaseModel):
+    target: Optional[str] = None
+    tool_id: Optional[str] = None
+    tool_tier: Optional[int] = None
 
 
 @app.get("/health")
@@ -485,6 +508,176 @@ def get_tools_memory_endpoint():
 def get_single_tool_memory_endpoint(tool_id: str):
     """Returns reliability and performance memory for a single tool."""
     return get_tool_memory(tool_id, agent.db_path)
+
+
+# ==============================================================================
+# SCOPE CONTRACT ENDPOINTS & TASK GRAPH EXECUTION GATING
+# ==============================================================================
+
+@app.get("/scope/active")
+def get_active_scope_endpoint():
+    """Returns the currently active Scope Contract or seeds default if none exists."""
+    contract = get_active_scope_contract(agent.db_path)
+    if not contract or contract.get("is_expired"):
+        contract = seed_default_scope_contract(agent.db_path)
+    return contract
+
+
+@app.post("/scope/contract")
+def create_scope_contract_endpoint(req: ScopeContractCreateRequest):
+    """Creates, cryptographically signs, and activates a new Scope Contract."""
+    if not req.targets:
+        raise HTTPException(status_code=400, detail="Scope Contract must specify at least one target or CIDR subnet")
+    if not req.allowed_tool_tiers:
+        raise HTTPException(status_code=400, detail="Scope Contract must allow at least one tool tier [1, 2, or 3]")
+
+    contract = create_scope_contract(
+        targets=req.targets,
+        network_scope=req.network_scope,
+        time_window=req.time_window,
+        allowed_tool_tiers=req.allowed_tool_tiers,
+        authorized_by=req.authorized_by,
+        metadata=req.metadata,
+        db_path=agent.db_path,
+    )
+    return contract
+
+
+@app.get("/scope/contracts")
+def list_scope_contracts_endpoint(limit: int = 10):
+    """Returns historical Scope Contracts and their signature status."""
+    return {"contracts": list_scope_contracts(limit=limit, db_path=agent.db_path)}
+
+
+@app.post("/scope/validate")
+def validate_scope_endpoint(req: ScopeValidateRequest):
+    """Validates target and tool tier against active Scope Contract."""
+    res = validate_scope_request(
+        target=req.target,
+        tool_id=req.tool_id,
+        tool_tier=req.tool_tier,
+        db_path=agent.db_path,
+    )
+    return res
+
+
+@app.post("/planner/plans/{plan_id}/execute")
+def execute_task_graph_endpoint(plan_id: str):
+    """
+    Executes a task graph DAG.
+    MANDATORY GATE: Requires an unexpired, cryptographically signed Scope Contract before any task graph can execute.
+    """
+    contract = get_active_scope_contract(agent.db_path)
+    if not contract:
+        contract = seed_default_scope_contract(agent.db_path)
+
+    # 1. Signature Integrity Verification
+    if not contract.get("signature_valid", False):
+        rejection_event = Event.create(
+            session_id="plan_exec",
+            task_id=f"plan_exec_{plan_id}",
+            actor="gateway:scope_guard",
+            exit_code=403,
+            result_summary="SCOPE_REJECTION: Task graph execution blocked. Active Scope Contract signature is invalid or tampered.",
+            confidence=0.0,
+            network_context={"plan_id": plan_id, "authorized": False, "reason": "INVALID_SIGNATURE"},
+        )
+        insert_event(rejection_event, agent.db_path)
+        raise HTTPException(
+            status_code=403,
+            detail="Scope Contract signature is invalid or contract has been tampered with. Task graph execution blocked.",
+        )
+
+    # 2. Expiration Verification
+    if contract.get("is_expired", False) or contract.get("seconds_remaining", 0) <= 0:
+        rejection_event = Event.create(
+            session_id="plan_exec",
+            task_id=f"plan_exec_{plan_id}",
+            actor="gateway:scope_guard",
+            exit_code=403,
+            result_summary=f"SCOPE_REJECTION: Task graph execution blocked. Active Scope Contract expired at {contract.get('expires_at')}.",
+            confidence=0.0,
+            network_context={"plan_id": plan_id, "authorized": False, "reason": "EXPIRED_CONTRACT"},
+        )
+        insert_event(rejection_event, agent.db_path)
+        raise HTTPException(
+            status_code=403,
+            detail=f"Active Scope Contract expired at {contract.get('expires_at')}. Renew contract before executing task graph.",
+        )
+
+    plan = get_plan(plan_id, db_path=agent.db_path)
+    if not plan:
+        raise HTTPException(status_code=404, detail=f"Plan '{plan_id}' not found")
+
+    ready_nodes = get_ready_nodes(plan_id, db_path=agent.db_path)
+    executed_nodes = []
+
+    for node in ready_nodes:
+        node_id = node["node_id"]
+        # Select best tool for capability
+        sel = tool_selector.select(
+            goal=f"Execute capability: {node['capability']} - {node.get('label', '')}",
+            required_capability=node["capability"],
+            session_id=plan.get("session_id", "plan_session"),
+            top_k=1,
+        )
+        chosen_tool = sel.selected_tool.tool_id
+        tool_tier = get_tool_tier(chosen_tool)
+
+        # Validate tool tier against Scope Contract
+        if tool_tier not in contract.get("allowed_tool_tiers", []):
+            reason_msg = f"Blocked by Scope Contract: Tool '{chosen_tool}' is Tier {tool_tier}, outside authorized tiers {contract.get('allowed_tool_tiers')}"
+            update_node_status(
+                plan_id=plan_id,
+                node_id=node_id,
+                status="failed",
+                result=reason_msg,
+                assigned_tool=chosen_tool,
+                db_path=agent.db_path,
+            )
+            rejection_event = Event.create(
+                session_id=plan.get("session_id", "plan_session"),
+                task_id=f"{plan_id}_{node_id}",
+                actor="gateway:scope_guard",
+                tool_id=chosen_tool,
+                exit_code=403,
+                result_summary=f"SCOPE_REJECTION: Node {node_id} blocked. Tool tier {tool_tier} not permitted.",
+                confidence=0.0,
+                network_context={"plan_id": plan_id, "node_id": node_id, "tool_tier": tool_tier, "authorized": False},
+            )
+            insert_event(rejection_event, agent.db_path)
+            executed_nodes.append({"node_id": node_id, "tool": chosen_tool, "status": "failed", "error": reason_msg})
+            continue
+
+        # Execute node
+        update_node_status(plan_id=plan_id, node_id=node_id, status="running", assigned_tool=chosen_tool, db_path=agent.db_path)
+        res = agent.execute_task(
+            session_id=plan.get("session_id", "plan_session"),
+            message=f"Execute capability '{node['capability']}' with {chosen_tool}",
+            task_id=f"{plan_id}_{node_id}",
+            explicit_tool=chosen_tool,
+            explicit_args=sel.selected_tool.inferred_args,
+        )
+        status = "failed" if (res.get("status") == "rejected" or res.get("error")) else "success"
+        update_node_status(
+            plan_id=plan_id,
+            node_id=node_id,
+            status=status,
+            result=res.get("reply", "Executed"),
+            assigned_tool=chosen_tool,
+            db_path=agent.db_path,
+        )
+        executed_nodes.append({"node_id": node_id, "tool": chosen_tool, "status": status, "result": res})
+
+    return {
+        "status": "executed",
+        "plan_id": plan_id,
+        "authorized_by": contract.get("authorized_by"),
+        "scope_contract_id": contract.get("contract_id"),
+        "executed_count": len(executed_nodes),
+        "executed_nodes": executed_nodes,
+        "updated_plan": get_plan(plan_id, db_path=agent.db_path),
+    }
 
 
 if __name__ == "__main__":

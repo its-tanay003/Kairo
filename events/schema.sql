@@ -96,4 +96,19 @@ CREATE TABLE IF NOT EXISTS tool_memory (
 
 CREATE INDEX IF NOT EXISTS idx_tool_memory_reliability ON tool_memory(reliability_score);
 
+-- Scope Contracts: Cryptographically signed authorization boundaries for targets and tool tiers
+CREATE TABLE IF NOT EXISTS scope_contracts (
+    contract_id TEXT PRIMARY KEY,
+    targets TEXT NOT NULL,            -- JSON array of authorized targets / CIDRs
+    network_scope TEXT NOT NULL,      -- e.g. 'authorized_lab', 'internal', 'staging'
+    time_window TEXT NOT NULL,        -- e.g. '4h', '24h'
+    allowed_tool_tiers TEXT NOT NULL, -- JSON array of ints e.g. [1, 2]
+    authorized_by TEXT NOT NULL,      -- Sign-off identity
+    created_at TEXT NOT NULL,
+    expires_at TEXT NOT NULL,
+    signature TEXT NOT NULL,          -- HMAC-SHA256 digital signature
+    is_active INTEGER NOT NULL DEFAULT 1,
+    metadata TEXT
+);
 
+CREATE INDEX IF NOT EXISTS idx_scope_contracts_active ON scope_contracts(is_active, expires_at);

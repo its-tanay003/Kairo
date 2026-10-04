@@ -24,13 +24,17 @@ Fields:
 """
 
 import hashlib
+import hmac
+import ipaddress
 import json
 import os
 import sqlite3
+import uuid
 from dataclasses import asdict, dataclass
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 from pathlib import Path
 from typing import Any, Dict, List, Optional
+from urllib.parse import urlparse
 
 DEFAULT_DB_PATH = Path(__file__).resolve().parent / "events.db"
 SCHEMA_PATH = Path(__file__).resolve().parent / "schema.sql"
@@ -814,6 +818,495 @@ def record_tool_execution(
 
     conn.close()
     return updated_rec
+
+
+# ==============================================================================
+# SCOPE CONTRACT STORE & AUTHORIZATION GATEWAY
+# ==============================================================================
+
+KAIRO_SCOPE_SECRET = os.environ.get("KAIRO_SCOPE_SECRET", "kairo_scope_auth_secret_v1")
+
+# Standardized tool tier classifications:
+# Tier 1: Passive Reconnaissance / OSINT / Local metadata / Non-intrusive lookup
+# Tier 2: Active Scanning / Probing / Fuzzing / Port enumeration / Network capture
+# Tier 3: Intrusive Testing / Exploitation / Brute-forcing / Arbitrary remote execution
+TOOL_TIER_MAPPING: Dict[str, int] = {
+    # Tier 1
+    "whois.lookup.v1": 1,
+    "dig.lookup.v1": 1,
+    "exiftool.extract.v1": 1,
+    "hashid.identify.v1": 1,
+    "searchsploit.search.v1": 1,
+    "dns_lookup": 1,
+    "system_ping": 1,
+    "hello_world": 1,
+
+    # Tier 2
+    "nmap.scan.v1": 2,
+    "gobuster.dir.v1": 2,
+    "ffuf.fuzz.v1": 2,
+    "whatweb.scan.v1": 2,
+    "nikto.scan.v1": 2,
+    "tcpdump.capture.v1": 2,
+
+    # Tier 3
+    "sqlmap.scan.v1": 3,
+    "hydra.brute.v1": 3,
+    "metasploit.rpc.v1": 3,
+    "kali.exec.v1": 3,
+    "shell.run.v1": 3,
+    "vm_execute": 3,
+    "raw_command": 3,
+}
+
+
+@dataclass
+class ScopeContract:
+    contract_id: str
+    targets: List[str]
+    network_scope: str
+    time_window: str
+    allowed_tool_tiers: List[int]
+    authorized_by: str
+    created_at: str
+    expires_at: str
+    signature: str
+    is_active: bool = True
+    metadata: Optional[Dict[str, Any]] = None
+
+    def to_dict(self) -> Dict[str, Any]:
+        return {
+            "contract_id": self.contract_id,
+            "targets": self.targets,
+            "network_scope": self.network_scope,
+            "time_window": self.time_window,
+            "allowed_tool_tiers": self.allowed_tool_tiers,
+            "authorized_by": self.authorized_by,
+            "created_at": self.created_at,
+            "expires_at": self.expires_at,
+            "signature": self.signature,
+            "is_active": self.is_active,
+            "metadata": self.metadata or {},
+        }
+
+
+def get_tool_tier(tool_id: str) -> int:
+    """Returns the authorization tier (1, 2, or 3) for a given tool identifier."""
+    if not tool_id:
+        return 1
+    t_lower = tool_id.lower().strip()
+    if t_lower in TOOL_TIER_MAPPING:
+        return TOOL_TIER_MAPPING[t_lower]
+    # Keyword inference fallback
+    if any(k in t_lower for k in ["exploit", "brute", "sqlmap", "hydra", "metasploit", "shell", "exec", "payload"]):
+        return 3
+    if any(k in t_lower for k in ["scan", "fuzz", "probe", "nmap", "gobuster", "nikto", "enum", "tcpdump"]):
+        return 2
+    return 1
+
+
+def canonical_scope_payload(data: Dict[str, Any]) -> str:
+    """Produces deterministically ordered JSON representation of core scope fields for HMAC signing."""
+    targets = data.get("targets") or []
+    if isinstance(targets, str):
+        try:
+            targets = json.loads(targets)
+        except Exception:
+            targets = [targets]
+    tiers = data.get("allowed_tool_tiers") or []
+    if isinstance(tiers, str):
+        try:
+            tiers = json.loads(tiers)
+        except Exception:
+            tiers = [int(tiers)]
+
+    core = {
+        "allowed_tool_tiers": sorted([int(t) for t in tiers]),
+        "authorized_by": str(data.get("authorized_by") or "").strip(),
+        "created_at": str(data.get("created_at") or "").strip(),
+        "expires_at": str(data.get("expires_at") or "").strip(),
+        "network_scope": str(data.get("network_scope") or "").strip(),
+        "targets": sorted([str(t).strip().lower() for t in targets]),
+        "time_window": str(data.get("time_window") or "").strip(),
+    }
+    return json.dumps(core, sort_keys=True, separators=(",", ":"))
+
+
+def generate_scope_signature(data: Dict[str, Any], secret_key: str = KAIRO_SCOPE_SECRET) -> str:
+    """Generates an HMAC-SHA256 signature for the canonical scope contract payload."""
+    payload = canonical_scope_payload(data)
+    return hmac.new(secret_key.encode("utf-8"), payload.encode("utf-8"), hashlib.sha256).hexdigest()
+
+
+def verify_scope_signature(data: Dict[str, Any], secret_key: str = KAIRO_SCOPE_SECRET) -> bool:
+    """Verifies that the HMAC-SHA256 signature matches the canonical scope content."""
+    sig = data.get("signature", "")
+    if not sig:
+        return False
+    expected = generate_scope_signature(data, secret_key)
+    return hmac.compare_digest(str(sig).strip(), str(expected).strip())
+
+
+def parse_time_window_seconds(time_window: str) -> int:
+    """Parses time window strings (e.g. '8h', '4h', '30m', '1d', '24h') into seconds."""
+    s = str(time_window).strip().lower()
+    if s.endswith("h"):
+        return int(float(s[:-1]) * 3600)
+    elif s.endswith("m"):
+        return int(float(s[:-1]) * 60)
+    elif s.endswith("d"):
+        return int(float(s[:-1]) * 86400)
+    elif s.endswith("s"):
+        return int(float(s[:-1]))
+    try:
+        return int(s)
+    except ValueError:
+        return 8 * 3600
+
+
+def extract_host_from_target(target: str) -> str:
+    """Normalizes a target URL, CIDR, or host string into a clean host or IP."""
+    if not target:
+        return ""
+    t = str(target).strip()
+    if t.startswith(("http://", "https://", "ftp://", "ssh://")):
+        parsed = urlparse(t)
+        host = parsed.hostname or parsed.netloc or ""
+        return host.split(":")[0].strip().lower()
+    # If host:port format without slash
+    if ":" in t and "/" not in t and not t.startswith("["):
+        t = t.split(":")[0]
+    return t.strip().lower()
+
+
+def is_target_in_scope(target: str, allowed_targets: List[str]) -> bool:
+    """
+    Checks whether the target is strictly permitted by the active Scope Contract.
+    Supports:
+    - Hostnames / domains ('localhost', 'example.com')
+    - Wildcard domains ('*.domain.internal')
+    - IPv4 / IPv6 addresses
+    - IPv4 / IPv6 Subnet CIDR containment (e.g. '192.168.1.45' in '192.168.1.0/24')
+    """
+    if not target:
+        return True
+    
+    clean_target = extract_host_from_target(target)
+    if not clean_target:
+        return True
+
+    target_ip = None
+    try:
+        target_ip = ipaddress.ip_address(clean_target)
+    except ValueError:
+        pass
+
+    for allowed in allowed_targets:
+        if not allowed:
+            continue
+        allowed_clean = str(allowed).strip().lower()
+
+        # 1. Exact string match
+        if clean_target == allowed_clean:
+            return True
+
+        # 2. Domain wildcard match
+        if allowed_clean.startswith("*."):
+            suffix = allowed_clean[1:]  # e.g. .internal
+            if clean_target.endswith(suffix):
+                return True
+        elif allowed_clean.startswith("."):
+            if clean_target.endswith(allowed_clean):
+                return True
+
+        # 3. IP / Subnet CIDR match
+        if target_ip is not None:
+            try:
+                net = ipaddress.ip_network(allowed_clean, strict=False)
+                if target_ip in net:
+                    return True
+            except ValueError:
+                pass
+        else:
+            # Target is a hostname; allowed might be exact host without scheme
+            if clean_target == allowed_clean.split("/")[0]:
+                return True
+
+    return False
+
+
+def create_scope_contract(
+    targets: List[str],
+    network_scope: str,
+    time_window: str,
+    allowed_tool_tiers: List[int],
+    authorized_by: str,
+    metadata: Optional[Dict[str, Any]] = None,
+    secret_key: str = KAIRO_SCOPE_SECRET,
+    db_path: Path | str = DEFAULT_DB_PATH,
+) -> Dict[str, Any]:
+    """
+    Creates and cryptographically signs a new Scope Contract, activating it in the event store.
+    Any previously active contracts are automatically deactivated.
+    """
+    init_db(db_path)
+    now = datetime.now(timezone.utc)
+    seconds = parse_time_window_seconds(time_window)
+    expires = now + timedelta(seconds=seconds)
+    created_at_iso = now.isoformat()
+    expires_at_iso = expires.isoformat()
+    contract_id = f"scope_{uuid.uuid4().hex[:12]}"
+
+    clean_targets = [str(t).strip().lower() for t in targets]
+    clean_tiers = sorted(list({int(t) for t in allowed_tool_tiers}))
+
+    payload_data = {
+        "contract_id": contract_id,
+        "targets": clean_targets,
+        "network_scope": network_scope.strip(),
+        "time_window": time_window.strip(),
+        "allowed_tool_tiers": clean_tiers,
+        "authorized_by": authorized_by.strip(),
+        "created_at": created_at_iso,
+        "expires_at": expires_at_iso,
+    }
+    signature = generate_scope_signature(payload_data, secret_key)
+
+    conn = get_connection(db_path)
+    with conn:
+        cursor = conn.cursor()
+        cursor.execute("UPDATE scope_contracts SET is_active = 0 WHERE is_active = 1")
+        cursor.execute(
+            """
+            INSERT INTO scope_contracts (
+                contract_id, targets, network_scope, time_window,
+                allowed_tool_tiers, authorized_by, created_at, expires_at,
+                signature, is_active, metadata
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?)
+            """,
+            (
+                contract_id,
+                json.dumps(clean_targets),
+                network_scope.strip(),
+                time_window.strip(),
+                json.dumps(clean_tiers),
+                authorized_by.strip(),
+                created_at_iso,
+                expires_at_iso,
+                signature,
+                json.dumps(metadata or {}),
+            ),
+        )
+    conn.close()
+
+    result = {
+        **payload_data,
+        "signature": signature,
+        "is_active": True,
+        "metadata": metadata or {},
+        "seconds_remaining": seconds,
+        "is_expired": False,
+        "signature_valid": True,
+    }
+    return result
+
+
+def get_active_scope_contract(db_path: Path | str = DEFAULT_DB_PATH) -> Optional[Dict[str, Any]]:
+    """Retrieves the currently active Scope Contract, including live validity and signature verification."""
+    init_db(db_path)
+    conn = get_connection(db_path)
+    cursor = conn.cursor()
+    cursor.execute(
+        """
+        SELECT * FROM scope_contracts
+        WHERE is_active = 1
+        ORDER BY created_at DESC
+        LIMIT 1
+        """
+    )
+    row = cursor.fetchone()
+    conn.close()
+    if not row:
+        return None
+    d = dict(row)
+    d["targets"] = json.loads(d["targets"]) if isinstance(d["targets"], str) else d["targets"]
+    d["allowed_tool_tiers"] = json.loads(d["allowed_tool_tiers"]) if isinstance(d["allowed_tool_tiers"], str) else d["allowed_tool_tiers"]
+    d["metadata"] = json.loads(d["metadata"]) if d.get("metadata") else {}
+    d["is_active"] = bool(d.get("is_active", 0))
+
+    try:
+        exp_dt = datetime.fromisoformat(d["expires_at"].replace("Z", "+00:00"))
+        now_dt = datetime.now(timezone.utc)
+        rem = int((exp_dt - now_dt).total_seconds())
+        d["seconds_remaining"] = max(0, rem)
+        d["is_expired"] = rem <= 0
+    except Exception:
+        d["seconds_remaining"] = 0
+        d["is_expired"] = True
+
+    d["signature_valid"] = verify_scope_signature(d)
+    return d
+
+
+def seed_default_scope_contract(db_path: Path | str = DEFAULT_DB_PATH) -> Dict[str, Any]:
+    """Ensures an active, valid Scope Contract exists. Seeds a default authorized lab contract if none exists."""
+    active = get_active_scope_contract(db_path)
+    if active and not active.get("is_expired") and active.get("signature_valid"):
+        return active
+
+    return create_scope_contract(
+        targets=[
+            "127.0.0.1",
+            "localhost",
+            "192.168.1.0/24",
+            "192.168.56.0/24",
+            "example.com",
+            "*.internal",
+        ],
+        network_scope="authorized_lab",
+        time_window="8h",
+        allowed_tool_tiers=[1, 2, 3],
+        authorized_by="secops_lead@kairo.internal",
+        metadata={
+            "purpose": "Authorized sandbox and pentest lab operations",
+            "policy_doc": "SEC-POL-AUTH-2026-v4",
+            "auto_seeded": True,
+        },
+        db_path=db_path,
+    )
+
+
+def list_scope_contracts(limit: int = 10, db_path: Path | str = DEFAULT_DB_PATH) -> List[Dict[str, Any]]:
+    """Lists historical scope contracts."""
+    init_db(db_path)
+    conn = get_connection(db_path)
+    cursor = conn.cursor()
+    cursor.execute(
+        """
+        SELECT * FROM scope_contracts
+        ORDER BY created_at DESC
+        LIMIT ?
+        """,
+        (limit,),
+    )
+    rows = cursor.fetchall()
+    conn.close()
+
+    results = []
+    for r in rows:
+        d = dict(r)
+        d["targets"] = json.loads(d["targets"]) if isinstance(d["targets"], str) else d["targets"]
+        d["allowed_tool_tiers"] = json.loads(d["allowed_tool_tiers"]) if isinstance(d["allowed_tool_tiers"], str) else d["allowed_tool_tiers"]
+        d["metadata"] = json.loads(d["metadata"]) if d.get("metadata") else {}
+        d["is_active"] = bool(d.get("is_active", 0))
+        d["signature_valid"] = verify_scope_signature(d)
+        try:
+            exp_dt = datetime.fromisoformat(d["expires_at"].replace("Z", "+00:00"))
+            now_dt = datetime.now(timezone.utc)
+            rem = int((exp_dt - now_dt).total_seconds())
+            d["seconds_remaining"] = max(0, rem)
+            d["is_expired"] = rem <= 0
+        except Exception:
+            d["seconds_remaining"] = 0
+            d["is_expired"] = True
+        results.append(d)
+    return results
+
+
+def validate_scope_request(
+    target: Optional[str] = None,
+    tool_id: Optional[str] = None,
+    tool_tier: Optional[int] = None,
+    db_path: Path | str = DEFAULT_DB_PATH,
+) -> Dict[str, Any]:
+    """
+    Validates a tool invocation request against the currently active Scope Contract.
+    Returns:
+    {
+        "authorized": bool,
+        "reason": str,
+        "scope_contract_id": Optional[str],
+        "active_contract": Optional[Dict],
+        "target": str,
+        "tool_id": str,
+        "tool_tier": int
+    }
+    """
+    contract = get_active_scope_contract(db_path)
+    tier = tool_tier if tool_tier is not None else (get_tool_tier(tool_id) if tool_id else 1)
+
+    if not contract:
+        return {
+            "authorized": False,
+            "reason": "NO_ACTIVE_SCOPE_CONTRACT: Execution rejected because no active Scope Contract was found.",
+            "scope_contract_id": None,
+            "active_contract": None,
+            "target": target,
+            "tool_id": tool_id,
+            "tool_tier": tier,
+        }
+
+    # Verify signature
+    if not contract.get("signature_valid", False):
+        return {
+            "authorized": False,
+            "reason": f"SCOPE_INTEGRITY_VIOLATION: Scope Contract {contract.get('contract_id')} has an invalid signature or has been tampered with.",
+            "scope_contract_id": contract.get("contract_id"),
+            "active_contract": contract,
+            "target": target,
+            "tool_id": tool_id,
+            "tool_tier": tier,
+        }
+
+    # Verify expiration
+    if contract.get("is_expired", False) or contract.get("seconds_remaining", 0) <= 0:
+        return {
+            "authorized": False,
+            "reason": f"SCOPE_EXPIRED: Scope Contract {contract.get('contract_id')} expired at {contract.get('expires_at')}.",
+            "scope_contract_id": contract.get("contract_id"),
+            "active_contract": contract,
+            "target": target,
+            "tool_id": tool_id,
+            "tool_tier": tier,
+        }
+
+    # Verify tool tier
+    allowed_tiers = contract.get("allowed_tool_tiers", [])
+    if tier not in allowed_tiers:
+        return {
+            "authorized": False,
+            "reason": f"TOOL_TIER_EXCEEDED: Tool '{tool_id or 'unknown'}' operates at Tier {tier}, but active Scope Contract only authorizes Tiers {allowed_tiers}.",
+            "scope_contract_id": contract.get("contract_id"),
+            "active_contract": contract,
+            "target": target,
+            "tool_id": tool_id,
+            "tool_tier": tier,
+        }
+
+    # Verify target boundary
+    if target:
+        allowed_targets = contract.get("targets", [])
+        if not is_target_in_scope(target, allowed_targets):
+            return {
+                "authorized": False,
+                "reason": f"OUT_OF_SCOPE_TARGET: Target '{target}' falls outside authorized scope targets: {allowed_targets}.",
+                "scope_contract_id": contract.get("contract_id"),
+                "active_contract": contract,
+                "target": target,
+                "tool_id": tool_id,
+                "tool_tier": tier,
+            }
+
+    return {
+        "authorized": True,
+        "reason": f"Authorized under Scope Contract {contract.get('contract_id')}.",
+        "scope_contract_id": contract.get("contract_id"),
+        "active_contract": contract,
+        "target": target,
+        "tool_id": tool_id,
+        "tool_tier": tier,
+    }
+
 
 
 
