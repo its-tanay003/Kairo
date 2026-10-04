@@ -1,0 +1,118 @@
+id: dig.lookup.v1
+name: DNS Lookup and Enumeration (dig)
+version: 1.0.0
+description: DNS interrogation tool. Supports A, AAAA, MX, TXT, NS, SOA, CNAME, and ANY record queries. Outputs structured DNS records.
+category: recon
+binary: dig
+capabilities:
+  - dns_resolution
+  - dns_record_enumeration
+  - zone_transfer_attempt
+  - reverse_dns_lookup
+
+inputs:
+  type: object
+  properties:
+    target:
+      type: string
+      description: Domain name or IP to query
+    record_type:
+      type: string
+      enum: [A, AAAA, MX, TXT, NS, SOA, CNAME, PTR, ANY, AXFR]
+      description: DNS record type
+      default: "A"
+    server:
+      type: string
+      description: DNS server to query (e.g. @8.8.8.8)
+      default: ""
+    port:
+      type: integer
+      description: DNS server port
+      default: 53
+    timeout:
+      type: integer
+      description: Query timeout in seconds
+      default: 5
+    extra_args:
+      type: array
+      items:
+        type: string
+      default: []
+  required:
+    - target
+
+outputs:
+  type: object
+  properties:
+    target: {type: string}
+    record_type: {type: string}
+    answers:
+      type: array
+      items:
+        type: object
+        properties:
+          name: {type: string}
+          ttl: {type: integer}
+          class: {type: string}
+          type: {type: string}
+          value: {type: string}
+    authority:
+      type: array
+    additional:
+      type: array
+    query_time_ms: {type: integer}
+    server_used: {type: string}
+    status: {type: string}
+
+side_effects:
+  - network_outbound_probes
+  - dns_query
+
+privilege: user
+gui: false
+
+parser:
+  type: dig_text
+  format: dns_text
+
+prerequisites:
+  - dnsutils
+
+docs:
+  summary: Standard DNS lookup returning parsed answer/authority/additional sections.
+  usage: Provide target domain. Use record_type=AXFR for zone transfer attempts.
+  examples:
+    - target: "example.com"
+      record_type: "A"
+    - target: "example.com"
+      record_type: "MX"
+
+success_signals:
+  exit_codes: [0]
+  stdout_contains: ["ANSWER SECTION", "Query time"]
+
+failure_signals:
+  exit_codes: [1, 9]
+  stdout_contains: ["SERVFAIL", "NXDOMAIN", "REFUSED"]
+  timeout: true
+
+rollback:
+  supported: false
+  strategy: none
+
+version_compatibility:
+  min_agent_version: 1.0.0
+  os: [linux, darwin]
+
+timeout_ms: 30000
+parameters:
+  type: object
+  properties:
+    target: {type: string}
+    record_type: {type: string}
+    server: {type: string}
+  required: [target]
+
+metadata:
+  adapter: dig.lookup.v1
+  sandboxed: true

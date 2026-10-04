@@ -1,0 +1,135 @@
+id: nmap.scan.v1
+name: Nmap Network Scanner
+version: 1.0.0
+description: Network exploration and security auditing tool. Runs structured scans with XML output parsed into port/service/script observation objects.
+category: recon
+binary: nmap
+capabilities:
+  - port_scan
+  - service_detection
+  - os_fingerprint
+  - script_scan
+  - network_discovery
+
+inputs:
+  type: object
+  properties:
+    target:
+      type: string
+      description: Target host or CIDR range (e.g. 192.168.56.1, 10.0.0.0/24)
+    ports:
+      type: string
+      description: Port specification (e.g. 22,80,443 or 1-1024 or - for all)
+      default: "1-1024"
+    scan_type:
+      type: string
+      enum: [SV, sS, sT, sU, sA, sN, sX]
+      description: Scan type flag (SV=service, sS=SYN, sT=connect, sU=UDP)
+      default: "sV"
+    scripts:
+      type: string
+      description: NSE script or category (e.g. default, vuln, http-headers)
+      default: ""
+    timing:
+      type: integer
+      minimum: 0
+      maximum: 5
+      description: Timing template (0=paranoid to 5=insane)
+      default: 3
+    extra_args:
+      type: array
+      items:
+        type: string
+      description: Additional raw nmap arguments
+      default: []
+  required:
+    - target
+
+outputs:
+  type: object
+  properties:
+    hosts:
+      type: array
+      items:
+        type: object
+        properties:
+          ip: {type: string}
+          hostname: {type: string}
+          state: {type: string}
+          ports:
+            type: array
+            items:
+              type: object
+              properties:
+                port: {type: integer}
+                protocol: {type: string}
+                state: {type: string}
+                service: {type: string}
+                version: {type: string}
+                scripts: {type: array}
+    scan_stats:
+      type: object
+    xml_artifact:
+      type: string
+      description: Path to raw XML output file artifact
+
+side_effects:
+  - network_outbound_probes
+  - network_scanning
+
+privilege: root
+gui: false
+
+parser:
+  type: nmap_xml
+  format: xml
+  structured: true
+
+prerequisites:
+  - nmap
+
+docs:
+  summary: Industry-standard network scanner. Produces XML output parsed into structured host/port/service observations.
+  usage: Provide target IP/CIDR. Optionally specify ports, scan_type, and NSE scripts.
+  examples:
+    - target: "192.168.56.1"
+      ports: "22,80,443,8080"
+      scan_type: "sV"
+    - target: "10.0.0.0/24"
+      scan_type: "sS"
+      timing: 4
+
+success_signals:
+  exit_codes: [0]
+  stdout_contains: ["Nmap scan report", "Nmap done"]
+
+failure_signals:
+  exit_codes: [1, 2]
+  stderr_contains: ["WARNING", "FAILED"]
+  timeout: true
+
+rollback:
+  supported: false
+  strategy: none
+  note: Read-only scan. No host-side state is modified.
+
+version_compatibility:
+  min_agent_version: 1.0.0
+  os: [linux]
+  binary_min_version: "7.0"
+
+timeout_ms: 120000
+parameters:
+  type: object
+  properties:
+    target: {type: string}
+    ports: {type: string}
+    scan_type: {type: string}
+    scripts: {type: string}
+    timing: {type: integer}
+  required: [target]
+
+metadata:
+  adapter: nmap.scan.v1
+  sandboxed: true
+  produces_xml: true

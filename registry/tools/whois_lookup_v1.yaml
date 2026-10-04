@@ -1,0 +1,99 @@
+id: whois.lookup.v1
+name: WHOIS Domain Lookup
+version: 1.0.0
+description: Queries WHOIS database for domain registration, IP ownership, and registrar information. Parses structured fields from text output.
+category: recon
+binary: whois
+capabilities:
+  - domain_registration_lookup
+  - ip_ownership_lookup
+  - registrar_info
+  - dns_registration_dates
+
+inputs:
+  type: object
+  properties:
+    target:
+      type: string
+      description: Domain name or IP address to look up
+    server:
+      type: string
+      description: WHOIS server to query (optional override)
+      default: ""
+    extra_args:
+      type: array
+      items:
+        type: string
+      default: []
+  required:
+    - target
+
+outputs:
+  type: object
+  properties:
+    domain: {type: string}
+    registrar: {type: string}
+    registrant: {type: string}
+    creation_date: {type: string}
+    expiry_date: {type: string}
+    updated_date: {type: string}
+    name_servers:
+      type: array
+      items: {type: string}
+    status:
+      type: array
+      items: {type: string}
+    emails:
+      type: array
+      items: {type: string}
+    raw_fields: {type: object}
+
+side_effects:
+  - network_outbound_probes
+  - dns_query
+
+privilege: user
+gui: false
+
+parser:
+  type: whois_text
+  format: key_value_text
+
+prerequisites:
+  - whois
+
+docs:
+  summary: WHOIS lookup returning parsed registrar, registrant, and date fields.
+  usage: Provide domain or IP. Parser extracts common fields from text output.
+  examples:
+    - target: "example.com"
+    - target: "192.168.56.1"
+
+success_signals:
+  exit_codes: [0]
+  stdout_contains: ["Domain Name", "Registrar", "Name Server"]
+
+failure_signals:
+  exit_codes: [1]
+  stderr_contains: ["No match", "Connection refused"]
+  timeout: true
+
+rollback:
+  supported: false
+  strategy: none
+
+version_compatibility:
+  min_agent_version: 1.0.0
+  os: [linux, windows, darwin]
+
+timeout_ms: 30000
+parameters:
+  type: object
+  properties:
+    target: {type: string}
+    server: {type: string}
+  required: [target]
+
+metadata:
+  adapter: whois.lookup.v1
+  sandboxed: true

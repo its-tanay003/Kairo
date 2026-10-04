@@ -1,0 +1,106 @@
+id: whatweb.scan.v1
+name: WhatWeb Technology Fingerprinter
+version: 1.0.0
+description: Web technology fingerprinter. Identifies CMS, frameworks, server software, libraries, and versions. Runs with --log-json for structured output.
+category: recon
+binary: whatweb
+capabilities:
+  - technology_fingerprinting
+  - cms_detection
+  - framework_detection
+  - server_software_detection
+
+inputs:
+  type: object
+  properties:
+    url:
+      type: string
+      description: Target URL (e.g. http://192.168.56.1)
+    aggression:
+      type: integer
+      minimum: 1
+      maximum: 4
+      description: Aggression level (1=passive, 4=aggressive)
+      default: 1
+    plugins:
+      type: string
+      description: Comma-separated plugin names to use
+      default: ""
+    proxy:
+      type: string
+      description: Proxy URL (e.g. http://127.0.0.1:8080)
+      default: ""
+    extra_args:
+      type: array
+      items:
+        type: string
+      default: []
+  required:
+    - url
+
+outputs:
+  type: object
+  properties:
+    target:
+      type: string
+    plugins_found:
+      type: array
+      items:
+        type: object
+        properties:
+          name: {type: string}
+          confidence: {type: integer}
+          version: {type: string}
+          string: {type: string}
+    http_status: {type: integer}
+    title: {type: string}
+
+side_effects:
+  - network_outbound_probes
+  - http_requests
+
+privilege: user
+gui: false
+
+parser:
+  type: json
+  format: whatweb_json
+
+prerequisites:
+  - whatweb
+
+docs:
+  summary: Fingerprints web technologies using plugin patterns. Uses --log-json for machine-readable output.
+  usage: Provide target URL. Higher aggression levels send more requests.
+  examples:
+    - url: "http://192.168.56.1"
+      aggression: 1
+
+success_signals:
+  exit_codes: [0]
+  stdout_contains: ["http://", "https://"]
+
+failure_signals:
+  exit_codes: [1]
+  stderr_contains: ["Connection refused", "timeout"]
+  timeout: true
+
+rollback:
+  supported: false
+  strategy: none
+
+version_compatibility:
+  min_agent_version: 1.0.0
+  os: [linux]
+
+timeout_ms: 60000
+parameters:
+  type: object
+  properties:
+    url: {type: string}
+    aggression: {type: integer}
+  required: [url]
+
+metadata:
+  adapter: whatweb.scan.v1
+  sandboxed: true

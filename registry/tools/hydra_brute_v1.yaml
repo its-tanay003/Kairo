@@ -1,0 +1,136 @@
+id: hydra.brute.v1
+name: Hydra Password Brute-Forcer
+version: 1.0.0
+description: Fast parallel network login cracker supporting 50+ protocols. Runs with -o for structured output capture.
+category: exploitation
+binary: hydra
+capabilities:
+  - password_brute_force
+  - credential_testing
+  - multi_protocol_login
+  - dictionary_attack
+
+inputs:
+  type: object
+  properties:
+    target:
+      type: string
+      description: Target hostname or IP
+    protocol:
+      type: string
+      enum: [ssh, ftp, http-get, http-post-form, smb, rdp, telnet, smtp, pop3, imap]
+      description: Protocol to attack
+    port:
+      type: integer
+      description: Target port (defaults to protocol default)
+      default: 0
+    username:
+      type: string
+      description: Single username to test
+      default: ""
+    username_list:
+      type: string
+      description: Path to username wordlist file
+      default: ""
+    password:
+      type: string
+      description: Single password to test
+      default: ""
+    password_list:
+      type: string
+      description: Path to password wordlist file
+      default: "/usr/share/wordlists/rockyou.txt"
+    tasks:
+      type: integer
+      description: Number of parallel tasks
+      default: 4
+    form_params:
+      type: string
+      description: HTTP form parameters for http-post-form (e.g. /login:user=^USER^&pass=^PASS^:Invalid)
+      default: ""
+    stop_on_success:
+      type: boolean
+      description: Stop after first valid credential found
+      default: true
+    extra_args:
+      type: array
+      items:
+        type: string
+      default: []
+  required:
+    - target
+    - protocol
+
+outputs:
+  type: object
+  properties:
+    credentials_found:
+      type: array
+      items:
+        type: object
+        properties:
+          host: {type: string}
+          port: {type: integer}
+          protocol: {type: string}
+          username: {type: string}
+          password: {type: string}
+    total_attempts: {type: integer}
+    success: {type: boolean}
+
+side_effects:
+  - network_outbound_probes
+  - authentication_attempts
+  - potential_account_lockout
+
+privilege: user
+gui: false
+
+parser:
+  type: hydra_text
+  format: text_lines
+
+prerequisites:
+  - hydra
+
+docs:
+  summary: Multi-protocol password brute-forcer with -o output capture and -I initial reconnect.
+  usage: Specify target, protocol, and credential source (username/list + password/list).
+  examples:
+    - target: "192.168.56.1"
+      protocol: ssh
+      username: "root"
+      password_list: "/usr/share/wordlists/rockyou.txt"
+      tasks: 4
+
+success_signals:
+  exit_codes: [0]
+  stdout_contains: ["[DATA] attack finished", "valid password"]
+
+failure_signals:
+  exit_codes: [1]
+  stderr_contains: ["Error", "unable to connect"]
+  timeout: true
+
+rollback:
+  supported: false
+  strategy: none
+  note: Cannot undo authentication attempts. High task counts may trigger account lockout.
+
+version_compatibility:
+  min_agent_version: 1.0.0
+  os: [linux]
+
+timeout_ms: 300000
+parameters:
+  type: object
+  properties:
+    target: {type: string}
+    protocol: {type: string}
+    username: {type: string}
+    password_list: {type: string}
+    tasks: {type: integer}
+  required: [target, protocol]
+
+metadata:
+  adapter: hydra.brute.v1
+  sandboxed: true

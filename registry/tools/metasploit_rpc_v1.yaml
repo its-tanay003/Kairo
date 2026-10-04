@@ -1,0 +1,125 @@
+id: metasploit.rpc.v1
+name: Metasploit Framework JSON-RPC Connector
+version: 1.0.0
+description: Connects to Metasploit's msfrpcd JSON-RPC daemon to run auxiliary/scanner modules and retrieve structured JSON results for 2-3 common recon modules.
+category: exploitation
+binary: internal://msfrpc
+capabilities:
+  - vulnerability_scanning
+  - exploit_execution
+  - auxiliary_scanning
+  - msf_rpc_session
+
+inputs:
+  type: object
+  properties:
+    module:
+      type: string
+      description: "Metasploit module path (e.g. auxiliary/scanner/portscan/tcp)"
+      enum:
+        - auxiliary/scanner/portscan/tcp
+        - auxiliary/scanner/http/http_version
+        - auxiliary/scanner/smb/smb_version
+        - auxiliary/scanner/ssh/ssh_version
+        - auxiliary/scanner/discovery/udp_sweep
+    rhosts:
+      type: string
+      description: Target RHOSTS (IP, CIDR, or range)
+    rport:
+      type: integer
+      description: Target port
+    threads:
+      type: integer
+      description: Number of concurrent threads
+      default: 4
+    options:
+      type: object
+      description: Additional module options as key-value pairs
+      default: {}
+    rpc_host:
+      type: string
+      description: msfrpcd host
+      default: "127.0.0.1"
+    rpc_port:
+      type: integer
+      description: msfrpcd port
+      default: 55553
+    rpc_pass:
+      type: string
+      description: msfrpcd password
+      default: "msf"
+  required:
+    - module
+    - rhosts
+
+outputs:
+  type: object
+  properties:
+    module_run_id:
+      type: string
+    results:
+      type: array
+      description: Per-host module results
+    session_token:
+      type: string
+    error:
+      type: string
+
+side_effects:
+  - network_outbound_probes
+  - msf_rpc_connection
+
+privilege: root
+gui: false
+
+parser:
+  type: json
+  format: msfrpc_response
+
+prerequisites:
+  - metasploit-framework
+  - msfrpcd running
+
+docs:
+  summary: Connects to Metasploit msfrpcd daemon via msgpack/JSON-RPC, runs a named auxiliary module, and returns structured scan results.
+  usage: Ensure msfrpcd is running ('msfrpcd -P msf -S -a 127.0.0.1'). Then specify module path and RHOSTS.
+  examples:
+    - module: auxiliary/scanner/portscan/tcp
+      rhosts: "192.168.56.1"
+      rport: 80
+    - module: auxiliary/scanner/http/http_version
+      rhosts: "192.168.56.1"
+
+success_signals:
+  exit_codes: [0]
+  stdout_contains: ["result", "completed"]
+
+failure_signals:
+  exit_codes: [1]
+  stderr_contains: ["connection refused", "auth", "error"]
+  timeout: true
+
+rollback:
+  supported: false
+  strategy: none
+  note: Module results are read-only. Exploit modules should be run separately with snapshot isolation.
+
+version_compatibility:
+  min_agent_version: 1.0.0
+  os: [linux]
+  metasploit_min: "6.0"
+
+timeout_ms: 90000
+parameters:
+  type: object
+  properties:
+    module: {type: string}
+    rhosts: {type: string}
+    rport: {type: integer}
+    threads: {type: integer}
+  required: [module, rhosts]
+
+metadata:
+  adapter: metasploit.rpc.v1
+  sandboxed: true
+  rpc_protocol: msgpack

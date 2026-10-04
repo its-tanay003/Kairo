@@ -245,3 +245,45 @@ Host (Windows)                              Kali Linux Guest VM (VirtualBox / NA
 ```bash
 python test_vm_sandbox.py
 ```
+
+---
+
+## ToolSpec Engine & Tier 1 / Tier 2 Security Tool Adapters
+
+### 16-Field Blueprint ToolSpec Schema Validation
+
+Every tool specification in `registry/tools/` is strictly validated at load time against a JSON Schema enforcing the blueprint specification:
+- `id`, `binary`, `category`, `capabilities`, `inputs`, `outputs`
+- `side_effects`, `privilege`, `gui`, `parser`, `prerequisites`, `docs`
+- `success_signals`, `failure_signals`, `rollback`, `version_compatibility`
+
+Invalid or malformed specifications are rejected at load time prior to registration.
+
+### Supported Starter Tool Adapters & Parsers
+
+| Tool ID | Binary | Category | Tier / Strategy | Structured Observation Output |
+| :--- | :--- | :--- | :--- | :--- |
+| `nmap.scan.v1` | `nmap` | `recon` | Tier 1 (XML) | Parsed hosts, addresses, ports, services, scripts |
+| `metasploit.rpc.v1` | `msfconsole` | `exploitation` | Tier 1 (RPC) | Module results, sessions, loot, job status |
+| `gobuster.dir.v1` | `gobuster` | `web` | Tier 2 (CLI) | Status codes, paths, content lengths, redirects |
+| `ffuf.fuzz.v1` | `ffuf` | `web` | Tier 2 (JSON) | URLs, HTTP status, words, lines, sizes |
+| `nikto.scan.v1` | `nikto` | `web` | Tier 2 (CSV/CLI) | Vulnerability items, OSVDB IDs, HTTP methods |
+| `whatweb.scan.v1` | `whatweb` | `recon` | Tier 2 (JSON) | Technologies, server banners, CMS, plugins |
+| `sqlmap.scan.v1` | `sqlmap` | `web` | Tier 2 (Batch/CSV) | Injection points, DBMS type, vulnerable parameters |
+| `hydra.brute.v1` | `hydra` | `exploitation` | Tier 2 (CLI) | Discovered valid credentials (service/login/password) |
+| `searchsploit.search.v1` | `searchsploit` | `recon` | Tier 2 (JSON) | Exploit titles, CVEs, paths, types, platforms |
+| `whois.lookup.v1` | `whois` | `recon` | Tier 2 (CLI) | Registrars, creation/expiry dates, nameservers |
+| `dig.lookup.v1` | `dig` | `recon` | Tier 2 (DNS) | Parsed answer, authority, and additional record sections |
+| `tcpdump.capture.v1` | `tcpdump` | `network` | Tier 2 (PCAP) | Captured packet statistics, artifact pcap reference |
+| `exiftool.extract.v1` | `exiftool` | `analysis` | Tier 2 (JSON) | Extracted file metadata, sensitive tag highlights |
+| `hashid.identify.v1` | `hashid` | `crypto` | Tier 2 (CLI) | Identified hash algorithms, Hashcat modes, John formats |
+
+### Running the Conformance Test Suite
+
+```bash
+# Run unit & schema tests (fast, no VM required):
+python -m pytest test_tool_adapters.py -v -k "not LiveVM"
+
+# Run full suite including live Kali VM sandbox execution:
+python -m pytest test_tool_adapters.py -v
+```

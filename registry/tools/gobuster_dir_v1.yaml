@@ -1,0 +1,121 @@
+id: gobuster.dir.v1
+name: Gobuster Directory/File Enumerator
+version: 1.0.0
+description: Fast URI brute-force tool for web directory and file discovery. Uses wordlists and outputs hits to stdout with optional CSV/JSON.
+category: recon
+binary: gobuster
+capabilities:
+  - directory_enumeration
+  - file_enumeration
+  - vhost_enumeration
+  - dns_enumeration
+
+inputs:
+  type: object
+  properties:
+    url:
+      type: string
+      description: Target URL (e.g. http://192.168.56.1)
+    wordlist:
+      type: string
+      description: Path to wordlist file inside Kali VM
+      default: "/usr/share/wordlists/dirbuster/directory-list-2.3-small.txt"
+    mode:
+      type: string
+      enum: [dir, file, dns, vhost]
+      description: Enumeration mode
+      default: "dir"
+    extensions:
+      type: string
+      description: File extensions to test (e.g. php,html,txt)
+      default: ""
+    threads:
+      type: integer
+      description: Number of concurrent threads
+      default: 10
+    status_codes:
+      type: string
+      description: HTTP status codes to include (e.g. 200,301,302)
+      default: "200,204,301,302,307,401,403"
+    timeout_s:
+      type: integer
+      description: Per-request timeout in seconds
+      default: 10
+    extra_args:
+      type: array
+      items:
+        type: string
+      default: []
+  required:
+    - url
+
+outputs:
+  type: object
+  properties:
+    findings:
+      type: array
+      items:
+        type: object
+        properties:
+          path: {type: string}
+          status: {type: integer}
+          size: {type: integer}
+          redirect: {type: string}
+    total_found: {type: integer}
+    target_url: {type: string}
+
+side_effects:
+  - network_outbound_probes
+  - http_requests
+
+privilege: user
+gui: false
+
+parser:
+  type: gobuster_text
+  format: text_lines
+
+prerequisites:
+  - gobuster
+
+docs:
+  summary: Fast directory brute-force for web applications. Parses stdout text for discovered paths and their HTTP status codes.
+  usage: Provide target URL and optional wordlist. Extensions can be specified for file mode.
+  examples:
+    - url: "http://192.168.56.1"
+      wordlist: "/usr/share/wordlists/dirb/common.txt"
+      mode: dir
+    - url: "http://192.168.56.1"
+      extensions: "php,html"
+
+success_signals:
+  exit_codes: [0]
+  stdout_contains: ["Found:", "Progress:"]
+
+failure_signals:
+  exit_codes: [1]
+  stderr_contains: ["Error", "unable to connect"]
+  timeout: true
+
+rollback:
+  supported: false
+  strategy: none
+
+version_compatibility:
+  min_agent_version: 1.0.0
+  os: [linux]
+
+timeout_ms: 180000
+parameters:
+  type: object
+  properties:
+    url: {type: string}
+    wordlist: {type: string}
+    mode: {type: string}
+    extensions: {type: string}
+    threads: {type: integer}
+  required: [url]
+
+metadata:
+  adapter: gobuster.dir.v1
+  sandboxed: true

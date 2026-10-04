@@ -1,0 +1,107 @@
+id: exiftool.extract.v1
+name: ExifTool Metadata Extractor
+version: 1.0.0
+description: Extracts EXIF, IPTC, XMP and other metadata from image, document, and media files. Uses -json for structured output.
+category: recon
+binary: exiftool
+capabilities:
+  - metadata_extraction
+  - exif_parsing
+  - gps_location_extraction
+  - document_metadata
+
+inputs:
+  type: object
+  properties:
+    file_path:
+      type: string
+      description: Path to file(s) inside Kali VM to analyze (glob supported)
+    tags:
+      type: array
+      items:
+        type: string
+      description: Specific tags to extract (empty = all)
+      default: []
+    recursive:
+      type: boolean
+      description: Recursively process directories
+      default: false
+    extra_args:
+      type: array
+      items:
+        type: string
+      default: []
+  required:
+    - file_path
+
+outputs:
+  type: object
+  properties:
+    files:
+      type: array
+      items:
+        type: object
+        properties:
+          source_file: {type: string}
+          make: {type: string}
+          model: {type: string}
+          gps_latitude: {type: string}
+          gps_longitude: {type: string}
+          create_date: {type: string}
+          software: {type: string}
+          author: {type: string}
+          all_tags: {type: object}
+    files_processed: {type: integer}
+    sensitive_findings:
+      type: array
+      description: Tags that may expose sensitive information (GPS, author, software)
+
+side_effects: []
+
+privilege: user
+gui: false
+
+parser:
+  type: json
+  format: exiftool_json
+
+prerequisites:
+  - exiftool
+
+docs:
+  summary: Extracts comprehensive file metadata using -json output. Highlights sensitive tags (GPS, author, software version).
+  usage: Provide file path. Use tags list to extract specific fields. Use recursive=true for directories.
+  examples:
+    - file_path: "/tmp/sample.jpg"
+    - file_path: "/tmp/documents/"
+      recursive: true
+
+success_signals:
+  exit_codes: [0]
+  stdout_contains: ["SourceFile"]
+
+failure_signals:
+  exit_codes: [1]
+  stderr_contains: ["File not found", "Error"]
+  timeout: false
+
+rollback:
+  supported: false
+  strategy: none
+
+version_compatibility:
+  min_agent_version: 1.0.0
+  os: [linux, windows, darwin]
+
+timeout_ms: 30000
+parameters:
+  type: object
+  properties:
+    file_path: {type: string}
+    tags: {type: array}
+    recursive: {type: boolean}
+  required: [file_path]
+
+metadata:
+  adapter: exiftool.extract.v1
+  sandboxed: true

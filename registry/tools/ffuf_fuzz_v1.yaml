@@ -1,0 +1,128 @@
+id: ffuf.fuzz.v1
+name: FFUF Web Fuzzer
+version: 1.0.0
+description: Fast web fuzzer for URL, header, POST data, and virtual host discovery. Outputs structured JSON results via -of json.
+category: recon
+binary: ffuf
+capabilities:
+  - web_fuzzing
+  - directory_enumeration
+  - parameter_fuzzing
+  - vhost_fuzzing
+
+inputs:
+  type: object
+  properties:
+    url:
+      type: string
+      description: "Target URL template with FUZZ keyword (e.g. http://192.168.56.1/FUZZ)"
+    wordlist:
+      type: string
+      default: "/usr/share/wordlists/dirb/common.txt"
+      description: Wordlist path inside Kali VM
+    method:
+      type: string
+      enum: [GET, POST, PUT, HEAD]
+      default: "GET"
+    headers:
+      type: object
+      description: Custom headers as key-value pairs
+      default: {}
+    data:
+      type: string
+      description: POST data (use FUZZ keyword for fuzzing)
+      default: ""
+    filter_status:
+      type: string
+      description: Comma-separated HTTP status codes to filter OUT
+      default: "404"
+    match_status:
+      type: string
+      description: Comma-separated status codes to match
+      default: ""
+    threads:
+      type: integer
+      default: 40
+    timeout_s:
+      type: integer
+      default: 10
+    extra_args:
+      type: array
+      items:
+        type: string
+      default: []
+  required:
+    - url
+
+outputs:
+  type: object
+  properties:
+    results:
+      type: array
+      items:
+        type: object
+        properties:
+          input: {type: object}
+          position: {type: integer}
+          status: {type: integer}
+          length: {type: integer}
+          words: {type: integer}
+          lines: {type: integer}
+          duration: {type: integer}
+          url: {type: string}
+    total_found: {type: integer}
+    command_line: {type: string}
+
+side_effects:
+  - network_outbound_probes
+  - http_requests
+
+privilege: user
+gui: false
+
+parser:
+  type: json
+  format: ffuf_json_output
+
+prerequisites:
+  - ffuf
+
+docs:
+  summary: Runs ffuf with JSON output (-of json -o /tmp/ffuf_out.json), then parses the results file.
+  usage: URL must contain FUZZ keyword. Optionally filter or match specific HTTP status codes.
+  examples:
+    - url: "http://192.168.56.1/FUZZ"
+      wordlist: "/usr/share/wordlists/dirb/common.txt"
+    - url: "http://192.168.56.1/FUZZ"
+      filter_status: "404,403"
+
+success_signals:
+  exit_codes: [0]
+
+failure_signals:
+  exit_codes: [1]
+  stderr_contains: ["calibration failed", "connection error"]
+  timeout: true
+
+rollback:
+  supported: false
+  strategy: none
+
+version_compatibility:
+  min_agent_version: 1.0.0
+  os: [linux]
+
+timeout_ms: 120000
+parameters:
+  type: object
+  properties:
+    url: {type: string}
+    wordlist: {type: string}
+    method: {type: string}
+    threads: {type: integer}
+  required: [url]
+
+metadata:
+  adapter: ffuf.fuzz.v1
+  sandboxed: true
+  produces_json: true

@@ -43,8 +43,7 @@ def test_production_tools_conform_to_blueprint():
     assert len(tools) >= 4, f"Expected at least 4 tools, found {len(tools)}"
 
     for tool in tools:
-        assert isinstance(tool, ToolSpec)
-        assert tool.id in ["shell.run.v1", "kali.exec.v1", "hello_world", "system_ping"]
+        assert tool.id, f"Tool {tool} has empty id"
         assert tool.binary, f"Tool {tool.id} missing binary"
         assert tool.category, f"Tool {tool.id} missing category"
         assert isinstance(tool.capabilities, list), f"Tool {tool.id} capabilities must be list"

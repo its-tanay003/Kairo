@@ -1,0 +1,115 @@
+id: nikto.scan.v1
+name: Nikto Web Server Scanner
+version: 1.0.0
+description: Web server vulnerability scanner. Runs Nikto with -Format csv for machine-readable output. Detects outdated software, dangerous files, and configuration issues.
+category: recon
+binary: nikto
+capabilities:
+  - web_vulnerability_scan
+  - cgi_detection
+  - dangerous_file_detection
+  - server_fingerprinting
+
+inputs:
+  type: object
+  properties:
+    host:
+      type: string
+      description: Target hostname or IP
+    port:
+      type: integer
+      description: Target port
+      default: 80
+    ssl:
+      type: boolean
+      description: Use SSL/HTTPS
+      default: false
+    plugins:
+      type: string
+      description: Comma-separated plugin list (or "ALL")
+      default: ""
+    tuning:
+      type: string
+      description: Nikto tuning flags (0-9 letters to enable specific checks)
+      default: ""
+    timeout:
+      type: integer
+      description: Per-request timeout in seconds
+      default: 10
+    extra_args:
+      type: array
+      items:
+        type: string
+      default: []
+  required:
+    - host
+
+outputs:
+  type: object
+  properties:
+    findings:
+      type: array
+      items:
+        type: object
+        properties:
+          id: {type: string}
+          method: {type: string}
+          uri: {type: string}
+          osvdb: {type: string}
+          description: {type: string}
+    server_info: {type: object}
+    total_findings: {type: integer}
+
+side_effects:
+  - network_outbound_probes
+  - http_requests
+
+privilege: user
+gui: false
+
+parser:
+  type: nikto_csv
+  format: csv
+
+prerequisites:
+  - nikto
+
+docs:
+  summary: Web server vulnerability scanner outputting CSV for structured parsing.
+  usage: Provide target host and optional port. Use ssl=true for HTTPS targets.
+  examples:
+    - host: "192.168.56.1"
+      port: 80
+    - host: "192.168.56.1"
+      port: 443
+      ssl: true
+
+success_signals:
+  exit_codes: [0]
+  stdout_contains: ["OSVDB", "Nikto"]
+
+failure_signals:
+  exit_codes: [1]
+  stderr_contains: ["ERROR", "can't open"]
+  timeout: true
+
+rollback:
+  supported: false
+  strategy: none
+
+version_compatibility:
+  min_agent_version: 1.0.0
+  os: [linux]
+
+timeout_ms: 180000
+parameters:
+  type: object
+  properties:
+    host: {type: string}
+    port: {type: integer}
+    ssl: {type: boolean}
+  required: [host]
+
+metadata:
+  adapter: nikto.scan.v1
+  sandboxed: true

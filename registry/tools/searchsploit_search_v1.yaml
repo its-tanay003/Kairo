@@ -1,0 +1,107 @@
+id: searchsploit.search.v1
+name: SearchSploit Exploit Database Search
+version: 1.0.0
+description: Offline Exploit-DB search tool. Searches CVEs and exploits by keyword and returns structured exploit IDs, titles, and file paths. Uses --json for machine-readable output.
+category: recon
+binary: searchsploit
+capabilities:
+  - exploit_search
+  - cve_lookup
+  - vulnerability_research
+  - offline_database_query
+
+inputs:
+  type: object
+  properties:
+    query:
+      type: string
+      description: Search keyword(s) (e.g. "apache 2.4", "ssh", "CVE-2021-44228")
+    exact:
+      type: boolean
+      description: Search for exact string match
+      default: false
+    exclude:
+      type: string
+      description: Keyword to exclude from results
+      default: ""
+    type:
+      type: string
+      enum: ["", "exploits", "shellcodes", "papers"]
+      description: Limit search to specific type
+      default: ""
+    extra_args:
+      type: array
+      items:
+        type: string
+      default: []
+  required:
+    - query
+
+outputs:
+  type: object
+  properties:
+    exploits:
+      type: array
+      items:
+        type: object
+        properties:
+          title: {type: string}
+          edb_id: {type: string}
+          date: {type: string}
+          author: {type: string}
+          type: {type: string}
+          platform: {type: string}
+          path: {type: string}
+    total_found: {type: integer}
+    query: {type: string}
+
+side_effects: []
+
+privilege: user
+gui: false
+
+parser:
+  type: json
+  format: searchsploit_json
+
+prerequisites:
+  - exploitdb
+  - searchsploit
+
+docs:
+  summary: Searches local Exploit-DB copy with --json for structured JSON output. No network required.
+  usage: Provide search query keywords. Use exact=true for strict matching.
+  examples:
+    - query: "apache 2.4"
+    - query: "CVE-2021-44228"
+      exact: true
+
+success_signals:
+  exit_codes: [0]
+
+failure_signals:
+  exit_codes: [1]
+  timeout: false
+
+rollback:
+  supported: false
+  strategy: none
+  note: Read-only database search. No external connections made.
+
+version_compatibility:
+  min_agent_version: 1.0.0
+  os: [linux]
+
+timeout_ms: 30000
+parameters:
+  type: object
+  properties:
+    query: {type: string}
+    exact: {type: boolean}
+    type: {type: string}
+  required: [query]
+
+metadata:
+  adapter: searchsploit.search.v1
+  sandboxed: true
+  offline: true

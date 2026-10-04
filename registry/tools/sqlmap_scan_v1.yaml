@@ -1,0 +1,147 @@
+id: sqlmap.scan.v1
+name: SQLMap SQL Injection Scanner
+version: 1.0.0
+description: Automated SQL injection detection and exploitation tool. Runs in batch mode with machine-readable flags. Uses --dump-format=CSV and --output-dir for artifact capture.
+category: exploitation
+binary: sqlmap
+capabilities:
+  - sql_injection_detection
+  - database_fingerprinting
+  - data_extraction
+  - blind_injection
+  - error_based_injection
+
+inputs:
+  type: object
+  properties:
+    url:
+      type: string
+      description: Target URL (e.g. http://192.168.56.1/login.php?id=1)
+    method:
+      type: string
+      enum: [GET, POST]
+      default: "GET"
+    data:
+      type: string
+      description: POST data string (for POST requests)
+      default: ""
+    params:
+      type: string
+      description: Parameter(s) to test (e.g. id, username)
+      default: ""
+    level:
+      type: integer
+      minimum: 1
+      maximum: 5
+      description: Detection level (1=basic to 5=extensive)
+      default: 1
+    risk:
+      type: integer
+      minimum: 1
+      maximum: 3
+      description: Risk level (1=safe, 3=aggressive)
+      default: 1
+    dbms:
+      type: string
+      description: Force backend DBMS (e.g. mysql, postgresql, mssql)
+      default: ""
+    technique:
+      type: string
+      description: Injection techniques (BEUSTQ string)
+      default: ""
+    dbs:
+      type: boolean
+      description: Enumerate databases
+      default: false
+    tables:
+      type: boolean
+      description: Enumerate tables
+      default: false
+    extra_args:
+      type: array
+      items:
+        type: string
+      default: []
+  required:
+    - url
+
+outputs:
+  type: object
+  properties:
+    injectable:
+      type: boolean
+    injection_points:
+      type: array
+      items:
+        type: object
+        properties:
+          parameter: {type: string}
+          type: {type: string}
+          technique: {type: string}
+          payload: {type: string}
+    databases:
+      type: array
+      items: {type: string}
+    tables:
+      type: array
+    dbms: {type: string}
+    summary: {type: string}
+
+side_effects:
+  - network_outbound_probes
+  - http_requests
+  - potential_database_modification
+
+privilege: user
+gui: false
+
+parser:
+  type: sqlmap_text
+  format: console_text
+
+prerequisites:
+  - sqlmap
+
+docs:
+  summary: Automated SQL injection testing. Always runs with --batch --answers="N" for non-interactive safe mode.
+  usage: Provide target URL. Level and risk default to safe values (1,1). Higher values are more intrusive.
+  examples:
+    - url: "http://192.168.56.1/login.php?id=1"
+      level: 1
+      risk: 1
+    - url: "http://192.168.56.1/login.php"
+      method: POST
+      data: "username=admin&password=test"
+
+success_signals:
+  exit_codes: [0]
+  stdout_contains: ["injectable", "sqlmap identified"]
+
+failure_signals:
+  exit_codes: [1]
+  stderr_contains: ["connection error", "HTTP error"]
+  timeout: true
+
+rollback:
+  supported: false
+  strategy: none
+  note: Run with --batch --answers=N to prevent data modification. risk>=2 may cause writes.
+
+version_compatibility:
+  min_agent_version: 1.0.0
+  os: [linux]
+
+timeout_ms: 300000
+parameters:
+  type: object
+  properties:
+    url: {type: string}
+    level: {type: integer}
+    risk: {type: integer}
+    method: {type: string}
+  required: [url]
+
+metadata:
+  adapter: sqlmap.scan.v1
+  sandboxed: true
+  requires_network: true

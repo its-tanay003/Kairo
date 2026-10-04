@@ -1,0 +1,115 @@
+id: tcpdump.capture.v1
+name: TCPDump Network Packet Capture
+version: 1.0.0
+description: Short-duration packet capture to a .pcap artifact file. Captures network traffic with BPF filter expressions. Returns packet count statistics.
+category: recon
+binary: tcpdump
+capabilities:
+  - packet_capture
+  - traffic_analysis
+  - protocol_inspection
+  - bpf_filter
+
+inputs:
+  type: object
+  properties:
+    interface:
+      type: string
+      description: Network interface to capture on (e.g. eth0, any)
+      default: "eth0"
+    filter:
+      type: string
+      description: BPF filter expression (e.g. "host 192.168.56.1 and port 80")
+      default: ""
+    count:
+      type: integer
+      description: Number of packets to capture before stopping
+      default: 100
+    duration_s:
+      type: integer
+      description: Max capture duration in seconds (auto-stops)
+      default: 10
+    output_file:
+      type: string
+      description: Output .pcap file path inside VM
+      default: "/tmp/kairo_capture.pcap"
+    snap_len:
+      type: integer
+      description: Snapshot length (bytes per packet)
+      default: 262144
+    extra_args:
+      type: array
+      items:
+        type: string
+      default: []
+  required:
+    - interface
+
+outputs:
+  type: object
+  properties:
+    packets_captured: {type: integer}
+    packets_received: {type: integer}
+    packets_dropped: {type: integer}
+    capture_file: {type: string}
+    duration_s: {type: number}
+    interfaces: {type: string}
+    summary: {type: string}
+
+side_effects:
+  - network_traffic_capture
+  - disk_write
+  - high_privilege_required
+
+privilege: root
+gui: false
+
+parser:
+  type: tcpdump_text
+  format: stats_text
+
+prerequisites:
+  - tcpdump
+  - root_privileges
+
+docs:
+  summary: Short packet capture to .pcap artifact file. Parses summary stats from stderr output.
+  usage: Specify interface and optional BPF filter. Use count or duration_s to limit capture size.
+  examples:
+    - interface: eth0
+      count: 50
+      filter: "tcp port 80"
+
+success_signals:
+  exit_codes: [0, 1]
+  stderr_contains: ["packets captured", "listening on"]
+
+failure_signals:
+  exit_codes: [2]
+  stderr_contains: ["Permission denied", "No such device"]
+  timeout: false
+
+rollback:
+  supported: true
+  strategy: delete_pcap_artifact
+  action: "rm /tmp/kairo_capture.pcap"
+
+version_compatibility:
+  min_agent_version: 1.0.0
+  os: [linux]
+
+timeout_ms: 30000
+parameters:
+  type: object
+  properties:
+    interface: {type: string}
+    filter: {type: string}
+    count: {type: integer}
+    duration_s: {type: integer}
+    output_file: {type: string}
+  required: [interface]
+
+metadata:
+  adapter: tcpdump.capture.v1
+  sandboxed: true
+  produces_artifact: true

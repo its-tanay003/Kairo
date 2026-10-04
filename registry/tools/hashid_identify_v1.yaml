@@ -1,0 +1,99 @@
+id: hashid.identify.v1
+name: HashID Hash Identifier + Hashcat Dry-Run
+version: 1.0.0
+description: Identifies hash algorithm type from a hash string using hashid, then optionally runs hashcat --show (dry-run, no cracking) to check if hash is already in potfile.
+category: utility
+binary: hashid
+capabilities:
+  - hash_identification
+  - hash_type_detection
+  - hashcat_mode_lookup
+  - potfile_check
+
+inputs:
+  type: object
+  properties:
+    hash:
+      type: string
+      description: Hash string to identify (e.g. 5f4dcc3b5aa765d61d8327deb882cf99)
+    hashcat_check:
+      type: boolean
+      description: Run hashcat --show (dry-run potfile check only, no cracking)
+      default: false
+    wordlist:
+      type: string
+      description: Wordlist path for hashcat dry-run (only used if hashcat_check=true)
+      default: "/usr/share/wordlists/rockyou.txt"
+    extra_args:
+      type: array
+      items:
+        type: string
+      default: []
+  required:
+    - hash
+
+outputs:
+  type: object
+  properties:
+    hash: {type: string}
+    hash_length: {type: integer}
+    identified_types:
+      type: array
+      items:
+        type: object
+        properties:
+          name: {type: string}
+          hashcat_mode: {type: string}
+          john_format: {type: string}
+    hashcat_potfile_match:
+      type: object
+      description: Result if hash was found in potfile (dry-run only)
+    confidence: {type: string}
+
+side_effects: []
+
+privilege: user
+gui: false
+
+parser:
+  type: hashid_text
+  format: text_lines
+
+prerequisites:
+  - hashid
+  - hashcat
+
+docs:
+  summary: Identifies hash algorithm type using hashid. Optionally checks hashcat potfile (--show) without performing any cracking.
+  usage: Provide a hash string. Set hashcat_check=true to check potfile. Never runs actual cracking.
+  examples:
+    - hash: "5f4dcc3b5aa765d61d8327deb882cf99"
+    - hash: "$2y$10$N9qo8uLOickgx2ZMRZoMyeIjZAgcfl7p92ldGxad68LJZdL17lhWy"
+      hashcat_check: true
+
+success_signals:
+  exit_codes: [0]
+
+failure_signals:
+  exit_codes: [1]
+  timeout: false
+
+rollback:
+  supported: false
+  strategy: none
+
+version_compatibility:
+  min_agent_version: 1.0.0
+  os: [linux]
+
+timeout_ms: 30000
+parameters:
+  type: object
+  properties:
+    hash: {type: string}
+    hashcat_check: {type: boolean}
+  required: [hash]
+
+metadata:
+  adapter: hashid.identify.v1
+  sandboxed: true
