@@ -167,6 +167,35 @@ const server = http.createServer(async (req, res) => {
     }
   }
 
+  // Process routes: /process/pause/:id, /process/resume/:id, /process/stop/:id, /process/retry/:id, /process/tree/:id, /process/poll/:id
+  if (url.pathname.startsWith("/process/")) {
+    const subpath = url.pathname.replace("/process/", "");
+    try {
+      if (req.method === "GET") {
+        const response = await fetch(`${ORCHESTRATOR_URL}/process/${subpath}${url.search}`);
+        const data = await response.json();
+        res.writeHead(response.status, { "Content-Type": "application/json" });
+        res.end(JSON.stringify(data));
+        return;
+      } else if (req.method === "POST") {
+        const body = await parseJsonBody(req);
+        const response = await fetch(`${ORCHESTRATOR_URL}/process/${subpath}`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(body),
+        });
+        const data = await response.json();
+        res.writeHead(response.status, { "Content-Type": "application/json" });
+        res.end(JSON.stringify(data));
+        return;
+      }
+    } catch (err: any) {
+      res.writeHead(502, { "Content-Type": "application/json" });
+      res.end(JSON.stringify({ error: `Process Proxy error: ${err.message}` }));
+      return;
+    }
+  }
+
   res.writeHead(404, { "Content-Type": "application/json" });
   res.end(JSON.stringify({ error: "Not Found" }));
 });
@@ -196,6 +225,71 @@ interface ClientSession {
 }
 
 const sessions = new Map<WebSocket, ClientSession>();
+
+/**
+ * Periodically polls new output chunks and process tree updates from orchestrator
+ * and pushes them over WebSocket in real-time.
+ */
+function startStreamBroadcaster(taskId: string, targetWs?: WebSocket) {
+  let seq = 0;
+  let pollCount = 0;
+  const maxPolls = 600; // 60s max polling duration
+
+  const interval = setInterval(async () => {
+    pollCount++;
+    try {
+      const resp = await fetch(`${ORCHESTRATOR_URL}/process/poll/${taskId}?since=${seq}`);
+      if (!resp.ok) {
+        if (pollCount > maxPolls) clearInterval(interval);
+        return;
+      }
+      const data = (await resp.json()) as any;
+      if (data.chunks && data.chunks.length > 0) {
+        for (const chunk of data.chunks) {
+          seq = Math.max(seq, chunk.seq);
+          const msg = JSON.stringify({
+            type: "terminal_stream",
+            taskId,
+            stream: chunk.stream,
+            text: chunk.text,
+            seq: chunk.seq,
+            timestamp: chunk.timestamp,
+          });
+          if (targetWs && targetWs.readyState === WebSocket.OPEN) {
+            targetWs.send(msg);
+          } else {
+            for (const s of sessions.values()) {
+              if (s.ws.readyState === WebSocket.OPEN) s.ws.send(msg);
+            }
+          }
+        }
+      }
+
+      if (data.tree) {
+        const treeMsg = JSON.stringify({
+          type: "process_tree_update",
+          taskId,
+          status: data.status,
+          tree: data.tree,
+          timestamp: new Date().toISOString(),
+        });
+        if (targetWs && targetWs.readyState === WebSocket.OPEN) {
+          targetWs.send(treeMsg);
+        } else {
+          for (const s of sessions.values()) {
+            if (s.ws.readyState === WebSocket.OPEN) s.ws.send(treeMsg);
+          }
+        }
+      }
+
+      if (data.completed || pollCount > maxPolls) {
+        clearInterval(interval);
+      }
+    } catch {
+      if (pollCount > maxPolls) clearInterval(interval);
+    }
+  }, 100);
+}
 
 wss.on("connection", (ws: WebSocket, req) => {
   const url = new URL(req.url || "/", `http://${req.headers.host}`);
@@ -235,6 +329,116 @@ wss.on("connection", (ws: WebSocket, req) => {
             timestamp: new Date().toISOString(),
           })
         );
+        return;
+      }
+
+      // Process Supervisor Controls via WebSocket: { type: "process_control", action: "pause"|"resume"|"stop"|"retry", taskId: "..." }
+      if (payload.type === "process_control") {
+        const action = payload.action;
+        const taskId = payload.taskId || payload.task_id;
+        if (!action || !taskId) {
+          ws.send(JSON.stringify({ type: "error", error: "Missing action or taskId for process_control" }));
+          return;
+        }
+
+        try {
+          const ctrlResp = await fetch(`${ORCHESTRATOR_URL}/process/${action}/${taskId}`, { method: "POST" });
+          const ctrlData = await ctrlResp.json();
+
+          // If retried, re-start stream broadcaster for the task
+          if (action === "retry") {
+            startStreamBroadcaster(taskId, ws);
+          }
+
+          // Broadcast result
+          const ctrlMsg = JSON.stringify({
+            type: "process_control_result",
+            action,
+            taskId,
+            result: ctrlData,
+            timestamp: new Date().toISOString(),
+          });
+          for (const s of sessions.values()) {
+            if (s.ws.readyState === WebSocket.OPEN) s.ws.send(ctrlMsg);
+          }
+        } catch (err: any) {
+          ws.send(JSON.stringify({ type: "error", error: `Failed to issue process control ${action}: ${err.message}` }));
+        }
+        return;
+      }
+
+      // Query Process Tree via WebSocket: { type: "get_process_tree", taskId: "..." }
+      if (payload.type === "get_process_tree" || payload.type === "process_tree") {
+        const taskId = payload.taskId || payload.task_id || "";
+        try {
+          const resp = await fetch(`${ORCHESTRATOR_URL}/process/tree/${taskId}`);
+          const treeData = (await resp.json()) as any;
+          ws.send(
+            JSON.stringify({
+              type: "process_tree_update",
+              taskId: treeData.task_id || taskId,
+              status: treeData.status,
+              tree: treeData.nodes || [],
+              timestamp: new Date().toISOString(),
+            })
+          );
+        } catch (err: any) {
+          ws.send(JSON.stringify({ type: "error", error: `Failed to fetch process tree: ${err.message}` }));
+        }
+        return;
+      }
+
+      // Execute in Kali with live terminal streaming: { type: "kali_exec", command: "...", args: [...], taskId: "..." }
+      if (payload.type === "kali_exec") {
+        const taskId = payload.taskId || `task_kali_${randomUUID().slice(0, 8)}`;
+        const command = payload.command || "uname";
+        const args = payload.args || ["-a"];
+        const cwd = payload.cwd || "/home/kali";
+        const timeoutMs = payload.timeout_ms || 30000;
+        const snapshotBefore = Boolean(payload.snapshot_before);
+
+        ws.send(
+          JSON.stringify({
+            type: "status",
+            status: "executing_kali_command",
+            sessionId,
+            taskId,
+            text: `Executing '${command} ${args.join(" ")}' in Kali VM...`,
+          })
+        );
+
+        // Start stream broadcaster immediately
+        startStreamBroadcaster(taskId, ws);
+
+        try {
+          const resp = await fetch(`${ORCHESTRATOR_URL}/vm/execute`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              task_id: taskId,
+              session_id: sessionId,
+              command,
+              args,
+              cwd,
+              timeout_ms: timeoutMs,
+              snapshot_before: snapshotBefore,
+            }),
+          });
+          const result = (await resp.json()) as any;
+          ws.send(
+            JSON.stringify({
+              type: "agent_response",
+              sessionId,
+              reply: `Kali VM execution of '${command}' completed (exit ${result.exit_code})`,
+              toolExecuted: { id: "kali.exec.v1", name: "Kali VM Exec", version: "1.0.0" },
+              execution: result,
+              durationMs: result.duration_ms,
+              timestamp: new Date().toISOString(),
+            })
+          );
+        } catch (err: any) {
+          ws.send(JSON.stringify({ type: "error", error: `Kali exec failed: ${err.message}` }));
+        }
         return;
       }
 
@@ -295,6 +499,9 @@ wss.on("connection", (ws: WebSocket, req) => {
             text: `Gateway validated ${toolId} schema. Executing via orchestrator...`,
           })
         );
+
+        // Start live stream broadcaster for this tool execution
+        startStreamBroadcaster(taskId, ws);
 
         try {
           const resp = await fetch(`${ORCHESTRATOR_URL}/run`, {

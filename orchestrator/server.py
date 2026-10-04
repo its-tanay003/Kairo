@@ -131,6 +131,73 @@ def list_active_processes():
     return {"active_processes": supervisor.list_active()}
 
 
+@app.post("/process/pause/{task_id}")
+def pause_process(task_id: str):
+    """Pauses task execution via SIGSTOP / suspend."""
+    vm_res = vm_manager.pause_task_in_vm(task_id)
+    if vm_res.get("success"):
+        return vm_res
+    return supervisor.pause_by_task_id(task_id)
+
+
+@app.post("/process/resume/{task_id}")
+def resume_process(task_id: str):
+    """Resumes task execution via SIGCONT / resume."""
+    vm_res = vm_manager.resume_task_in_vm(task_id)
+    if vm_res.get("success"):
+        return vm_res
+    return supervisor.resume_by_task_id(task_id)
+
+
+@app.post("/process/stop/{task_id}")
+def stop_process(task_id: str):
+    """Stops/kills task execution immediately."""
+    vm_res = vm_manager.stop_task_in_vm(task_id)
+    host_res = supervisor.stop_by_task_id(task_id)
+    return {"task_id": task_id, "vm": vm_res, "host": host_res}
+
+
+@app.post("/process/retry/{task_id}")
+def retry_process(task_id: str):
+    """Restarts task execution cleanly with same parameters."""
+    vm_res = vm_manager.retry_task_in_vm(task_id)
+    if vm_res.get("success"):
+        return vm_res
+    return supervisor.retry_by_task_id(task_id)
+
+
+@app.get("/process/tree")
+@app.get("/process/tree/{task_id}")
+def get_process_tree(task_id: Optional[str] = None):
+    """Returns hierarchical process tree (parent/child/background) for task."""
+    vm_tree = vm_manager.get_process_tree(task_id)
+    if vm_tree.get("nodes"):
+        return vm_tree
+    if task_id:
+        return supervisor.get_process_tree(task_id)
+    return vm_tree
+
+
+@app.get("/process/poll/{task_id}")
+def poll_process(task_id: str, since: int = 0):
+    """Polls streaming output chunks and current process tree for task."""
+    vm_poll = vm_manager.poll_task(task_id, since=since)
+    if not vm_poll.get("error"):
+        return vm_poll
+    rec = supervisor._active.get(task_id) or supervisor._history.get(task_id)
+    if rec:
+        chunks = rec.get_chunks_since(since)
+        tree = supervisor.get_process_tree(task_id)
+        return {
+            "task_id": task_id,
+            "status": rec.status,
+            "chunks": chunks,
+            "completed": rec.done_event.is_set(),
+            "tree": tree.get("nodes", []),
+        }
+    return {"task_id": task_id, "chunks": [], "completed": True, "status": "not_found"}
+
+
 @app.get("/events")
 def list_events(session_id: Optional[str] = None, limit: int = 50):
     if session_id:

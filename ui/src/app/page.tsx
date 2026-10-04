@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useEffect, useRef, useState } from "react";
+import TerminalProcessView from "./components/TerminalProcessView";
 
 interface EventRecord {
   id?: number;
@@ -118,14 +119,16 @@ export default function Home() {
   const [inputVal, setInputVal] = useState<string>("");
   const [latestEvent, setLatestEvent] = useState<EventRecord | null>(null);
   const [allEvents, setAllEvents] = useState<EventRecord[]>([]);
-  const [activeTab, setActiveTab] = useState<"model_center" | "vm_sandbox" | "latest" | "all">("vm_sandbox");
+  const [activeTab, setActiveTab] = useState<"terminal_process" | "model_center" | "vm_sandbox" | "latest" | "all">("terminal_process");
   const [modelCenter, setModelCenter] = useState<ModelCenterStatus | null>(null);
   const [vmStatus, setVmStatus] = useState<VMStatus | null>(null);
   const [isRollingBack, setIsRollingBack] = useState<boolean>(false);
   const [isTakingSnapshot, setIsTakingSnapshot] = useState<boolean>(false);
   const [newSnapName, setNewSnapName] = useState<string>("");
   const [activeTaskId, setActiveTaskId] = useState<string | null>(null);
+  const [isTerminalMaximized, setIsTerminalMaximized] = useState<boolean>(false);
 
+  const [socket, setSocket] = useState<WebSocket | null>(null);
   const wsRef = useRef<WebSocket | null>(null);
   const messagesEndRef = useRef<HTMLDivElement | null>(null);
 
@@ -146,6 +149,7 @@ export default function Home() {
 
       ws.onopen = () => {
         setWsStatus("connected");
+        setSocket(ws);
       };
 
       ws.onmessage = (event) => {
@@ -261,6 +265,7 @@ export default function Home() {
 
       ws.onclose = () => {
         setWsStatus("disconnected");
+        setSocket(null);
         reconnectTimeout = setTimeout(connect, 3000);
       };
 
@@ -801,16 +806,30 @@ export default function Home() {
         </section>
 
         {/* Right: SQLite Event Inspector & Model Center */}
-        <aside className="inspector-pane">
+        <aside className={`inspector-pane ${isTerminalMaximized && activeTab === "terminal_process" ? "maximized-overlay" : ""}`}>
           <div className="inspector-header">
             <h2>
-              {activeTab === "model_center"
+              {activeTab === "terminal_process"
+                ? "Live Terminal (xterm.js) & Process Tree"
+                : activeTab === "model_center"
                 ? "Model Center (Phase 4 Manager)"
                 : activeTab === "vm_sandbox"
                 ? "VM Sandbox & Snapshot Manager"
                 : "SQLite Event Store Inspector"}
             </h2>
-            <div style={{ display: "flex", gap: "6px" }}>
+            <div style={{ display: "flex", gap: "6px", flexWrap: "wrap" }}>
+              <button
+                className={`quick-btn ${activeTab === "terminal_process" ? "" : "secondary"}`}
+                style={{
+                  padding: "3px 8px",
+                  fontSize: "11px",
+                  borderColor: activeTab === "terminal_process" ? "var(--accent-cyan)" : undefined,
+                  background: activeTab === "terminal_process" ? "rgba(6, 182, 212, 0.15)" : undefined,
+                }}
+                onClick={() => setActiveTab("terminal_process")}
+              >
+                🖥️ Terminal & Tree
+              </button>
               <button
                 className={`quick-btn ${activeTab === "vm_sandbox" ? "" : "secondary"}`}
                 style={{ padding: "3px 8px", fontSize: "11px" }}
@@ -843,7 +862,17 @@ export default function Home() {
           </div>
 
           <div className="inspector-content">
-            {activeTab === "model_center" ? (
+            {activeTab === "terminal_process" ? (
+              <div style={{ height: isTerminalMaximized ? "calc(100vh - 120px)" : "calc(100vh - 190px)", minHeight: "560px", display: "flex", flexDirection: "column" }}>
+                <TerminalProcessView
+                  ws={socket || wsRef.current}
+                  activeTaskId={activeTaskId}
+                  onSelectTask={(tid) => setActiveTaskId(tid)}
+                  isMaximized={isTerminalMaximized}
+                  onToggleMaximize={() => setIsTerminalMaximized((prev) => !prev)}
+                />
+              </div>
+            ) : activeTab === "model_center" ? (
               <>
                 {/* Active Loaded Model Card */}
                 <div className="proof-card">

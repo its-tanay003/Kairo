@@ -257,16 +257,78 @@ class VMManager:
 
     def kill_task_in_vm(self, task_id: str) -> Dict[str, Any]:
         """Sends SIGKILL request to guest Worker Agent for active task_id."""
+        return self.stop_task_in_vm(task_id)
+
+    def pause_task_in_vm(self, task_id: str) -> Dict[str, Any]:
+        """Sends SIGSTOP pause request to guest Worker Agent for active task_id."""
         try:
             req = urllib.request.Request(
-                f"{self.worker_url}/kill/{task_id}",
+                f"{self.worker_url}/pause/{task_id}",
                 data=b"{}",
                 headers={"Content-Type": "application/json"},
             )
             with urllib.request.urlopen(req, timeout=5) as resp:
                 return json.loads(resp.read().decode("utf-8"))
         except Exception as e:
-            return {"task_id": task_id, "killed": False, "error": str(e)}
+            return {"task_id": task_id, "success": False, "error": str(e)}
+
+    def resume_task_in_vm(self, task_id: str) -> Dict[str, Any]:
+        """Sends SIGCONT resume request to guest Worker Agent for active task_id."""
+        try:
+            req = urllib.request.Request(
+                f"{self.worker_url}/resume/{task_id}",
+                data=b"{}",
+                headers={"Content-Type": "application/json"},
+            )
+            with urllib.request.urlopen(req, timeout=5) as resp:
+                return json.loads(resp.read().decode("utf-8"))
+        except Exception as e:
+            return {"task_id": task_id, "success": False, "error": str(e)}
+
+    def stop_task_in_vm(self, task_id: str) -> Dict[str, Any]:
+        """Sends SIGKILL stop request to guest Worker Agent for active task_id."""
+        try:
+            req = urllib.request.Request(
+                f"{self.worker_url}/stop/{task_id}",
+                data=b"{}",
+                headers={"Content-Type": "application/json"},
+            )
+            with urllib.request.urlopen(req, timeout=5) as resp:
+                return json.loads(resp.read().decode("utf-8"))
+        except Exception as e:
+            return {"task_id": task_id, "success": False, "error": str(e)}
+
+    def retry_task_in_vm(self, task_id: str) -> Dict[str, Any]:
+        """Sends retry request to guest Worker Agent to re-execute task_id."""
+        try:
+            req = urllib.request.Request(
+                f"{self.worker_url}/retry/{task_id}",
+                data=b"{}",
+                headers={"Content-Type": "application/json"},
+            )
+            with urllib.request.urlopen(req, timeout=5) as resp:
+                return json.loads(resp.read().decode("utf-8"))
+        except Exception as e:
+            return {"task_id": task_id, "success": False, "error": str(e)}
+
+    def get_process_tree(self, task_id: Optional[str] = None) -> Dict[str, Any]:
+        """Fetches hierarchical process tree from guest Worker Agent."""
+        try:
+            url = f"{self.worker_url}/tree/{task_id}" if task_id else f"{self.worker_url}/tree"
+            req = urllib.request.Request(url)
+            with urllib.request.urlopen(req, timeout=5) as resp:
+                return json.loads(resp.read().decode("utf-8"))
+        except Exception as e:
+            return {"task_id": task_id, "nodes": [], "error": str(e)}
+
+    def poll_task(self, task_id: str, since: int = 0) -> Dict[str, Any]:
+        """Polls new output chunks and process tree for task_id."""
+        try:
+            req = urllib.request.Request(f"{self.worker_url}/poll/{task_id}?since={since}")
+            with urllib.request.urlopen(req, timeout=5) as resp:
+                return json.loads(resp.read().decode("utf-8"))
+        except Exception as e:
+            return {"task_id": task_id, "chunks": [], "completed": True, "error": str(e)}
 
 
 vm_manager = VMManager()
