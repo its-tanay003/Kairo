@@ -24,6 +24,7 @@ from registry.loader import ToolRegistry, ToolSpec
 from orchestrator.llama_client import LlamaCppClient
 from orchestrator.models import LLMResponse
 from orchestrator.process_supervisor import supervisor, ProcessResult
+from orchestrator.vm_manager import vm_manager
 
 logger = logging.getLogger("orchestrator.agent")
 
@@ -62,8 +63,11 @@ class AgentLoop:
             tool_id = explicit_tool
             requested_args = explicit_args or {}
         else:
-            # Check prompt for direct tool syntax (e.g. "shell.run.v1: python -c ...")
-            if "shell.run.v1" in message.lower() or "run command" in message.lower() or "execute command" in message.lower():
+            # Check prompt for direct tool syntax
+            if "kali" in message.lower() or "sandbox" in message.lower() or "kali.exec.v1" in message.lower():
+                tool_id = "kali.exec.v1"
+                requested_args = self._extract_kali_args(message)
+            elif "shell.run.v1" in message.lower() or "run command" in message.lower() or "execute command" in message.lower():
                 tool_id = "shell.run.v1"
                 requested_args = self._extract_shell_args(message)
             else:
@@ -138,6 +142,47 @@ class AgentLoop:
                     "timed_out": proc_res.timed_out,
                 }
                 actor = "orchestrator:adapter:shell.run.v1"
+
+            elif tool_id == "kali.exec.v1":
+                command = requested_args.get("command") or "uname"
+                args = requested_args.get("args") or ["-a"]
+                timeout_ms = int(requested_args.get("timeout_ms", 30000))
+                snapshot_before = bool(requested_args.get("snapshot_before", True))
+
+                vm_res = vm_manager.execute_in_vm(
+                    task_id=task_id,
+                    tool_id="kali.exec.v1",
+                    tool_version=tool_version,
+                    args={"command": command, "args": args, "cwd": requested_args.get("cwd", "/home/kali")},
+                    snapshot_before=snapshot_before,
+                    timeout_ms=timeout_ms,
+                )
+
+                process_id = vm_res.get("process_id", 0)
+                exit_code = vm_res.get("exit_code", 0)
+                stdout_output = vm_res.get("stdout", "")
+                stderr_output = vm_res.get("stderr") if vm_res.get("stderr") else None
+
+                cmd_str = f"{command} {' '.join(str(a) for a in args)}"
+                status_str = "TIMED OUT" if vm_res.get("timed_out") else f"exit {exit_code}"
+                reply_text = f"Kali Sandbox [kali.exec.v1] completed: `{cmd_str}` ({status_str}) in {vm_res.get('duration_ms', 0)}ms"
+                result_summary = f"Kali Sandbox executed `{cmd_str}` -> exit {exit_code}"
+
+                execution_details = {
+                    "adapter": "kali.exec.v1",
+                    "sandboxed": True,
+                    "vm": vm_manager.vm_name,
+                    "command": command,
+                    "args": args,
+                    "exit_code": exit_code,
+                    "process_id": process_id,
+                    "stdout": stdout_output,
+                    "stderr": stderr_output or "",
+                    "duration_ms": vm_res.get("duration_ms", 0),
+                    "timed_out": vm_res.get("timed_out", False),
+                    "pre_snapshot": vm_res.get("pre_snapshot"),
+                }
+                actor = "orchestrator:sandbox:kali.exec.v1"
 
             elif tool_id == "hello_world":
                 greet_target = requested_args.get("target") or requested_args.get("input") or "World"
@@ -268,6 +313,24 @@ class AgentLoop:
         else:
             # Default safe command for testing
             return {"command": "python", "args": ["-c", "import sys; print(f'Python {sys.version.split()[0]} via supervisor')"]}
+
+    def _extract_kali_args(self, message: str) -> Dict[str, Any]:
+        """Extract command and args for Kali VM sandbox execution."""
+        msg_lower = message.lower()
+        if "nmap" in msg_lower:
+            return {"command": "nmap", "args": ["--version"], "timeout_ms": 15000}
+        elif "whoami" in msg_lower:
+            return {"command": "whoami", "args": []}
+        elif "ip" in msg_lower or "ifconfig" in msg_lower:
+            return {"command": "ip", "args": ["addr", "show"]}
+        elif "ps" in msg_lower:
+            return {"command": "ps", "args": ["aux"]}
+        elif "uptime" in msg_lower:
+            return {"command": "uptime", "args": []}
+        elif "id" in msg_lower:
+            return {"command": "id", "args": []}
+        else:
+            return {"command": "uname", "args": ["-a"], "timeout_ms": 15000}
 
 
 def as_dict_event(event: Event) -> Dict[str, Any]:

@@ -1,0 +1,39 @@
+id: kali.exec.v1
+name: Kali Linux VM Sandbox Execution Adapter
+version: 1.0.0
+description: Executes a typed command inside the isolated Kali Linux VM via the guest worker agent with process supervision, live stream capture, and VM snapshot isolation.
+category: sandbox_execution
+parameters:
+  type: object
+  properties:
+    command:
+      type: string
+      description: The executable command name or binary inside Kali Linux (e.g. nmap, uname, whoami, ip, python3, bash)
+    args:
+      type: array
+      items:
+        type: string
+      description: List of string arguments to pass to the executable
+      default: []
+    cwd:
+      type: string
+      description: Working directory inside Kali Linux (defaults to /home/kali or /root)
+      default: "/home/kali"
+    timeout_ms:
+      type: integer
+      description: Hard timeout in milliseconds before process is forcibly killed by worker agent
+      default: 30000
+    snapshot_before:
+      type: boolean
+      description: Whether to take a VM snapshot immediately before executing this task
+      default: true
+  required:
+    - command
+timeout_ms: 60000
+metadata:
+  adapter: kali.exec.v1
+  target_os: Kali Linux (Debian-based)
+  agent_port: 9999
+  ssh_port: 2222
+  supervisor: true
+  sandboxed: true

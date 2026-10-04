@@ -32,6 +32,19 @@ function validateToolCall(toolId: string, args: any): { valid: boolean; error?: 
     return { valid: true };
   }
 
+  if (toolId === "kali.exec.v1") {
+    if (!args || typeof args !== "object") {
+      return { valid: false, error: "kali.exec.v1 requires an arguments object" };
+    }
+    if (!args.command || typeof args.command !== "string" || args.command.trim().length === 0) {
+      return { valid: false, error: "kali.exec.v1 parameter 'command' must be a non-empty string" };
+    }
+    if (args.args !== undefined && !Array.isArray(args.args)) {
+      return { valid: false, error: "kali.exec.v1 parameter 'args' must be an array of strings" };
+    }
+    return { valid: true };
+  }
+
   if (toolId === "hello_world") {
     return { valid: true };
   }
@@ -123,6 +136,35 @@ const server = http.createServer(async (req, res) => {
       res.end(JSON.stringify({ error: "Failed to connect to orchestrator", details: err.message }));
     }
     return;
+  }
+
+  // VM Sandbox routes: /vm/status, /vm/snapshots, /vm/snapshot, /vm/rollback, /vm/execute
+  if (url.pathname.startsWith("/vm/")) {
+    const subpath = url.pathname.replace("/vm/", "");
+    try {
+      if (req.method === "GET") {
+        const response = await fetch(`${ORCHESTRATOR_URL}/vm/${subpath}`);
+        const data = await response.json();
+        res.writeHead(response.status, { "Content-Type": "application/json" });
+        res.end(JSON.stringify(data));
+        return;
+      } else if (req.method === "POST") {
+        const body = await parseJsonBody(req);
+        const response = await fetch(`${ORCHESTRATOR_URL}/vm/${subpath}`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(body),
+        });
+        const data = await response.json();
+        res.writeHead(response.status, { "Content-Type": "application/json" });
+        res.end(JSON.stringify(data));
+        return;
+      }
+    } catch (err: any) {
+      res.writeHead(502, { "Content-Type": "application/json" });
+      res.end(JSON.stringify({ error: `VM Gateway Proxy error: ${err.message}` }));
+      return;
+    }
   }
 
   res.writeHead(404, { "Content-Type": "application/json" });
@@ -399,6 +441,80 @@ wss.on("connection", (ws: WebSocket, req) => {
             JSON.stringify({
               type: "error",
               error: `Failed to fetch model center status: ${err.message}`,
+            })
+          );
+        }
+        return;
+      }
+
+      if (payload.type === "get_vm_status" || payload.type === "vm_status") {
+        try {
+          const response = await fetch(`${ORCHESTRATOR_URL}/vm/status`);
+          const data = (await response.json()) as any;
+          ws.send(
+            JSON.stringify({
+              type: "vm_status",
+              data,
+              timestamp: new Date().toISOString(),
+            })
+          );
+        } catch (err: any) {
+          ws.send(
+            JSON.stringify({
+              type: "error",
+              error: `Failed to fetch VM status: ${err.message}`,
+            })
+          );
+        }
+        return;
+      }
+
+      if (payload.type === "vm_snapshot") {
+        try {
+          const response = await fetch(`${ORCHESTRATOR_URL}/vm/snapshot`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ name: payload.name, description: payload.description || "" }),
+          });
+          const data = (await response.json()) as any;
+          ws.send(
+            JSON.stringify({
+              type: "vm_snapshot_result",
+              data,
+              timestamp: new Date().toISOString(),
+            })
+          );
+        } catch (err: any) {
+          ws.send(
+            JSON.stringify({
+              type: "error",
+              error: `Failed to create VM snapshot: ${err.message}`,
+            })
+          );
+        }
+        return;
+      }
+
+      if (payload.type === "vm_rollback") {
+        try {
+          const response = await fetch(`${ORCHESTRATOR_URL}/vm/rollback`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ name: payload.name || "kairo_worker_ready" }),
+          });
+          const data = (await response.json()) as any;
+          ws.send(
+            JSON.stringify({
+              type: "vm_rollback_result",
+              data,
+              timestamp: new Date().toISOString(),
+            })
+          );
+        } catch (err: any) {
+          ws.send(
+            JSON.stringify({
+              type: "error",
+              error: `Failed to rollback VM: ${err.message}`,
             })
           );
         }

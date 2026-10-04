@@ -182,3 +182,66 @@ npm run dev
 ```
 
 Open [http://localhost:3000](http://localhost:3000) in your browser.
+
+---
+
+## Task 1.1 & 1.2: Isolated Kali Linux VM Sandbox & Snapshot Lifecycle
+
+### Architecture Overview
+
+```text
+Host (Windows)                              Kali Linux Guest VM (VirtualBox / NAT)
+┌───────────────────────────────┐           ┌─────────────────────────────────────┐
+│ UI (Next.js / VM Sandbox Tab) │           │ systemd (kairo-worker.service)      │
+│   ├── Live Status & Health    │           │   ├── /opt/kairo/worker_agent.py    │
+│   ├── Snapshot Inventory      │           │   │   ├── GET  /health              │
+│   └── 1-Click Manual Rollback │           │   │   ├── POST /execute (ToolSpec)  │
+│                               │           │   │   └── POST /kill/<task_id>      │
+│ Gateway (Port 4000)           │           │   └── Guest Port 9999               │
+│   ├── Proxy /vm/* Endpoints   │           │                                     │
+│   └── WS Event Handlers       │           │ sshd (Port 22, root enabled)        │
+│                               │           └──────────────────▲──────────────────┘
+│ Orchestrator (Port 8000)      │                              │
+│   ├── VMManager (VBoxManage)  │ NAT Port Forwarding:         │
+│   │   ├── take_snapshot()     │   Host 127.0.0.1:9999 ───────┤ (Worker Agent)
+│   │   ├── rollback_snapshot() │   Host 127.0.0.1:2222 ───────┘ (SSH Access)
+│   │   └── execute_in_vm()     │
+│   └── SQLite Event Store      │
+└───────────────────────────────┘
+```
+
+### Key Features Implemented
+
+1. **Isolated Kali Linux Guest VM**:
+   - Running VirtualBox VM (`kali-linux-2026.1-virtualbox-amd64`) in headless mode.
+   - NAT Port forwarding configured:
+     - `127.0.0.1:2222` ➔ Guest `22` (SSH with key/password authentication)
+     - `127.0.0.1:9999` ➔ Guest `9999` (Worker Agent HTTP/REST API)
+
+2. **In-Guest Lightweight Worker Agent (`vm/worker_agent.py`)**:
+   - Minimal Python worker running as systemd service `/etc/systemd/system/kairo-worker.service`.
+   - Accepts strictly typed `ToolSpec` JSON requests (`POST /execute`).
+   - Streams process telemetry back (exit code, process group PID, start/end time, duration, stdout, stderr).
+   - Independent process groups (`os.setsid`) with SIGKILL timeout protection.
+   - No raw SSH-exec string injection.
+
+3. **ToolSpec Definition (`registry/tools/kali_exec_v1.yaml`)**:
+   - Registered tool `kali.exec.v1` adhering to the system registry format.
+   - Supports parameters: `command`, `args`, `cwd`, `timeout_ms`, `snapshot_before`, `env`.
+
+4. **Snapshot-Before-Task & Manual Rollback Lifecycle**:
+   - `snapshot_before=True`: Host `VMManager` automatically triggers a VirtualBox snapshot prior to task execution.
+   - Clean baseline snapshot: `kairo_worker_ready` captures the fully booted, configured system with worker service active.
+   - Manual rollback: `POST /vm/rollback` cleanly powers down the VM, restores the requested snapshot, boots headless, and polls `/health` until the guest worker is ready.
+
+5. **UI VM Sandbox Panel**:
+   - Real-time guest OS, kernel, worker agent status, and active tasks.
+   - Live snapshot inventory with timestamps and descriptions.
+   - Instant rollback trigger button for any snapshot.
+   - Quick action buttons to execute commands with automatic snapshotting.
+
+### Running End-to-End Verification
+
+```bash
+python test_vm_sandbox.py
+```

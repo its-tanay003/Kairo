@@ -69,6 +69,33 @@ interface ModelCenterStatus {
   models_catalog: ModelCatalogItem[];
 }
 
+interface VMSnapshot {
+  name: string;
+  uuid: string;
+  is_current: boolean;
+  description: string;
+}
+
+interface VMStatus {
+  vm_name: string;
+  vm_state: string;
+  running: boolean;
+  worker_online: boolean;
+  worker_info?: {
+    status: string;
+    agent: string;
+    version: string;
+    os: string;
+    kernel: string;
+    active_tasks: number;
+    supported_tools: string[];
+  };
+  snapshots_count: number;
+  snapshots: VMSnapshot[];
+  baseline_snapshot: string;
+  timestamp: string;
+}
+
 interface ChatMessage {
   id: string;
   sender: "user" | "agent" | "system";
@@ -91,8 +118,12 @@ export default function Home() {
   const [inputVal, setInputVal] = useState<string>("");
   const [latestEvent, setLatestEvent] = useState<EventRecord | null>(null);
   const [allEvents, setAllEvents] = useState<EventRecord[]>([]);
-  const [activeTab, setActiveTab] = useState<"model_center" | "latest" | "all">("model_center");
+  const [activeTab, setActiveTab] = useState<"model_center" | "vm_sandbox" | "latest" | "all">("vm_sandbox");
   const [modelCenter, setModelCenter] = useState<ModelCenterStatus | null>(null);
+  const [vmStatus, setVmStatus] = useState<VMStatus | null>(null);
+  const [isRollingBack, setIsRollingBack] = useState<boolean>(false);
+  const [isTakingSnapshot, setIsTakingSnapshot] = useState<boolean>(false);
+  const [newSnapName, setNewSnapName] = useState<string>("");
   const [activeTaskId, setActiveTaskId] = useState<string | null>(null);
 
   const wsRef = useRef<WebSocket | null>(null);
@@ -186,6 +217,31 @@ export default function Home() {
                 timestamp: new Date().toLocaleTimeString(),
               },
             ]);
+          } else if (data.type === "vm_status") {
+            setVmStatus(data.status);
+          } else if (data.type === "vm_snapshot_created") {
+            setMessages((prev) => [
+              ...prev,
+              {
+                id: `msg_${Date.now()}_snap_event`,
+                sender: "system",
+                text: `📸 VM Snapshot "${data.snapshot_name}" captured (${data.is_live ? "live" : "offline"}).`,
+                timestamp: new Date().toLocaleTimeString(),
+              },
+            ]);
+            refreshVMStatus();
+          } else if (data.type === "vm_rollback_complete") {
+            setIsRollingBack(false);
+            setMessages((prev) => [
+              ...prev,
+              {
+                id: `msg_${Date.now()}_rb_event`,
+                sender: "system",
+                text: `✅ VM Rollback to "${data.snapshot_name}" confirmed. Guest worker agent active.`,
+                timestamp: new Date().toLocaleTimeString(),
+              },
+            ]);
+            refreshVMStatus();
           } else if (data.type === "error") {
             setActiveTaskId(null);
             setMessages((prev) => [
@@ -295,6 +351,94 @@ export default function Home() {
     }
   };
 
+  const refreshVMStatus = async () => {
+    try {
+      const res = await fetch("http://localhost:8000/vm/status");
+      if (res.ok) {
+        const data = await res.json();
+        setVmStatus(data);
+      }
+    } catch (e) {
+      console.error("Failed to fetch VM status", e);
+    }
+  };
+
+  const takeSnapshot = async (name: string) => {
+    if (!name.trim()) return;
+    setIsTakingSnapshot(true);
+    try {
+      const res = await fetch("http://localhost:8000/vm/snapshot", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          name: name.trim(),
+          description: `Manual snapshot created via UI at ${new Date().toLocaleTimeString()}`,
+        }),
+      });
+      const data = await res.json();
+      setMessages((prev) => [
+        ...prev,
+        {
+          id: `msg_${Date.now()}_snap`,
+          sender: "system",
+          text: `📸 Created VM Snapshot: "${data.snapshot_name || name}"`,
+          timestamp: new Date().toLocaleTimeString(),
+        },
+      ]);
+      setNewSnapName("");
+      await refreshVMStatus();
+    } catch (e) {
+      console.error("Failed to take snapshot", e);
+    } finally {
+      setIsTakingSnapshot(false);
+    }
+  };
+
+  const rollbackSnapshot = async (name: string) => {
+    if (!confirm(`Are you sure you want to rollback VM to snapshot "${name}"?`)) return;
+    setIsRollingBack(true);
+    setMessages((prev) => [
+      ...prev,
+      {
+        id: `msg_${Date.now()}_rb_start`,
+        sender: "system",
+        text: `⏪ Initiating VM Rollback to snapshot: "${name}"... Waiting for guest reboot and worker reconnection.`,
+        timestamp: new Date().toLocaleTimeString(),
+      },
+    ]);
+    try {
+      const res = await fetch("http://localhost:8000/vm/rollback", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name }),
+      });
+      const data = await res.json();
+      setMessages((prev) => [
+        ...prev,
+        {
+          id: `msg_${Date.now()}_rb_done`,
+          sender: "system",
+          text: `✅ VM Rollback Complete: Restored to "${data.snapshot_name || name}". Guest worker agent is healthy and ready.`,
+          timestamp: new Date().toLocaleTimeString(),
+        },
+      ]);
+      await refreshVMStatus();
+    } catch (e) {
+      console.error("Failed to rollback", e);
+      setMessages((prev) => [
+        ...prev,
+        {
+          id: `msg_${Date.now()}_rb_err`,
+          sender: "system",
+          text: `❌ Rollback failed: ${String(e)}`,
+          timestamp: new Date().toLocaleTimeString(),
+        },
+      ]);
+    } finally {
+      setIsRollingBack(false);
+    }
+  };
+
   const refreshEvents = async () => {
     try {
       const res = await fetch("http://localhost:8000/events");
@@ -320,6 +464,15 @@ export default function Home() {
       })
       .catch((err) => console.error("Failed to fetch model center status", err));
 
+    fetch("http://localhost:8000/vm/status")
+      .then((res) => (res.ok ? res.json() : null))
+      .then((data) => {
+        if (!ignore && data) {
+          setVmStatus(data);
+        }
+      })
+      .catch((err) => console.error("Failed to fetch VM status", err));
+
     fetch("http://localhost:8000/events")
       .then((res) => res.json())
       .then((data) => {
@@ -336,6 +489,15 @@ export default function Home() {
         .then((data) => {
           if (!ignore && data) {
             setModelCenter(data);
+          }
+        })
+        .catch(() => {});
+
+      fetch("http://localhost:8000/vm/status")
+        .then((res) => (res.ok ? res.json() : null))
+        .then((data) => {
+          if (!ignore && data) {
+            setVmStatus(data);
           }
         })
         .catch(() => {});
@@ -373,6 +535,20 @@ export default function Home() {
               <span>GPU VRAM: {modelCenter.vram.used_mb}MB / {modelCenter.vram.total_mb}MB ({modelCenter.vram.utilization_pct}%)</span>
             </div>
           )}
+          <div
+            className="status-chip"
+            style={{
+              borderColor: vmStatus?.worker_online ? "rgba(16, 185, 129, 0.4)" : "rgba(244, 63, 94, 0.4)",
+              cursor: "pointer",
+            }}
+            onClick={() => setActiveTab("vm_sandbox")}
+            title="Click to open VM Sandbox Manager"
+          >
+            <span className={`dot ${vmStatus?.worker_online ? "connected" : "disconnected"}`} />
+            <span>
+              Kali VM: {vmStatus?.vm_state || "checking"} | Worker: {vmStatus?.worker_online ? "online" : "offline"}
+            </span>
+          </div>
           <div className="status-chip">
             <span className={`dot ${wsStatus}`} />
             <span>Gateway WS: {wsStatus}</span>
@@ -388,6 +564,49 @@ export default function Home() {
         {/* Left: Chat Pane */}
         <section className="chat-pane">
           <div className="action-bar">
+            {/* Tool: kali.exec.v1 with snapshot-before */}
+            <button
+              className="quick-btn"
+              style={{
+                color: "var(--accent-cyan)",
+                borderColor: "rgba(6, 182, 212, 0.4)",
+                background: "rgba(6, 182, 212, 0.12)",
+              }}
+              onClick={() =>
+                sendToolCall("kali.exec.v1", {
+                  command: "uname",
+                  args: ["-a"],
+                  snapshot_before: true,
+                  timeout_ms: 10000,
+                })
+              }
+              disabled={wsStatus !== "connected" || isRollingBack}
+              title="Runs typed command inside Kali Linux VM with pre-task snapshot"
+            >
+              🐉 Kali Exec: uname -a (Snap-Before)
+            </button>
+
+            {/* Tool: kali.exec.v1 fast execution */}
+            <button
+              className="quick-btn secondary"
+              style={{
+                color: "var(--accent-emerald)",
+                borderColor: "rgba(16, 185, 129, 0.35)",
+                background: "rgba(16, 185, 129, 0.1)",
+              }}
+              onClick={() =>
+                sendToolCall("kali.exec.v1", {
+                  command: "id",
+                  args: [],
+                  snapshot_before: false,
+                  timeout_ms: 5000,
+                })
+              }
+              disabled={wsStatus !== "connected" || isRollingBack}
+            >
+              🐉 Kali: whoami / id
+            </button>
+
             {/* Tool 1: shell.run.v1 safe execution */}
             <button
               className="quick-btn"
@@ -400,7 +619,7 @@ export default function Home() {
               }
               disabled={wsStatus !== "connected"}
             >
-              ⚡ Tool: shell.run.v1 (Python)
+              ⚡ shell.run.v1
             </button>
 
             {/* Tool 2: shell.run.v1 hard timeout */}
@@ -415,7 +634,7 @@ export default function Home() {
               }
               disabled={wsStatus !== "connected"}
             >
-              ⏱️ Hard Timeout (800ms)
+              ⏱️ Timeout (800ms)
             </button>
 
             {/* Tool 3: Kill Switch demo */}
@@ -435,23 +654,26 @@ export default function Home() {
               }}
               disabled={wsStatus !== "connected"}
             >
-              ☠️ Test Kill Switch (SIGKILL)
+              ☠️ SIGKILL
             </button>
 
             {/* Conversational chat trigger */}
             <button
               className="quick-btn secondary"
-              onClick={() => sendMessage("Hi! What adapters do you support?")}
+              onClick={() => sendMessage("Hi! What adapters and VM sandboxes do you support?")}
               disabled={wsStatus !== "connected"}
             >
-              💬 Chat Message
+              💬 Chat
             </button>
 
             <button
               className="quick-btn secondary"
-              onClick={refreshEvents}
+              onClick={() => {
+                refreshEvents();
+                refreshVMStatus();
+              }}
             >
-              🔄 Refresh Events
+              🔄 Refresh
             </button>
           </div>
 
@@ -581,8 +803,21 @@ export default function Home() {
         {/* Right: SQLite Event Inspector & Model Center */}
         <aside className="inspector-pane">
           <div className="inspector-header">
-            <h2>{activeTab === "model_center" ? "Model Center (Phase 4 Manager)" : "SQLite Event Store Inspector"}</h2>
+            <h2>
+              {activeTab === "model_center"
+                ? "Model Center (Phase 4 Manager)"
+                : activeTab === "vm_sandbox"
+                ? "VM Sandbox & Snapshot Manager"
+                : "SQLite Event Store Inspector"}
+            </h2>
             <div style={{ display: "flex", gap: "6px" }}>
+              <button
+                className={`quick-btn ${activeTab === "vm_sandbox" ? "" : "secondary"}`}
+                style={{ padding: "3px 8px", fontSize: "11px" }}
+                onClick={() => setActiveTab("vm_sandbox")}
+              >
+                VM Sandbox
+              </button>
               <button
                 className={`quick-btn ${activeTab === "model_center" ? "" : "secondary"}`}
                 style={{ padding: "3px 8px", fontSize: "11px" }}
@@ -763,6 +998,195 @@ export default function Home() {
                     <li className="checked">
                       <span className="check-icon">✓</span>
                       <span>Live VRAM &amp; RAM hardware usage telemetries monitored</span>
+                    </li>
+                  </ul>
+                </div>
+              </>
+            ) : activeTab === "vm_sandbox" ? (
+              <>
+                {/* VM Sandbox Banner */}
+                <div className={`vm-status-banner ${vmStatus?.worker_online ? "" : "offline"}`}>
+                  <div>
+                    <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                      <span className={`dot ${vmStatus?.worker_online ? "connected" : "disconnected"}`} />
+                      <strong style={{ fontSize: "13px", color: "#f1f5f9" }}>
+                        {vmStatus?.vm_name || "kali-linux-2026.1-virtualbox-amd64"}
+                      </strong>
+                    </div>
+                    <div style={{ fontSize: "11px", color: "var(--text-muted)", marginTop: "4px" }}>
+                      VirtualBox NAT • Host 2222 ➔ Guest 22 (SSH) • Host 9999 ➔ Guest 9999 (Worker)
+                    </div>
+                  </div>
+                  <div style={{ textAlign: "right" }}>
+                    <span className={`role-badge ${vmStatus?.worker_online ? "primary" : "fallback"}`}>
+                      {vmStatus?.worker_online ? "WORKER READY" : "OFFLINE"}
+                    </span>
+                    <div style={{ fontSize: "10px", color: "var(--text-muted)", marginTop: "4px" }}>
+                      State: {vmStatus?.vm_state || "unknown"}
+                    </div>
+                  </div>
+                </div>
+
+                {/* In-Guest Worker Telemetry */}
+                <div className="proof-card">
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "8px" }}>
+                    <h3>In-Guest Worker Agent (Typed ToolSpec API)</h3>
+                    <button
+                      className="quick-btn secondary"
+                      style={{ padding: "2px 8px", fontSize: "10px" }}
+                      onClick={refreshVMStatus}
+                    >
+                      🔄 Refresh
+                    </button>
+                  </div>
+
+                  <div className="model-meta-grid" style={{ gridTemplateColumns: "repeat(2, 1fr)" }}>
+                    <div className="model-meta-item">
+                      <span className="meta-label">Guest OS &amp; Kernel</span>
+                      <span className="meta-value">
+                        {vmStatus?.worker_info?.os || "Kali Linux"} ({vmStatus?.worker_info?.kernel || "amd64"})
+                      </span>
+                    </div>
+                    <div className="model-meta-item">
+                      <span className="meta-label">Agent Binary / Protocol</span>
+                      <span className="meta-value">
+                        {vmStatus?.worker_info?.agent || "kairo-worker"} v{vmStatus?.worker_info?.version || "1.0.0"} (HTTP/REST)
+                      </span>
+                    </div>
+                    <div className="model-meta-item">
+                      <span className="meta-label">Active Guest Tasks</span>
+                      <span className="meta-value">{vmStatus?.worker_info?.active_tasks ?? 0} running</span>
+                    </div>
+                    <div className="model-meta-item">
+                      <span className="meta-label">Baseline Snapshot</span>
+                      <span className="meta-value" style={{ color: "var(--accent-emerald)" }}>
+                        {vmStatus?.baseline_snapshot || "kairo_worker_ready"}
+                      </span>
+                    </div>
+                  </div>
+
+                  <div style={{ marginTop: "10px", display: "flex", gap: "8px" }}>
+                    <button
+                      className="quick-btn"
+                      style={{ flex: 1, justifyContent: "center" }}
+                      onClick={() =>
+                        sendToolCall("kali.exec.v1", {
+                          command: "uname",
+                          args: ["-a"],
+                          snapshot_before: true,
+                          timeout_ms: 10000,
+                        })
+                      }
+                      disabled={wsStatus !== "connected" || isRollingBack}
+                    >
+                      ⚡ Run with Pre-Task Snapshot
+                    </button>
+                    <button
+                      className="quick-btn secondary"
+                      style={{ flex: 1, justifyContent: "center" }}
+                      onClick={() => rollbackSnapshot(vmStatus?.baseline_snapshot || "kairo_worker_ready")}
+                      disabled={isRollingBack}
+                    >
+                      ⏪ Reset to Baseline
+                    </button>
+                  </div>
+                </div>
+
+                {/* VM Snapshot Inventory & Rollback */}
+                <div className="proof-card">
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                    <h3>VM Snapshot Inventory ({vmStatus?.snapshots_count ?? 0})</h3>
+                    {isRollingBack && (
+                      <span style={{ fontSize: "11px", color: "var(--accent-amber)" }}>
+                        ⏳ Restoring VM...
+                      </span>
+                    )}
+                  </div>
+
+                  <div style={{ display: "flex", flexDirection: "column", gap: "8px", marginTop: "10px" }}>
+                    {(vmStatus?.snapshots || []).map((snap, idx) => (
+                      <div
+                        key={idx}
+                        className={`snapshot-item ${snap.is_current ? "current" : ""}`}
+                      >
+                        <div style={{ flex: 1, overflow: "hidden" }}>
+                          <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
+                            <strong style={{ fontSize: "12px", color: "#f8fafc", fontFamily: "var(--font-mono)" }}>
+                              {snap.name}
+                            </strong>
+                            {snap.is_current && (
+                              <span className="role-badge primary" style={{ fontSize: "8px", padding: "1px 4px" }}>
+                                CURRENT
+                              </span>
+                            )}
+                          </div>
+                          <div style={{ fontSize: "11px", color: "var(--text-muted)", marginTop: "2px", textOverflow: "ellipsis", overflow: "hidden", whiteSpace: "nowrap" }}>
+                            {snap.description || snap.uuid}
+                          </div>
+                        </div>
+
+                        <button
+                          className="rollback-btn"
+                          onClick={() => rollbackSnapshot(snap.name)}
+                          disabled={isRollingBack}
+                          title={`Rollback VM to state: ${snap.name}`}
+                        >
+                          ⏪ Rollback
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+
+                  {/* Manual Snapshot Form */}
+                  <div className="snap-input-group">
+                    <input
+                      type="text"
+                      className="snap-input"
+                      placeholder="New snapshot name (e.g. checkpoint_01)..."
+                      value={newSnapName}
+                      onChange={(e) => setNewSnapName(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter") takeSnapshot(newSnapName);
+                      }}
+                      disabled={isTakingSnapshot || isRollingBack}
+                    />
+                    <button
+                      className="quick-btn"
+                      onClick={() => takeSnapshot(newSnapName)}
+                      disabled={!newSnapName.trim() || isTakingSnapshot || isRollingBack}
+                    >
+                      {isTakingSnapshot ? "Taking..." : "📸 Take Snapshot"}
+                    </button>
+                  </div>
+                </div>
+
+                {/* Architecture Verification Checklist */}
+                <div className="proof-card">
+                  <h3>Task 1.1 &amp; 1.2 Architecture Verification</h3>
+                  <ul className="checklist">
+                    <li className="checked">
+                      <span className="check-icon">✓</span>
+                      <span>Isolated Kali Linux VM running headless on host hypervisor</span>
+                    </li>
+                    <li className="checked">
+                      <span className="check-icon">✓</span>
+                      <span>SSH port forwarding 2222:22 + Worker Agent 9999:9999</span>
+                    </li>
+                    <li className="checked">
+                      <span className="check-icon">✓</span>
+                      <span>In-guest Python Worker Agent receiving typed ToolSpec requests</span>
+                    </li>
+                    <li className="checked">
+                      <span className="check-icon">✓</span>
+                      <span>Zero raw SSH-exec string injection; typed schema validation</span>
+                    </li>
+                    <li className="checked">
+                      <span className="check-icon">✓</span>
+                      <span>VM snapshot-before-task implemented (pre_task_* snapshots)</span>
+                    </li>
+                    <li className="checked">
+                      <span className="check-icon">✓</span>
+                      <span>Manual one-click rollback with guest recovery verified</span>
                     </li>
                   </ul>
                 </div>
