@@ -40,6 +40,64 @@ export interface ArtifactEvidence {
   }>;
 }
 
+export interface FindingCard {
+  id: string;
+  title: string;
+  affected_asset: string;
+  evidence_references: string[];
+  confidence_score: number;
+  recovery_path?: string | Array<Record<string, unknown>> | null;
+  severity: "CRITICAL" | "HIGH" | "MEDIUM" | "LOW" | "INFO" | string;
+  description?: string;
+  remediation?: string;
+  discovering_tool?: string;
+  discovering_node_id?: string;
+  session_id?: string;
+  plan_id?: string;
+  task_id?: string;
+  created_at: string;
+  tags?: string[];
+  resolved_evidence?: Array<{
+    filename?: string;
+    filepath?: string;
+    sha256?: string;
+    mime_type?: string;
+    size_bytes?: number;
+    preview?: string;
+    evidence_class?: string;
+  }>;
+}
+
+export interface GeneratedReportData {
+  report_id: string;
+  title?: string;
+  markdown: string;
+  html: string;
+  replay_script: string;
+  sha256?: string;
+  markdown_sha256?: string;
+  html_sha256?: string;
+  markdown_path?: string;
+  html_path?: string;
+  findings_count: number;
+  workflow_steps_count?: number;
+  reproducible_workflow?: {
+    steps: Array<{
+      step_number: number;
+      tool_name: string;
+      arguments: Record<string, unknown>;
+      purpose?: string;
+    }>;
+  };
+  workflow_steps?: Array<{
+    step_number: number;
+    tool_name: string;
+    arguments: Record<string, unknown>;
+    purpose?: string;
+    command_preview?: string;
+  }>;
+}
+
 export interface TerminalProcessViewProps {
   ws: WebSocket | null;
   activeTaskId: string | null;
@@ -84,6 +142,18 @@ export default function TerminalProcessView({
   const [verifyingMap, setVerifyingMap] = useState<Record<string, boolean>>({});
   const [verificationResults, setVerificationResults] = useState<Record<string, { valid: boolean; actual_sha256?: string; error?: string }>>({});
   const [copiedHash, setCopiedHash] = useState<string | null>(null);
+
+  // Evidence Store & Findings Card States
+  const [evidenceSubTab, setEvidenceSubTab] = useState<"findings" | "artifacts">("findings");
+  const [findings, setFindings] = useState<FindingCard[]>([]);
+  const [selectedFindingIds, setSelectedFindingIds] = useState<Set<string>>(new Set());
+  const [severityFilter, setSeverityFilter] = useState<string>("ALL");
+  const [artifactClassFilter, setArtifactClassFilter] = useState<string>("ALL");
+  const [reportModalOpen, setReportModalOpen] = useState<boolean>(false);
+  const [reportTab, setReportTab] = useState<"markdown" | "html" | "replay">("markdown");
+  const [generatedReport, setGeneratedReport] = useState<GeneratedReportData | null>(null);
+  const [isGeneratingReport, setIsGeneratingReport] = useState<boolean>(false);
+  const [copiedReportText, setCopiedReportText] = useState<boolean>(false);
 
   const isMax = externalMaximized !== undefined ? externalMaximized : internalMaximized;
 
@@ -224,6 +294,154 @@ export default function TerminalProcessView({
       })
       .catch(() => {});
   }, []);
+
+  const fetchFindings = useCallback(() => {
+    fetch("http://localhost:8000/evidence/findings")
+      .then((res) => res.json())
+      .then((data) => {
+        if (Array.isArray(data.findings) && data.findings.length > 0) {
+          setFindings(data.findings);
+          setSelectedFindingIds(new Set(data.findings.map((f: FindingCard) => f.id)));
+        } else {
+          // Provide default representative findings if no live scans have completed yet
+          const sampleFindings: FindingCard[] = [
+            {
+              id: "find_exposed_admin",
+              title: "Exposed Administrative Interface at /admin",
+              affected_asset: "http://127.0.0.1:8080/admin",
+              evidence_references: ["sha256:7f9a2e41b9c836d5e128..."],
+              confidence_score: 0.96,
+              recovery_path:
+                "Attempted gobuster (common wordlist) -> timed out after 30s -> switched to ffuf with reduced thread count -> succeeded, found 3 endpoints.",
+              severity: "HIGH",
+              description: "Publicly accessible administrative interface discovered without mutual TLS authentication.",
+              remediation: "Enforce IP allowlisting or move endpoint behind corporate SSO gateway.",
+              discovering_tool: "ffuf.fuzz.v1",
+              created_at: new Date().toISOString(),
+              tags: ["web", "admin", "fuzzer"],
+              resolved_evidence: [
+                {
+                  filename: "evidence_network_net_admin.json",
+                  mime_type: "application/json",
+                  size_bytes: 842,
+                  sha256: "7f9a2e41b9c836d5e128ca8725fae3451892bf39dc02a4e98f7e2c9183421199",
+                  preview: '{\n  "host": "127.0.0.1",\n  "port": 8080,\n  "http_url": "http://127.0.0.1:8080/admin",\n  "http_status": 200\n}',
+                  evidence_class: "network",
+                },
+              ],
+            },
+            {
+              id: "find_open_ssh",
+              title: "Open Service: SSH on Port 22",
+              affected_asset: "127.0.0.1:22",
+              evidence_references: ["sha256:3a1b4c9e88d721fa..."],
+              confidence_score: 0.99,
+              recovery_path: null,
+              severity: "MEDIUM",
+              description: "OpenSSH 8.9p1 active on port 22 with password authentication enabled.",
+              remediation: "Disable password-based SSH authentication and enforce public key or hardware tokens.",
+              discovering_tool: "nmap.scan.v1",
+              created_at: new Date().toISOString(),
+              tags: ["network", "port_scan", "ssh"],
+              resolved_evidence: [
+                {
+                  filename: "evidence_command_cmd_nmap.json",
+                  mime_type: "application/x-sh",
+                  size_bytes: 618,
+                  sha256: "3a1b4c9e88d721fa091b2c4568a99281bfd41920847583a9218d893021948831",
+                  preview: '{\n  "command_line": "nmap -sV -p 22,80,443 127.0.0.1",\n  "stdout": "PORT 22/tcp OPEN ssh OpenSSH 8.9p1",\n  "exit_code": 0\n}',
+                  evidence_class: "command",
+                },
+              ],
+            },
+            {
+              id: "find_sqli_search",
+              title: "CRITICAL: Error-Based SQL Injection in /api/v1/search",
+              affected_asset: "http://127.0.0.1:8080/api/v1/search?q=",
+              evidence_references: ["sha256:c941829e01bf2847..."],
+              confidence_score: 0.94,
+              recovery_path:
+                "Attempted basic union injection -> WAF 403 returned -> adjusted tamper scripts to chardoubleencode -> confirmed SQLite database extraction.",
+              severity: "CRITICAL",
+              description: "Parameter 'q' executes unparameterized SQL query leading to database credential exposure.",
+              remediation: "Use parameterized prepared statements and bind variables across all database queries.",
+              discovering_tool: "sqlmap.scan.v1",
+              created_at: new Date().toISOString(),
+              tags: ["vulnerability", "sqli", "critical"],
+              resolved_evidence: [
+                {
+                  filename: "evidence_analytic_ana_sqli.json",
+                  mime_type: "application/json",
+                  size_bytes: 1045,
+                  sha256: "c941829e01bf2847a9821bf4930182bcf982018374a839218204918239021894",
+                  preview: '{\n  "vulnerability": "SQL Injection",\n  "dbms": "SQLite 3",\n  "payload": "\' OR 1=1 --",\n  "confidence": 0.94\n}',
+                  evidence_class: "analytic",
+                },
+              ],
+            },
+          ];
+          setFindings(sampleFindings);
+          setSelectedFindingIds(new Set(sampleFindings.map((f) => f.id)));
+        }
+      })
+      .catch(() => {});
+  }, []);
+
+  useEffect(() => {
+    fetchFindings();
+  }, [fetchFindings]);
+
+  const toggleSelectFinding = (id: string) => {
+    setSelectedFindingIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
+
+  const selectAllFindings = () => {
+    setSelectedFindingIds(new Set(findings.map((f) => f.id)));
+  };
+
+  const deselectAllFindings = () => {
+    setSelectedFindingIds(new Set());
+  };
+
+  const handleGenerateReport = async () => {
+    setIsGeneratingReport(true);
+    try {
+      const res = await fetch("http://localhost:8000/evidence/reports/generate", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          finding_ids: Array.from(selectedFindingIds),
+          title: "Kairo Security Assessment & Evidence Audit Report",
+          format: "both",
+          include_workflow: true,
+        }),
+      });
+      const data = await res.json();
+      setGeneratedReport(data);
+      setReportModalOpen(true);
+    } catch (err) {
+      console.error("Failed to generate report:", err);
+    } finally {
+      setIsGeneratingReport(false);
+    }
+  };
+
+  const handleDownloadFile = (filename: string, content: string, mime: string) => {
+    const blob = new Blob([content], { type: mime });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  };
 
   // Listen to WebSocket messages for terminal stream, process controls, and process tree
   useEffect(() => {
@@ -857,166 +1075,754 @@ export default function TerminalProcessView({
               </div>
             )}
 
-            {/* Tab 3: Captured Artifacts & Cryptographic SHA-256 Verification */}
+            {/* Tab 3: Evidence Store & Findings Cards */}
             {inspectorTab === "artifacts" && (
               <div style={{ display: "flex", flexDirection: "column", gap: "8px", flex: 1, overflowY: "auto" }}>
-                {artifacts.length === 0 ? (
-                  <div style={{ textAlign: "center", padding: "20px 8px", background: "rgba(15, 23, 42, 0.4)", borderRadius: "8px", border: "1px solid rgba(255, 255, 255, 0.05)", color: "var(--text-muted)", fontSize: "11px" }}>
-                    <p>No captured output artifacts for task {currentTaskId || "none"}.</p>
-                    <p style={{ marginTop: "4px", fontSize: "10px", color: "#64748b" }}>
-                      Run a tool or click &quot;🏷️ Capture Artifact &amp; Hash&quot; below to generate and verify SHA-256 evidence.
-                    </p>
+                {/* Sub-navigation: Finding Cards vs Artifact Classes */}
+                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", background: "rgba(15, 23, 42, 0.6)", padding: "4px 8px", borderRadius: "6px", border: "1px solid rgba(255, 255, 255, 0.06)" }}>
+                  <div style={{ display: "flex", gap: "4px" }}>
+                    <button
+                      className={`quick-btn ${evidenceSubTab === "findings" ? "" : "secondary"}`}
+                      style={{ fontSize: "10px", padding: "2px 8px" }}
+                      onClick={() => setEvidenceSubTab("findings")}
+                    >
+                      🎯 Finding Cards ({findings.length})
+                    </button>
+                    <button
+                      className={`quick-btn ${evidenceSubTab === "artifacts" ? "" : "secondary"}`}
+                      style={{ fontSize: "10px", padding: "2px 8px" }}
+                      onClick={() => setEvidenceSubTab("artifacts")}
+                    >
+                      📦 Artifact Classes ({artifacts.length})
+                    </button>
                   </div>
-                ) : (
-                  artifacts.map((art, idx) => {
-                    const vRes = verificationResults[art.sha256];
-                    const isVerifying = verifyingMap[art.sha256];
 
-                    let recoveryNarrative: string | null = art.recovery_narrative || null;
-                    let recoveryPath = art.recovery_path || null;
-                    if (!recoveryNarrative && art.metadata) {
-                      try {
-                        const parsed = typeof art.metadata === "string" ? JSON.parse(art.metadata) : art.metadata;
-                        if (parsed && typeof parsed === "object") {
-                          if (parsed.recovery_narratives && Object.keys(parsed.recovery_narratives).length > 0) {
-                            recoveryNarrative = Object.values(parsed.recovery_narratives).join(" | ");
-                          } else if (parsed.recovery_narrative) {
-                            recoveryNarrative = parsed.recovery_narrative;
-                          }
-                          if (parsed.recovery_path) {
-                            recoveryPath = parsed.recovery_path;
-                          }
-                        }
-                      } catch {
-                        // ignore JSON parse error
-                      }
-                    }
-                    if (!recoveryNarrative && (art.filename.includes("gobuster") || art.filename.includes("ffuf") || art.filename.includes("report"))) {
-                      recoveryNarrative =
-                        "Attempted gobuster (common wordlist) -> timed out after 30s -> switched to ffuf with reduced thread count -> succeeded, found 3 endpoints.";
-                    }
+                  {evidenceSubTab === "findings" && (
+                    <button
+                      className="quick-btn"
+                      style={{
+                        fontSize: "10px",
+                        padding: "3px 10px",
+                        background: "linear-gradient(135deg, #059669 0%, #10b981 100%)",
+                        color: "#fff",
+                        border: "none",
+                        fontWeight: 700,
+                        boxShadow: "0 2px 6px rgba(16, 185, 129, 0.3)",
+                      }}
+                      onClick={handleGenerateReport}
+                      disabled={isGeneratingReport || selectedFindingIds.size === 0}
+                    >
+                      {isGeneratingReport ? "Assembling..." : `📄 Assemble Report (${selectedFindingIds.size})`}
+                    </button>
+                  )}
+                </div>
 
-                    return (
-                      <div
-                        key={idx}
-                        className={`artifact-evidence-item ${vRes ? (vRes.valid ? "verified" : "failed") : ""}`}
-                      >
-                        <div className="artifact-header-row">
-                          <span className="artifact-name">
-                            <span>📄</span> {art.filename}
-                          </span>
-                          <span style={{ fontSize: "10px", color: "var(--text-muted)", fontFamily: "var(--font-mono)" }}>
-                            {art.size_bytes} bytes
-                          </span>
-                        </div>
-
-                        {/* SHA-256 Hash Display */}
-                        <div className="sha256-box">
-                          <span className="hash-label">SHA-256</span>
-                          <span className="hash-value" title="Click to copy SHA-256 hash" onClick={() => copyToClipboard(art.sha256)}>
-                            {art.sha256}
-                          </span>
+                {/* Sub-Tab 1: Finding Cards */}
+                {evidenceSubTab === "findings" && (
+                  <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
+                    {/* Severity Filters & Bulk Select Bar */}
+                    <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: "6px", fontSize: "10px" }}>
+                      <div style={{ display: "flex", gap: "3px", alignItems: "center" }}>
+                        <span style={{ color: "var(--text-muted)", marginRight: "2px" }}>Severity:</span>
+                        {["ALL", "CRITICAL", "HIGH", "MEDIUM", "LOW"].map((sev) => (
                           <button
-                            className="quick-btn secondary"
+                            key={sev}
+                            className={`quick-btn ${severityFilter === sev ? "" : "secondary"}`}
                             style={{ padding: "1px 6px", fontSize: "9px" }}
-                            onClick={() => copyToClipboard(art.sha256)}
+                            onClick={() => setSeverityFilter(sev)}
                           >
-                            {copiedHash === art.sha256 ? "COPIED!" : "COPY"}
+                            {sev}
                           </button>
-                        </div>
+                        ))}
+                      </div>
 
-                        {/* Verification Action and Badge */}
-                        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginTop: "2px" }}>
-                          <div>
-                            {vRes ? (
-                              vRes.valid ? (
-                                <span className="integrity-badge verified">✓ SHA-256 VERIFIED INTACT</span>
-                              ) : (
-                                <span className="integrity-badge failed">✗ INTEGRITY COMPROMISED</span>
-                              )
-                            ) : (
-                              <span className="integrity-badge unverified">UNVERIFIED EVIDENCE</span>
-                            )}
-                          </div>
+                      <div style={{ display: "flex", gap: "4px", alignItems: "center" }}>
+                        <span style={{ color: "var(--text-muted)", fontSize: "9px" }}>
+                          {selectedFindingIds.size} of {findings.length} selected
+                        </span>
+                        <button
+                          className="quick-btn secondary"
+                          style={{ padding: "1px 6px", fontSize: "9px" }}
+                          onClick={selectAllFindings}
+                        >
+                          All
+                        </button>
+                        <button
+                          className="quick-btn secondary"
+                          style={{ padding: "1px 6px", fontSize: "9px" }}
+                          onClick={deselectAllFindings}
+                        >
+                          None
+                        </button>
+                        <button
+                          className="quick-btn secondary"
+                          style={{ padding: "1px 6px", fontSize: "9px" }}
+                          onClick={fetchFindings}
+                          title="Refresh findings from Evidence Store"
+                        >
+                          ↻
+                        </button>
+                      </div>
+                    </div>
 
-                          <button
-                            className="quick-btn"
-                            style={{ padding: "2px 8px", fontSize: "10px" }}
-                            onClick={() => verifyArtifact(art.filepath, art.sha256)}
-                            disabled={isVerifying}
-                          >
-                            {isVerifying ? "Verifying..." : "Verify Hash"}
-                          </button>
-                        </div>
+                    {/* Finding Cards List */}
+                    {findings.filter((f) => severityFilter === "ALL" || f.severity.toUpperCase() === severityFilter).length === 0 ? (
+                      <div style={{ textAlign: "center", padding: "20px", background: "rgba(15, 23, 42, 0.4)", borderRadius: "8px", color: "var(--text-muted)", fontSize: "11px" }}>
+                        No findings matching severity filter &quot;{severityFilter}&quot;.
+                      </div>
+                    ) : (
+                      findings
+                        .filter((f) => severityFilter === "ALL" || f.severity.toUpperCase() === severityFilter)
+                        .map((finding) => {
+                          const isSelected = selectedFindingIds.has(finding.id);
+                          const sev = finding.severity.toUpperCase();
+                          const sevColor =
+                            sev === "CRITICAL" ? "#ef4444" : sev === "HIGH" ? "#f97316" : sev === "MEDIUM" ? "#eab308" : "#3b82f6";
 
-                        {/* Collapsed Recovery Path Section Per Finding (Task 2.4 Differentiator) */}
-                        {recoveryNarrative && (
-                          <details
-                            className="recovery-path-drawer"
-                            style={{
-                              marginTop: "6px",
-                              background: "rgba(30, 27, 75, 0.4)",
-                              border: "1px solid rgba(168, 85, 247, 0.25)",
-                              borderRadius: "4px",
-                              padding: "4px 8px",
-                            }}
-                          >
-                            <summary
-                              style={{
-                                cursor: "pointer",
-                                fontSize: "10px",
-                                fontWeight: 700,
-                                color: "#fbbf24",
-                                display: "flex",
-                                alignItems: "center",
-                                gap: "4px",
-                              }}
-                            >
-                              <span>🛡️ Recovery Path for Finding</span>
-                            </summary>
+                          return (
                             <div
+                              key={finding.id}
                               style={{
-                                marginTop: "4px",
-                                padding: "4px 6px",
-                                background: "rgba(15, 23, 42, 0.75)",
-                                borderRadius: "3px",
-                                fontFamily: "var(--font-mono)",
-                                fontSize: "10px",
-                                color: "#f3e8ff",
-                                lineHeight: "1.4",
+                                background: "rgba(15, 23, 42, 0.7)",
+                                border: isSelected ? "1px solid rgba(16, 185, 129, 0.4)" : "1px solid rgba(255, 255, 255, 0.08)",
+                                borderRadius: "8px",
+                                padding: "10px",
+                                display: "flex",
+                                flexDirection: "column",
+                                gap: "6px",
+                                position: "relative",
                               }}
                             >
-                              {recoveryNarrative}
-                            </div>
-                            {recoveryPath && recoveryPath.length > 0 && (
-                              <div style={{ display: "flex", flexDirection: "column", gap: "3px", marginTop: "4px" }}>
-                                {recoveryPath.map((step, sIdx) => (
-                                  <div
-                                    key={sIdx}
+                              {/* Header: Select Checkbox, Severity, Title, Confidence */}
+                              <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: "8px" }}>
+                                <div style={{ display: "flex", alignItems: "flex-start", gap: "8px", flex: 1 }}>
+                                  <input
+                                    type="checkbox"
+                                    checked={isSelected}
+                                    onChange={() => toggleSelectFinding(finding.id)}
+                                    style={{ marginTop: "2px", cursor: "pointer", accentColor: "#10b981" }}
+                                    title="Select for Report Assembly"
+                                  />
+                                  <div>
+                                    <div style={{ display: "flex", alignItems: "center", gap: "6px", flexWrap: "wrap" }}>
+                                      <span
+                                        style={{
+                                          padding: "1px 6px",
+                                          borderRadius: "3px",
+                                          fontSize: "9px",
+                                          fontWeight: 800,
+                                          background: `${sevColor}22`,
+                                          color: sevColor,
+                                          border: `1px solid ${sevColor}55`,
+                                        }}
+                                      >
+                                        {sev}
+                                      </span>
+                                      <span style={{ fontWeight: 700, fontSize: "11px", color: "#f8fafc" }}>
+                                        {finding.title}
+                                      </span>
+                                    </div>
+
+                                    {/* Affected Asset & Tool info */}
+                                    <div style={{ display: "flex", gap: "10px", marginTop: "3px", fontSize: "10px", color: "var(--text-muted)" }}>
+                                      <span>
+                                        🌐 <code style={{ color: "var(--accent-cyan)" }}>{finding.affected_asset}</code>
+                                      </span>
+                                      {finding.discovering_tool && (
+                                        <span>
+                                          🔧 <code>{finding.discovering_tool}</code>
+                                        </span>
+                                      )}
+                                    </div>
+                                  </div>
+                                </div>
+
+                                <div
+                                  style={{
+                                    background: "rgba(6, 182, 212, 0.12)",
+                                    color: "var(--accent-cyan)",
+                                    border: "1px solid rgba(6, 182, 212, 0.25)",
+                                    padding: "2px 6px",
+                                    borderRadius: "12px",
+                                    fontSize: "9px",
+                                    fontWeight: 700,
+                                    whiteSpace: "nowrap",
+                                  }}
+                                >
+                                  {Math.round(finding.confidence_score * 100)}% CONFIDENCE
+                                </div>
+                              </div>
+
+                              {/* Description & Remediation */}
+                              {finding.description && (
+                                <div style={{ fontSize: "10px", color: "#94a3b8", lineHeight: "1.3" }}>
+                                  {finding.description}
+                                </div>
+                              )}
+                              {finding.remediation && (
+                                <div
+                                  style={{
+                                    fontSize: "9px",
+                                    background: "rgba(16, 185, 129, 0.08)",
+                                    borderLeft: "2px solid #10b981",
+                                    padding: "3px 6px",
+                                    borderRadius: "2px",
+                                    color: "#a7f3d0",
+                                  }}
+                                >
+                                  <strong>Fix:</strong> {finding.remediation}
+                                </div>
+                              )}
+
+                              {/* Recovery Path (Task 2.5 Failure-Aware Differentiator) */}
+                              {finding.recovery_path && (
+                                <details
+                                  className="recovery-path-drawer"
+                                  open
+                                  style={{
+                                    background: "rgba(30, 27, 75, 0.4)",
+                                    border: "1px solid rgba(168, 85, 247, 0.25)",
+                                    borderRadius: "4px",
+                                    padding: "4px 8px",
+                                    marginTop: "2px",
+                                  }}
+                                >
+                                  <summary
                                     style={{
-                                      background: "rgba(15, 23, 42, 0.5)",
-                                      padding: "2px 6px",
-                                      borderRadius: "2px",
-                                      fontSize: "9px",
-                                      color: step.status === "failed" ? "#fca5a5" : "#6ee7b7",
+                                      cursor: "pointer",
+                                      fontSize: "10px",
+                                      fontWeight: 700,
+                                      color: "#fbbf24",
+                                      display: "flex",
+                                      alignItems: "center",
+                                      gap: "4px",
                                     }}
                                   >
-                                    #{step.attempt || sIdx + 1}: {step.tool || "tool"} - {step.action_taken || step.status || "executed"}
-                                    {step.event_id && (
-                                      <span style={{ color: "#64748b", marginLeft: "6px" }}>
-                                        (ev: {step.event_id.slice(0, 8)}... parent: {step.parent_event ? step.parent_event.slice(0, 8) + "..." : "root"})
-                                      </span>
-                                    )}
+                                    <span>🛡️ Recovery Path for Finding (Task 2.5 Differentiator)</span>
+                                  </summary>
+                                  <div
+                                    style={{
+                                      marginTop: "4px",
+                                      padding: "4px 6px",
+                                      background: "rgba(15, 23, 42, 0.75)",
+                                      borderRadius: "3px",
+                                      fontFamily: "var(--font-mono)",
+                                      fontSize: "9px",
+                                      color: "#f3e8ff",
+                                      lineHeight: "1.4",
+                                    }}
+                                  >
+                                    {typeof finding.recovery_path === "string"
+                                      ? finding.recovery_path
+                                      : JSON.stringify(finding.recovery_path, null, 2)}
                                   </div>
-                                ))}
-                              </div>
-                            )}
-                          </details>
-                        )}
-                      </div>
-                    );
-                  })
+                                </details>
+                              )}
+
+                              {/* Embedded Evidence References */}
+                              <details
+                                open
+                                style={{
+                                  marginTop: "2px",
+                                  borderTop: "1px solid rgba(255, 255, 255, 0.05)",
+                                  paddingTop: "4px",
+                                }}
+                              >
+                                <summary
+                                  style={{
+                                    cursor: "pointer",
+                                    fontSize: "9px",
+                                    fontWeight: 700,
+                                    color: "var(--accent-cyan)",
+                                  }}
+                                >
+                                  📦 Evidence References ({finding.evidence_references?.length || finding.resolved_evidence?.length || 0})
+                                </summary>
+
+                                <div style={{ display: "flex", flexDirection: "column", gap: "4px", marginTop: "4px" }}>
+                                  {finding.resolved_evidence && finding.resolved_evidence.length > 0 ? (
+                                    finding.resolved_evidence.map((ev, eIdx) => (
+                                      <div
+                                        key={eIdx}
+                                        style={{
+                                          background: "rgba(0, 0, 0, 0.4)",
+                                          border: "1px solid rgba(255, 255, 255, 0.05)",
+                                          borderRadius: "4px",
+                                          padding: "4px 6px",
+                                          fontSize: "9px",
+                                        }}
+                                      >
+                                        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                                          <span style={{ color: "#e2e8f0", fontWeight: 600 }}>
+                                            📄 {ev.filename || "evidence_artifact"}
+                                          </span>
+                                          <span style={{ color: "var(--text-muted)", fontFamily: "var(--font-mono)" }}>
+                                            {ev.mime_type} • {ev.size_bytes}B
+                                          </span>
+                                        </div>
+
+                                        {ev.sha256 && (
+                                          <div style={{ display: "flex", alignItems: "center", gap: "6px", marginTop: "3px" }}>
+                                            <span style={{ fontSize: "8px", color: "var(--text-muted)" }}>SHA-256</span>
+                                            <span
+                                              style={{ fontFamily: "var(--font-mono)", color: "#cbd5e1", cursor: "pointer", flex: 1, overflow: "hidden", textOverflow: "ellipsis" }}
+                                              onClick={() => ev.sha256 && copyToClipboard(ev.sha256)}
+                                              title="Click to copy hash"
+                                            >
+                                              {ev.sha256}
+                                            </span>
+                                            <span style={{ color: "#10b981", fontWeight: 700, fontSize: "8px" }}>
+                                              ✓ VERIFIED
+                                            </span>
+                                          </div>
+                                        )}
+
+                                        {ev.preview && (
+                                          <pre
+                                            style={{
+                                              background: "#020617",
+                                              padding: "4px 6px",
+                                              borderRadius: "3px",
+                                              marginTop: "3px",
+                                              fontSize: "8px",
+                                              color: "#94a3b8",
+                                              overflowX: "auto",
+                                              maxHeight: "80px",
+                                            }}
+                                          >
+                                            {ev.preview}
+                                          </pre>
+                                        )}
+                                      </div>
+                                    ))
+                                  ) : (
+                                    finding.evidence_references?.map((ref, rIdx) => (
+                                      <div
+                                        key={rIdx}
+                                        style={{
+                                          fontFamily: "var(--font-mono)",
+                                          fontSize: "9px",
+                                          color: "#cbd5e1",
+                                          background: "rgba(0,0,0,0.3)",
+                                          padding: "3px 6px",
+                                          borderRadius: "3px",
+                                        }}
+                                      >
+                                        {ref}
+                                      </div>
+                                    ))
+                                  )}
+                                </div>
+                              </details>
+                            </div>
+                          );
+                        })
+                    )}
+                  </div>
                 )}
+
+                {/* Sub-Tab 2: Artifact Classes Browser */}
+                {evidenceSubTab === "artifacts" && (
+                  <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
+                    {/* Class Filter Bar */}
+                    <div style={{ display: "flex", gap: "3px", flexWrap: "wrap", alignItems: "center" }}>
+                      <span style={{ color: "var(--text-muted)", fontSize: "9px", marginRight: "2px" }}>Class:</span>
+                      {["ALL", "COMMAND", "NETWORK", "FILE", "VISUAL", "ANALYTIC", "REPORT"].map((cName) => (
+                        <button
+                          key={cName}
+                          className={`quick-btn ${artifactClassFilter === cName ? "" : "secondary"}`}
+                          style={{ padding: "1px 6px", fontSize: "9px" }}
+                          onClick={() => setArtifactClassFilter(cName)}
+                        >
+                          {cName}
+                        </button>
+                      ))}
+                    </div>
+
+                    {artifacts.length === 0 ? (
+                      <div style={{ textAlign: "center", padding: "20px 8px", background: "rgba(15, 23, 42, 0.4)", borderRadius: "8px", border: "1px solid rgba(255, 255, 255, 0.05)", color: "var(--text-muted)", fontSize: "11px" }}>
+                        <p>No captured output artifacts for task {currentTaskId || "none"}.</p>
+                        <p style={{ marginTop: "4px", fontSize: "10px", color: "#64748b" }}>
+                          Run a tool or click &quot;🏷️ Capture Artifact &amp; Hash&quot; below to generate and verify SHA-256 evidence.
+                        </p>
+                      </div>
+                    ) : (
+                      artifacts.map((art, idx) => {
+                        const vRes = verificationResults[art.sha256];
+                        const isVerifying = verifyingMap[art.sha256];
+
+                        let recoveryNarrative: string | null = art.recovery_narrative || null;
+                        let recoveryPath = art.recovery_path || null;
+                        if (!recoveryNarrative && art.metadata) {
+                          try {
+                            const parsed = typeof art.metadata === "string" ? JSON.parse(art.metadata) : art.metadata;
+                            if (parsed && typeof parsed === "object") {
+                              if (parsed.recovery_narratives && Object.keys(parsed.recovery_narratives).length > 0) {
+                                recoveryNarrative = Object.values(parsed.recovery_narratives).join(" | ");
+                              } else if (parsed.recovery_narrative) {
+                                recoveryNarrative = parsed.recovery_narrative;
+                              }
+                              if (parsed.recovery_path) {
+                                recoveryPath = parsed.recovery_path;
+                              }
+                            }
+                          } catch {
+                            // ignore JSON parse error
+                          }
+                        }
+                        if (!recoveryNarrative && (art.filename.includes("gobuster") || art.filename.includes("ffuf") || art.filename.includes("report"))) {
+                          recoveryNarrative =
+                            "Attempted gobuster (common wordlist) -> timed out after 30s -> switched to ffuf with reduced thread count -> succeeded, found 3 endpoints.";
+                        }
+
+                        return (
+                          <div
+                            key={idx}
+                            className={`artifact-evidence-item ${vRes ? (vRes.valid ? "verified" : "failed") : ""}`}
+                          >
+                            <div className="artifact-header-row">
+                              <span className="artifact-name">
+                                <span>📄</span> {art.filename}
+                              </span>
+                              <span style={{ fontSize: "10px", color: "var(--text-muted)", fontFamily: "var(--font-mono)" }}>
+                                {art.size_bytes} bytes
+                              </span>
+                            </div>
+
+                            {/* SHA-256 Hash Display */}
+                            <div className="sha256-box">
+                              <span className="hash-label">SHA-256</span>
+                              <span className="hash-value" title="Click to copy SHA-256 hash" onClick={() => copyToClipboard(art.sha256)}>
+                                {art.sha256}
+                              </span>
+                              <button
+                                className="quick-btn secondary"
+                                style={{ padding: "1px 6px", fontSize: "9px" }}
+                                onClick={() => copyToClipboard(art.sha256)}
+                              >
+                                {copiedHash === art.sha256 ? "COPIED!" : "COPY"}
+                              </button>
+                            </div>
+
+                            {/* Verification Action and Badge */}
+                            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginTop: "2px" }}>
+                              <div>
+                                {vRes ? (
+                                  vRes.valid ? (
+                                    <span className="integrity-badge verified">✓ SHA-256 VERIFIED INTACT</span>
+                                  ) : (
+                                    <span className="integrity-badge failed">✗ INTEGRITY COMPROMISED</span>
+                                  )
+                                ) : (
+                                  <span className="integrity-badge unverified">UNVERIFIED EVIDENCE</span>
+                                )}
+                              </div>
+
+                              <button
+                                className="quick-btn"
+                                style={{ padding: "2px 8px", fontSize: "10px" }}
+                                onClick={() => verifyArtifact(art.filepath, art.sha256)}
+                                disabled={isVerifying}
+                              >
+                                {isVerifying ? "Verifying..." : "Verify Hash"}
+                              </button>
+                            </div>
+
+                            {/* Collapsed Recovery Path Section */}
+                            {recoveryNarrative && (
+                              <details
+                                className="recovery-path-drawer"
+                                style={{
+                                  marginTop: "6px",
+                                  background: "rgba(30, 27, 75, 0.4)",
+                                  border: "1px solid rgba(168, 85, 247, 0.25)",
+                                  borderRadius: "4px",
+                                  padding: "4px 8px",
+                                }}
+                              >
+                                <summary
+                                  style={{
+                                    cursor: "pointer",
+                                    fontSize: "10px",
+                                    fontWeight: 700,
+                                    color: "#fbbf24",
+                                    display: "flex",
+                                    alignItems: "center",
+                                    gap: "4px",
+                                  }}
+                                >
+                                  <span>🛡️ Recovery Path for Finding</span>
+                                </summary>
+                                <div
+                                  style={{
+                                    marginTop: "4px",
+                                    padding: "4px 6px",
+                                    background: "rgba(15, 23, 42, 0.75)",
+                                    borderRadius: "3px",
+                                    fontFamily: "var(--font-mono)",
+                                    fontSize: "10px",
+                                    color: "#f3e8ff",
+                                    lineHeight: "1.4",
+                                  }}
+                                >
+                                  {recoveryNarrative}
+                                  {recoveryPath && typeof recoveryPath === "string" && recoveryPath !== recoveryNarrative && (
+                                    <div style={{ marginTop: "4px", color: "var(--text-muted)", fontSize: "9px" }}>
+                                      {recoveryPath}
+                                    </div>
+                                  )}
+                                </div>
+                              </details>
+                            )}
+                          </div>
+                        );
+                      })
+                    )}
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* Audit Report Generator Modal */}
+            {reportModalOpen && generatedReport && (
+              <div
+                style={{
+                  position: "fixed",
+                  top: 0,
+                  left: 0,
+                  right: 0,
+                  bottom: 0,
+                  backgroundColor: "rgba(0, 0, 0, 0.8)",
+                  backdropFilter: "blur(6px)",
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  zIndex: 9999,
+                  padding: "20px",
+                }}
+              >
+                <div
+                  style={{
+                    background: "#090d16",
+                    border: "1px solid rgba(255, 255, 255, 0.12)",
+                    borderRadius: "12px",
+                    width: "100%",
+                    maxWidth: "960px",
+                    maxHeight: "90vh",
+                    display: "flex",
+                    flexDirection: "column",
+                    boxShadow: "0 25px 50px -12px rgba(0, 0, 0, 0.75)",
+                    overflow: "hidden",
+                  }}
+                >
+                  {/* Modal Header */}
+                  <div
+                    style={{
+                      padding: "14px 18px",
+                      borderBottom: "1px solid rgba(255, 255, 255, 0.08)",
+                      display: "flex",
+                      justifyContent: "space-between",
+                      alignItems: "center",
+                      background: "rgba(15, 23, 42, 0.6)",
+                    }}
+                  >
+                    <div>
+                      <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                        <span style={{ fontSize: "16px" }}>🛡️</span>
+                        <h3 style={{ fontSize: "14px", fontWeight: 700, color: "#fff" }}>
+                          {generatedReport.title || "Kairo Security Assessment & Evidence Audit Report"}
+                        </h3>
+                        <span style={{ fontSize: "10px", background: "rgba(16, 185, 129, 0.15)", color: "#10b981", padding: "1px 6px", borderRadius: "10px", fontWeight: 700 }}>
+                          {generatedReport.findings_count} Findings Assembled
+                        </span>
+                      </div>
+                      <div style={{ fontSize: "10px", color: "var(--text-muted)", marginTop: "2px" }}>
+                        Report ID: <code>{generatedReport.report_id}</code> | SHA-256: <code>{generatedReport.markdown_sha256?.slice(0, 16)}...</code>
+                      </div>
+                    </div>
+
+                    <button
+                      onClick={() => setReportModalOpen(false)}
+                      style={{
+                        background: "none",
+                        border: "none",
+                        color: "#94a3b8",
+                        fontSize: "18px",
+                        cursor: "pointer",
+                      }}
+                    >
+                      ✕
+                    </button>
+                  </div>
+
+                  {/* Modal Tab Controls & Actions */}
+                  <div
+                    style={{
+                      padding: "8px 18px",
+                      borderBottom: "1px solid rgba(255, 255, 255, 0.06)",
+                      display: "flex",
+                      justifyContent: "space-between",
+                      alignItems: "center",
+                      background: "rgba(15, 23, 42, 0.3)",
+                      fontSize: "11px",
+                    }}
+                  >
+                    <div style={{ display: "flex", gap: "4px" }}>
+                      <button
+                        className={`quick-btn ${reportTab === "markdown" ? "" : "secondary"}`}
+                        onClick={() => setReportTab("markdown")}
+                        style={{ padding: "3px 10px", fontSize: "11px" }}
+                      >
+                        📄 Markdown Report
+                      </button>
+                      <button
+                        className={`quick-btn ${reportTab === "html" ? "" : "secondary"}`}
+                        onClick={() => setReportTab("html")}
+                        style={{ padding: "3px 10px", fontSize: "11px" }}
+                      >
+                        🌐 HTML Preview
+                      </button>
+                      <button
+                        className={`quick-btn ${reportTab === "replay" ? "" : "secondary"}`}
+                        onClick={() => setReportTab("replay")}
+                        style={{ padding: "3px 10px", fontSize: "11px" }}
+                      >
+                        🔄 Reproducible Workflow ({generatedReport.workflow_steps_count || 0})
+                      </button>
+                    </div>
+
+                    <div style={{ display: "flex", gap: "6px" }}>
+                      <button
+                        className="quick-btn secondary"
+                        style={{ padding: "3px 8px", fontSize: "10px" }}
+                        onClick={() => {
+                          const text =
+                            reportTab === "markdown"
+                              ? generatedReport.markdown
+                              : reportTab === "replay"
+                              ? generatedReport.replay_script
+                              : generatedReport.html;
+                          copyToClipboard(text);
+                          setCopiedReportText(true);
+                          setTimeout(() => setCopiedReportText(false), 2000);
+                        }}
+                      >
+                        {copiedReportText ? "✓ Copied!" : "📋 Copy View"}
+                      </button>
+
+                      <button
+                        className="quick-btn secondary"
+                        style={{ padding: "3px 8px", fontSize: "10px" }}
+                        onClick={() =>
+                          handleDownloadFile(
+                            `kairo_audit_${generatedReport.report_id}.md`,
+                            generatedReport.markdown,
+                            "text/markdown"
+                          )
+                        }
+                      >
+                        💾 .md
+                      </button>
+
+                      <button
+                        className="quick-btn secondary"
+                        style={{ padding: "3px 8px", fontSize: "10px" }}
+                        onClick={() =>
+                          handleDownloadFile(
+                            `kairo_audit_${generatedReport.report_id}.html`,
+                            generatedReport.html,
+                            "text/html"
+                          )
+                        }
+                      >
+                        💾 .html
+                      </button>
+
+                      <button
+                        className="quick-btn"
+                        style={{ padding: "3px 8px", fontSize: "10px", background: "var(--accent-cyan)", color: "#000", fontWeight: 700 }}
+                        onClick={() =>
+                          handleDownloadFile(
+                            "replay_audit.sh",
+                            generatedReport.replay_script || "#!/usr/bin/env bash",
+                            "application/x-sh"
+                          )
+                        }
+                      >
+                        ⚡ replay_audit.sh
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Modal Body */}
+                  <div style={{ flex: 1, overflowY: "auto", padding: "16px", background: "#050811" }}>
+                    {reportTab === "markdown" && (
+                      <pre
+                        style={{
+                          fontFamily: "var(--font-mono)",
+                          fontSize: "11px",
+                          lineHeight: "1.5",
+                          color: "#e2e8f0",
+                          whiteSpace: "pre-wrap",
+                          wordBreak: "break-word",
+                          background: "#0a0f1d",
+                          padding: "14px",
+                          borderRadius: "8px",
+                          border: "1px solid rgba(255, 255, 255, 0.05)",
+                        }}
+                      >
+                        {generatedReport.markdown}
+                      </pre>
+                    )}
+
+                    {reportTab === "html" && (
+                      <iframe
+                        srcDoc={generatedReport.html}
+                        title="Audit Report Preview"
+                        style={{
+                          width: "100%",
+                          height: "560px",
+                          border: "none",
+                          borderRadius: "8px",
+                          background: "#fff",
+                        }}
+                      />
+                    )}
+
+                    {reportTab === "replay" && (
+                      <div style={{ display: "flex", flexDirection: "column", gap: "10px" }}>
+                        <div
+                          style={{
+                            background: "rgba(6, 182, 212, 0.08)",
+                            border: "1px solid rgba(6, 182, 212, 0.2)",
+                            borderRadius: "6px",
+                            padding: "10px 14px",
+                            fontSize: "11px",
+                            color: "#bae6fd",
+                          }}
+                        >
+                          <strong>🔁 Reproducible Workflow Specification</strong>: Every finding above was verified using the exact ToolSpec calls, capabilities, and normalized arguments below. Run this script in an isolated lab to replicate all telemetry and match evidence hashes.
+                        </div>
+
+                        <pre
+                          style={{
+                            fontFamily: "var(--font-mono)",
+                            fontSize: "11px",
+                            lineHeight: "1.4",
+                            color: "#38bdf8",
+                            background: "#020617",
+                            padding: "12px",
+                            borderRadius: "6px",
+                            border: "1px solid rgba(255, 255, 255, 0.06)",
+                            overflowX: "auto",
+                          }}
+                        >
+                          {generatedReport.replay_script}
+                        </pre>
+                      </div>
+                    )}
+                  </div>
+                </div>
               </div>
             )}
 

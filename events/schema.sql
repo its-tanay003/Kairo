@@ -112,3 +112,29 @@ CREATE TABLE IF NOT EXISTS scope_contracts (
 );
 
 CREATE INDEX IF NOT EXISTS idx_scope_contracts_active ON scope_contracts(is_active, expires_at);
+
+-- Findings: Structured security findings linked to Evidence Artifacts and Recovery Paths
+CREATE TABLE IF NOT EXISTS findings (
+    id TEXT PRIMARY KEY,
+    session_id TEXT NOT NULL,
+    task_id TEXT,
+    plan_id TEXT,
+    title TEXT NOT NULL,
+    affected_asset TEXT NOT NULL,
+    severity TEXT NOT NULL DEFAULT 'INFO',
+    confidence_score REAL NOT NULL DEFAULT 1.0,
+    evidence_references TEXT NOT NULL DEFAULT '[]', -- JSON array of artifact refs / SHA-256
+    recovery_path TEXT,                             -- Recovery narrative / attempt path (Task 2.5)
+    description TEXT,
+    remediation TEXT,
+    discovering_tool TEXT,
+    discovering_node_id TEXT,
+    created_at TEXT NOT NULL,
+    tags TEXT NOT NULL DEFAULT '[]',
+    metadata TEXT
+);
+
+CREATE INDEX IF NOT EXISTS idx_findings_session ON findings(session_id);
+CREATE INDEX IF NOT EXISTS idx_findings_plan ON findings(plan_id);
+CREATE INDEX IF NOT EXISTS idx_findings_asset ON findings(affected_asset);
+CREATE INDEX IF NOT EXISTS idx_findings_severity ON findings(severity);

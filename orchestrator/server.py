@@ -4,6 +4,7 @@ and activate SIGKILL kill switch for running supervisor processes.
 """
 
 from pathlib import Path
+import json
 import sys
 import time
 from typing import Any, Dict, List, Optional
@@ -20,6 +21,7 @@ from pydantic import BaseModel
 from dataclasses import asdict
 from events.db import (
     Event,
+    get_connection,
     insert_event,
     get_events_by_session,
     get_recent_events,
@@ -53,6 +55,12 @@ from orchestrator.critic import critic
 from orchestrator.recovery_agent import recovery_agent
 from orchestrator.cognitive_engine import cognitive_engine
 from orchestrator.reporter import reporter
+from orchestrator.evidence_store import (
+    evidence_store,
+    Finding,
+    EvidenceClass,
+)
+from orchestrator.report_generator import report_generator
 
 app = FastAPI(title="Agent Orchestrator Service", version="1.0.0")
 
@@ -804,6 +812,186 @@ def save_plan_report_artifact_endpoint(plan_id: str):
         raise HTTPException(status_code=404, detail=str(e))
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to save report: {e}")
+
+
+# ==============================================================================
+# EVIDENCE STORE & AUDIT REPORT GENERATOR ENDPOINTS
+# ==============================================================================
+
+class CreateFindingRequest(BaseModel):
+    title: str
+    affected_asset: str
+    evidence_references: Optional[List[str]] = None
+    confidence_score: float = 1.0
+    recovery_path: Optional[Any] = None
+    severity: str = "INFO"
+    description: Optional[str] = ""
+    remediation: Optional[str] = ""
+    discovering_tool: Optional[str] = None
+    discovering_node_id: Optional[str] = None
+    session_id: Optional[str] = None
+    plan_id: Optional[str] = None
+    task_id: Optional[str] = None
+    tags: Optional[List[str]] = None
+
+
+class GenerateReportRequest(BaseModel):
+    finding_ids: Optional[List[str]] = None
+    plan_id: Optional[str] = None
+    session_id: Optional[str] = None
+    title: Optional[str] = None
+    format: str = "both"
+    include_workflow: bool = True
+
+
+@app.get("/evidence/findings")
+def list_findings_endpoint(
+    session_id: Optional[str] = None,
+    plan_id: Optional[str] = None,
+    asset: Optional[str] = None,
+    severity: Optional[str] = None,
+):
+    """Lists security finding cards from the Evidence Store with metadata, confidence, and recovery paths."""
+    findings = evidence_store.list_findings(
+        session_id=session_id,
+        plan_id=plan_id,
+        affected_asset=asset,
+        severity=severity,
+    )
+    return {
+        "count": len(findings),
+        "findings": [f.to_dict() for f in findings],
+    }
+
+
+@app.post("/evidence/findings")
+def create_finding_endpoint(req: CreateFindingRequest):
+    """Registers a structured finding card into the Evidence Store."""
+    finding = Finding(
+        title=req.title,
+        affected_asset=req.affected_asset,
+        evidence_references=req.evidence_references or [],
+        confidence_score=req.confidence_score,
+        recovery_path=req.recovery_path,
+        severity=req.severity,
+        description=req.description or "",
+        remediation=req.remediation or "",
+        discovering_tool=req.discovering_tool,
+        discovering_node_id=req.discovering_node_id,
+        session_id=req.session_id,
+        plan_id=req.plan_id,
+        task_id=req.task_id,
+        tags=req.tags or [],
+    )
+    saved = evidence_store.store_finding(finding)
+    return saved.to_dict()
+
+
+@app.get("/evidence/findings/{finding_id}")
+def get_finding_endpoint(finding_id: str):
+    """Retrieves a finding card along with all resolved evidence objects and hashes."""
+    finding = evidence_store.get_finding(finding_id)
+    if not finding:
+        raise HTTPException(status_code=404, detail=f"Finding '{finding_id}' not found.")
+    f_dict = finding.to_dict()
+    f_dict["resolved_evidence"] = evidence_store.resolve_evidence_references(finding.evidence_references)
+    return f_dict
+
+
+@app.post("/evidence/ingest-plan/{plan_id}")
+def ingest_plan_into_evidence_store(plan_id: str, target_asset: Optional[str] = None):
+    """
+    Auto-ingests all executed nodes and facts from a plan DAG into the Evidence Store,
+    generating typed evidence instances and linking recovery paths.
+    """
+    plan = get_plan(plan_id)
+    if not plan:
+        raise HTTPException(status_code=404, detail=f"Plan '{plan_id}' not found.")
+
+    nodes = plan.get("nodes", [])
+    total_findings: List[Finding] = []
+
+    for n in nodes:
+        raw_res = n.get("result")
+        res_obj = {}
+        if isinstance(raw_res, dict):
+            res_obj = raw_res
+        elif isinstance(raw_res, str):
+            try:
+                res_obj = json.loads(raw_res)
+            except Exception:
+                res_obj = {}
+
+        created = evidence_store.auto_ingest_from_node_result(
+            plan_id=plan_id,
+            node_id=n.get("node_id"),
+            tool=n.get("assigned_tool") or "unknown_tool",
+            result_data=res_obj,
+            session_id=plan.get("session_id"),
+            target_asset=target_asset,
+        )
+        total_findings.extend(created)
+
+    return {
+        "status": "ingested",
+        "plan_id": plan_id,
+        "nodes_processed": len(nodes),
+        "findings_created": len(total_findings),
+        "findings": [f.to_dict() for f in total_findings],
+    }
+
+
+@app.post("/evidence/reports/generate")
+def generate_audit_report_endpoint(req: GenerateReportRequest):
+    """
+    Assembles selected findings into a publication-ready Markdown/HTML audit report
+    with embedded evidence references and an executable reproducible workflow replay script.
+    """
+    try:
+        report_res = report_generator.assemble_report(
+            finding_ids=req.finding_ids,
+            plan_id=req.plan_id,
+            session_id=req.session_id,
+            title=req.title,
+            include_workflow=req.include_workflow,
+        )
+        return report_res
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to assemble report: {e}")
+
+
+@app.get("/evidence/artifacts")
+def list_evidence_artifacts(task_id: Optional[str] = None, limit: int = 50):
+    """Lists captured evidence artifacts with SHA-256 provenance."""
+    conn = get_connection()
+    with conn:
+        cursor = conn.cursor()
+        if task_id:
+            cursor.execute(
+                "SELECT * FROM artifacts WHERE task_id = ? ORDER BY id DESC LIMIT ?",
+                (task_id, limit),
+            )
+        else:
+            cursor.execute(
+                "SELECT * FROM artifacts ORDER BY id DESC LIMIT ?",
+                (limit,),
+            )
+        rows = [dict(r) for r in cursor.fetchall()]
+    conn.close()
+
+    # Enrich with evidence class from metadata if present
+    for r in rows:
+        if r.get("metadata"):
+            try:
+                m = json.loads(r["metadata"]) if isinstance(r["metadata"], str) else r["metadata"]
+                r["evidence_class"] = m.get("evidence_class") or "file"
+                r["title"] = m.get("title") or r.get("filename")
+            except Exception:
+                r["evidence_class"] = "file"
+        else:
+            r["evidence_class"] = "file"
+
+    return {"count": len(rows), "artifacts": rows}
 
 
 if __name__ == "__main__":

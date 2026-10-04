@@ -519,4 +519,65 @@ When Task 2.4 self-healing fires, Kairo's **Reporter** (`orchestrator/reporter.p
 - **In-Chat Tool Execution Cards**: Displays a failure-aware self-healing chip showing the human-readable narrative and step-by-step causal chain with parent event IDs.
 - **Cryptographic Report Signing**: Reports can be downloaded or previewed as Markdown/JSON with cryptographic SHA-256 integrity hashes stored in the SQLite `artifacts` table.
 
+---
+
+## 🗄️ Evidence Store & Artifact Classes
+
+Kairo provides a cryptographically verifiable **Evidence Store** (`orchestrator/evidence_store.py`) implementing the blueprint's 6 artifact classes, finding cards with failure-aware recovery paths, and an automated report generator.
+
+### 1. Six Blueprint Artifact Classes
+Each artifact stored in the Evidence Store is immutable, typed, and timestamped with a cryptographic SHA-256 integrity hash:
+
+| Artifact Class | Description | Key Attributes |
+| :--- | :--- | :--- |
+| **`command`** (`CommandEvidence`) | Raw CLI command execution, exit codes, stdin/stdout/stderr | `command`, `exit_code`, `duration_ms`, `stdout_preview`, `stderr_preview` |
+| **`network`** (`NetworkEvidence`) | Network scans, HTTP request/response payloads, open ports | `protocol`, `target_ip_or_host`, `target_port`, `payload_sample`, `status_code` |
+| **`file`** (`FileEvidence`) | Disk artifacts, configuration dumps, source files, logs | `file_path`, `file_type`, `file_size_bytes`, `content_snippet` |
+| **`visual`** (`VisualEvidence`) | Browser snapshots, DOM screenshots, visual anomaly captures | `image_format`, `resolution`, `media_path`, `caption` |
+| **`analytic`** (`AnalyticEvidence`) | Structured metric matrices, CVSS vectors, ML/LLM heuristics | `metric_name`, `metric_value`, `cvss_score`, `raw_metrics` |
+| **`report`** (`ReportEvidence`) | Final audit deliverables, executive summaries, compliance packs | `report_format`, `title`, `author`, `finding_count`, `summary_markdown` |
+
+### 2. Finding Card Architecture
+Security findings are modeled as discrete, verifiable cards (`Finding` model):
+- **`title`**: Human-readable finding name (e.g. `Discovered Path Traversal in /api/export`).
+- **`affected_asset`**: Exact target host, URI, or IP (e.g. `https://demo.local/api/export`).
+- **`evidence_references`**: Array of evidence artifact IDs (`ev_...`) supporting the finding, cryptographically resolved and verified by SHA-256.
+- **`confidence_score`**: Calibrated detection certainty (`0.0` to `1.0`).
+- **`recovery_path`** *(Task 2.5)*: Collapsible chronological lineage of all attempts, timeouts, errors, and tool-swaps leading to the discovery (e.g. `Attempt 1: gobuster (timed out) ➔ Attempt 2: ffuf (succeeded)`).
+- **`severity` & `remediation`**: Risk classification (`CRITICAL`, `HIGH`, `MEDIUM`, `LOW`, `INFO`) and actionable mitigation guidance.
+
+---
+
+## 📑 Reproducible Workflow & Basic Report Generator
+
+Kairo includes a high-fidelity **Report Generator** (`orchestrator/report_generator.py`) that bridges autonomous execution with audit repeatability.
+
+### 1. Selected Findings Assembly
+- Security operators selectively filter and include specific findings for inclusion in client-ready reports.
+- Automatically resolves every `evidence_reference` in the finding card into embedded markdown and HTML previews with cryptographic SHA-256 provenance links.
+
+### 2. Standalone Markdown & HTML Reports
+- **Markdown Export**: Portable, git-trackable vulnerability report formatted for tickets and repositories.
+- **Interactive HTML Report**: Standalone, dark-mode report with Scope Contract HMAC authorization chip, severity distribution metrics, finding details, evidence tabs, and copyable bash replay commands.
+
+### 3. Reproducible Workflow Section & `replay_audit.sh`
+To satisfy stringent compliance and peer verification requirements:
+- The report generates an exact **`ToolSpec` sequence + normalized arguments** section demonstrating the precise deterministic tool steps required to reproduce every finding.
+- Synthesizes an executable **`replay_audit.sh`** bash script containing:
+  ```bash
+  #!/usr/bin/env bash
+  # KAIRO REPRODUCIBLE AUDIT WORKFLOW
+  # Target Scope: http://demo.local
+  # Contract Authorization Hash: 4e9f82b7...
+  set -euo pipefail
+
+  # Step 1: nmap_scan
+  nmap -sV -p 80,443,8080 demo.local
+
+  # Step 2: ffuf_dir
+  ffuf -w /usr/share/wordlists/dirb/common.txt -u http://demo.local/FUZZ -t 10
+  ```
+- Directly downloadable or previewable in both the UI and REST API (`POST /evidence/reports/generate`).
+
+
 
