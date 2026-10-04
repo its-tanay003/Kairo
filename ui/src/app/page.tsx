@@ -1094,15 +1094,16 @@ export default function Home() {
                     </div>
                   </div>
 
-                  <div style={{ marginTop: "10px", display: "flex", gap: "8px" }}>
+                  <div style={{ marginTop: "10px", display: "flex", gap: "8px", flexWrap: "wrap" }}>
                     <button
                       className="quick-btn"
-                      style={{ flex: 1, justifyContent: "center" }}
+                      style={{ flex: 1, minWidth: "180px", justifyContent: "center" }}
                       onClick={() =>
                         sendToolCall("kali.exec.v1", {
                           command: "uname",
                           args: ["-a"],
                           snapshot_before: true,
+                          rollback_after: false,
                           timeout_ms: 10000,
                         })
                       }
@@ -1112,7 +1113,23 @@ export default function Home() {
                     </button>
                     <button
                       className="quick-btn secondary"
-                      style={{ flex: 1, justifyContent: "center" }}
+                      style={{ flex: 1, minWidth: "180px", justifyContent: "center" }}
+                      onClick={() =>
+                        sendToolCall("kali.exec.v1", {
+                          command: "bash",
+                          args: ["-c", "echo 'ephemeral change' > /tmp/temp_kairo.txt && cat /tmp/temp_kairo.txt"],
+                          snapshot_before: true,
+                          rollback_after: true,
+                          timeout_ms: 20000,
+                        })
+                      }
+                      disabled={wsStatus !== "connected" || isRollingBack}
+                    >
+                      🔄 Auto-Snap &amp; Auto-Rollback
+                    </button>
+                    <button
+                      className="quick-btn secondary"
+                      style={{ flex: 1, minWidth: "180px", justifyContent: "center" }}
                       onClick={() => rollbackSnapshot(vmStatus?.baseline_snapshot || "kairo_worker_ready")}
                       disabled={isRollingBack}
                     >

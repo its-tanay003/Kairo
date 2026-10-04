@@ -196,6 +196,34 @@ const server = http.createServer(async (req, res) => {
     }
   }
 
+  // Artifacts routes: /artifacts/:taskId, /artifacts/verify
+  if (url.pathname.startsWith("/artifacts")) {
+    try {
+      if (req.method === "GET") {
+        const response = await fetch(`${ORCHESTRATOR_URL}${url.pathname}${url.search}`);
+        const data = await response.json();
+        res.writeHead(response.status, { "Content-Type": "application/json" });
+        res.end(JSON.stringify(data));
+        return;
+      } else if (req.method === "POST") {
+        const body = await parseJsonBody(req);
+        const response = await fetch(`${ORCHESTRATOR_URL}${url.pathname}`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(body),
+        });
+        const data = await response.json();
+        res.writeHead(response.status, { "Content-Type": "application/json" });
+        res.end(JSON.stringify(data));
+        return;
+      }
+    } catch (err: any) {
+      res.writeHead(502, { "Content-Type": "application/json" });
+      res.end(JSON.stringify({ error: `Artifacts Proxy error: ${err.message}` }));
+      return;
+    }
+  }
+
   res.writeHead(404, { "Content-Type": "application/json" });
   res.end(JSON.stringify({ error: "Not Found" }));
 });
@@ -422,6 +450,10 @@ wss.on("connection", (ws: WebSocket, req) => {
               cwd,
               timeout_ms: timeoutMs,
               snapshot_before: snapshotBefore,
+              rollback_after: Boolean(payload.rollback_after),
+              rollback_on_failure: Boolean(payload.rollback_on_failure),
+              resource_limits: payload.resource_limits,
+              artifact_dir: payload.artifact_dir,
             }),
           });
           const result = (await resp.json()) as any;

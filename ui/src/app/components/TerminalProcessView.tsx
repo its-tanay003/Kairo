@@ -19,6 +19,18 @@ export interface ProcessNode {
   children?: ProcessNode[];
 }
 
+export interface ArtifactEvidence {
+  id?: number;
+  task_id: string;
+  filename: string;
+  filepath: string;
+  size_bytes: number;
+  sha256: string;
+  mime_type?: string;
+  created_at?: string;
+  metadata?: string;
+}
+
 export interface TerminalProcessViewProps {
   ws: WebSocket | null;
   activeTaskId: string | null;
@@ -47,6 +59,22 @@ export default function TerminalProcessView({
   const [logCount, setLogCount] = useState<number>(0);
   const [internalMaximized, setInternalMaximized] = useState<boolean>(false);
   const [viewMode, setViewMode] = useState<"split" | "terminal" | "tree">("split");
+  const [inspectorTab, setInspectorTab] = useState<"tree" | "caps" | "artifacts">("tree");
+
+  // Resource caps and sandbox automation state
+  const [snapshotBefore, setSnapshotBefore] = useState<boolean>(true);
+  const [rollbackAfter, setRollbackAfter] = useState<boolean>(false);
+  const [rollbackOnFailure, setRollbackOnFailure] = useState<boolean>(false);
+  const [maxCpuPct, setMaxCpuPct] = useState<number>(80);
+  const [maxMemMb, setMaxMemMb] = useState<number>(512);
+  const [maxDiskMb, setMaxDiskMb] = useState<number>(100);
+  const [maxFileCount, setMaxFileCount] = useState<number>(50);
+
+  // Artifact integrity state
+  const [artifacts, setArtifacts] = useState<ArtifactEvidence[]>([]);
+  const [verifyingMap, setVerifyingMap] = useState<Record<string, boolean>>({});
+  const [verificationResults, setVerificationResults] = useState<Record<string, { valid: boolean; actual_sha256?: string; error?: string }>>({});
+  const [copiedHash, setCopiedHash] = useState<string | null>(null);
 
   const isMax = externalMaximized !== undefined ? externalMaximized : internalMaximized;
 
@@ -176,6 +204,18 @@ export default function TerminalProcessView({
     };
   }, []);
 
+  // Fetch artifacts for current task
+  const fetchTaskArtifacts = useCallback((tid: string) => {
+    fetch(`http://localhost:4000/artifacts/${tid}`)
+      .then((res) => res.json())
+      .then((data) => {
+        if (Array.isArray(data.artifacts)) {
+          setArtifacts(data.artifacts);
+        }
+      })
+      .catch(() => {});
+  }, []);
+
   // Listen to WebSocket messages for terminal stream, process controls, and process tree
   useEffect(() => {
     if (!ws) return;
@@ -224,6 +264,12 @@ export default function TerminalProcessView({
           // Poll updated tree
           requestTree(data.taskId);
         }
+
+        // On task completion, refresh artifacts
+        if (data.type === "agent_response" && data.execution?.task_id) {
+          fetchTaskArtifacts(data.execution.task_id);
+          setTaskStatus("completed");
+        }
       } catch (err) {
         console.error("Terminal WebSocket parse error:", err);
       }
@@ -233,7 +279,57 @@ export default function TerminalProcessView({
     return () => {
       ws.removeEventListener("message", handleMessage);
     };
-  }, [ws, requestTree]);
+  }, [ws, requestTree, fetchTaskArtifacts]);
+
+  // Poll artifacts whenever active task changes
+  useEffect(() => {
+    let isCurrent = true;
+    if (currentTaskId) {
+      fetch(`http://localhost:4000/artifacts/${currentTaskId}`)
+        .then((res) => res.json())
+        .then((data) => {
+          if (isCurrent && Array.isArray(data.artifacts)) {
+            setArtifacts(data.artifacts);
+          }
+        })
+        .catch(() => {});
+    }
+    return () => {
+      isCurrent = false;
+    };
+  }, [currentTaskId]);
+
+  // Verify artifact against SHA-256 on disk
+  const verifyArtifact = async (filepath: string, expectedSha: string) => {
+    setVerifyingMap((prev) => ({ ...prev, [expectedSha]: true }));
+    try {
+      const res = await fetch("http://localhost:4000/artifacts/verify", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ filepath, expected_sha256: expectedSha }),
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setVerificationResults((prev) => ({ ...prev, [expectedSha]: data }));
+      }
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err);
+      setVerificationResults((prev) => ({
+        ...prev,
+        [expectedSha]: { valid: false, error: msg },
+      }));
+    } finally {
+      setVerifyingMap((prev) => ({ ...prev, [expectedSha]: false }));
+    }
+  };
+
+  const copyToClipboard = (text: string) => {
+    try {
+      navigator.clipboard?.writeText(text);
+      setCopiedHash(text);
+      setTimeout(() => setCopiedHash(null), 2000);
+    } catch {}
+  };
 
   // Supervisor Actions: pause, resume, stop, retry
   const handleControlAction = (action: "pause" | "resume" | "stop" | "retry") => {
@@ -261,7 +357,21 @@ export default function TerminalProcessView({
   };
 
   // Run Custom / Test Command in Kali
-  const handleRunCommand = (cmdStr: string) => {
+  const handleRunCommand = (
+    cmdStr: string,
+    overrides?: {
+      snapshot_before?: boolean;
+      rollback_after?: boolean;
+      rollback_on_failure?: boolean;
+      limits?: {
+        max_cpu_pct?: number;
+        max_memory_mb?: number;
+        max_disk_mb?: number;
+        max_file_count?: number;
+      };
+      artifact_dir?: string;
+    }
+  ) => {
     if (!ws || ws.readyState !== WebSocket.OPEN) {
       alert("Gateway WebSocket not connected.");
       return;
@@ -271,6 +381,8 @@ export default function TerminalProcessView({
     setSelectedTaskId(taskId);
     setTaskStatus("running");
     setLogCount(0);
+    setArtifacts([]);
+    setVerificationResults({});
     if (onSelectTask) onSelectTask(taskId);
 
     const term = termInstanceRef.current;
@@ -283,6 +395,16 @@ export default function TerminalProcessView({
     const command = parts[0];
     const args = parts.slice(1);
 
+    const activeSnapshot = overrides?.snapshot_before !== undefined ? overrides.snapshot_before : snapshotBefore;
+    const activeRollbackAfter = overrides?.rollback_after !== undefined ? overrides.rollback_after : rollbackAfter;
+    const activeRollbackOnFail = overrides?.rollback_on_failure !== undefined ? overrides.rollback_on_failure : rollbackOnFailure;
+    const activeLimits = overrides?.limits || {
+      max_cpu_pct: maxCpuPct,
+      max_memory_mb: maxMemMb,
+      max_disk_mb: maxDiskMb,
+      max_file_count: maxFileCount,
+    };
+
     ws.send(
       JSON.stringify({
         type: "kali_exec",
@@ -290,7 +412,11 @@ export default function TerminalProcessView({
         command,
         args,
         cwd: "/home/kali",
-        snapshot_before: false,
+        snapshot_before: activeSnapshot,
+        rollback_after: activeRollbackAfter,
+        rollback_on_failure: activeRollbackOnFail,
+        resource_limits: activeLimits,
+        artifact_dir: overrides?.artifact_dir,
       })
     );
   };
@@ -517,47 +643,283 @@ export default function TerminalProcessView({
               height: isMax && viewMode === "split" ? "100%" : viewMode === "split" ? "48%" : "100%",
             }}
           >
-            {/* Tree Section Header */}
+            {/* Tab Navigation: Tree, Caps & Sandbox, Evidence Artifacts */}
             <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", borderBottom: "1px solid rgba(255, 255, 255, 0.08)", paddingBottom: "6px" }}>
-              <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
-                <span>🌳</span>
-                <span style={{ fontSize: "12px", fontWeight: 700, color: "var(--text-main)" }}>
-                  Process Tree Supervisor
-                </span>
+              <div style={{ display: "flex", alignItems: "center", gap: "4px" }}>
+                <button
+                  className={`quick-btn ${inspectorTab === "tree" ? "" : "secondary"}`}
+                  style={{ padding: "2px 8px", fontSize: "10px" }}
+                  onClick={() => setInspectorTab("tree")}
+                >
+                  🌳 Tree ({processTree.length})
+                </button>
+                <button
+                  className={`quick-btn ${inspectorTab === "caps" ? "" : "secondary"}`}
+                  style={{ padding: "2px 8px", fontSize: "10px" }}
+                  onClick={() => setInspectorTab("caps")}
+                >
+                  ⚙️ Caps &amp; Snap
+                </button>
+                <button
+                  className={`quick-btn ${inspectorTab === "artifacts" ? "" : "secondary"}`}
+                  style={{ padding: "2px 8px", fontSize: "10px" }}
+                  onClick={() => setInspectorTab("artifacts")}
+                >
+                  🛡️ Evidence ({artifacts.length})
+                </button>
               </div>
-              <button
-                onClick={() => requestTree()}
-                style={{
-                  background: "none",
-                  border: "none",
-                  color: "var(--accent-cyan)",
-                  fontSize: "11px",
-                  cursor: "pointer",
-                  display: "flex",
-                  alignItems: "center",
-                  gap: "4px",
-                  fontFamily: "var(--font-mono)",
-                }}
-              >
-                <span>↻</span> Refresh
-              </button>
-            </div>
 
-            {/* Hierarchical Process Cards */}
-            <div style={{ display: "flex", flexDirection: "column", gap: "6px", flex: 1, overflowY: "auto" }}>
-              {processTree.length === 0 ? (
-                <div style={{ textAlign: "center", padding: "16px 8px", background: "rgba(15, 23, 42, 0.4)", borderRadius: "8px", border: "1px solid rgba(255, 255, 255, 0.05)", color: "var(--text-muted)", fontSize: "11px" }}>
-                  <p>No active process tree detected.</p>
-                  <p style={{ marginTop: "4px", fontSize: "10px", color: "#64748b" }}>
-                    Launch a command below to observe parent, child, and background process states.
-                  </p>
-                </div>
-              ) : (
-                processTree.map((rootNode) => (
-                  <ProcessTreeNode key={rootNode.pid} node={rootNode} level={0} />
-                ))
+              {inspectorTab === "tree" && (
+                <button
+                  onClick={() => requestTree()}
+                  style={{
+                    background: "none",
+                    border: "none",
+                    color: "var(--accent-cyan)",
+                    fontSize: "11px",
+                    cursor: "pointer",
+                    display: "flex",
+                    alignItems: "center",
+                    gap: "4px",
+                    fontFamily: "var(--font-mono)",
+                  }}
+                >
+                  <span>↻</span> Refresh
+                </button>
+              )}
+              {inspectorTab === "artifacts" && (
+                <button
+                  onClick={() => currentTaskId && fetchTaskArtifacts(currentTaskId)}
+                  style={{
+                    background: "none",
+                    border: "none",
+                    color: "var(--accent-emerald)",
+                    fontSize: "11px",
+                    cursor: "pointer",
+                    display: "flex",
+                    alignItems: "center",
+                    gap: "4px",
+                    fontFamily: "var(--font-mono)",
+                  }}
+                >
+                  <span>↻</span> Refresh
+                </button>
               )}
             </div>
+
+            {/* Tab 1: Hierarchical Process Tree */}
+            {inspectorTab === "tree" && (
+              <div style={{ display: "flex", flexDirection: "column", gap: "6px", flex: 1, overflowY: "auto" }}>
+                {processTree.length === 0 ? (
+                  <div style={{ textAlign: "center", padding: "16px 8px", background: "rgba(15, 23, 42, 0.4)", borderRadius: "8px", border: "1px solid rgba(255, 255, 255, 0.05)", color: "var(--text-muted)", fontSize: "11px" }}>
+                    <p>No active process tree detected.</p>
+                    <p style={{ marginTop: "4px", fontSize: "10px", color: "#64748b" }}>
+                      Launch a command below to observe parent, child, and background process states.
+                    </p>
+                  </div>
+                ) : (
+                  processTree.map((rootNode) => (
+                    <ProcessTreeNode key={rootNode.pid} node={rootNode} level={0} />
+                  ))
+                )}
+              </div>
+            )}
+
+            {/* Tab 2: Resource Caps & VM Automation Settings */}
+            {inspectorTab === "caps" && (
+              <div style={{ display: "flex", flexDirection: "column", gap: "10px", flex: 1, overflowY: "auto" }}>
+                {/* Sandbox Automation Toggles */}
+                <div className="caps-config-panel">
+                  <span style={{ fontSize: "11px", fontWeight: 700, color: "var(--text-main)" }}>
+                    VM Snapshot &amp; Rollback Automation
+                  </span>
+                  <div className="automation-toggles-bar">
+                    <div
+                      className={`toggle-pill ${snapshotBefore ? "active" : ""}`}
+                      onClick={() => setSnapshotBefore((prev) => !prev)}
+                    >
+                      <span>📸</span>
+                      <span>Snapshot Before Task</span>
+                      <span style={{ fontSize: "10px" }}>{snapshotBefore ? "ON" : "OFF"}</span>
+                    </div>
+
+                    <div
+                      className={`toggle-pill ${rollbackAfter ? "active danger" : ""}`}
+                      onClick={() => setRollbackAfter((prev) => !prev)}
+                    >
+                      <span>⏪</span>
+                      <span>Rollback After Task</span>
+                      <span style={{ fontSize: "10px" }}>{rollbackAfter ? "ON (Auto-Revert)" : "OFF"}</span>
+                    </div>
+
+                    <div
+                      className={`toggle-pill ${rollbackOnFailure ? "active danger" : ""}`}
+                      onClick={() => setRollbackOnFailure((prev) => !prev)}
+                    >
+                      <span>⚠️</span>
+                      <span>Rollback on Fail</span>
+                      <span style={{ fontSize: "10px" }}>{rollbackOnFailure ? "ON" : "OFF"}</span>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Resource Limits Enforced by Supervisor */}
+                <div className="caps-config-panel">
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                    <span style={{ fontSize: "11px", fontWeight: 700, color: "var(--text-main)" }}>
+                      Process Supervisor Resource Caps
+                    </span>
+                    <span style={{ fontSize: "9px", color: "var(--accent-cyan)", fontFamily: "var(--font-mono)" }}>
+                      Active Enforcement
+                    </span>
+                  </div>
+
+                  <div className="caps-config-grid">
+                    <div className="cap-input-box">
+                      <label>Max CPU %</label>
+                      <input
+                        type="number"
+                        min="10"
+                        max="100"
+                        value={maxCpuPct}
+                        onChange={(e) => setMaxCpuPct(Number(e.target.value))}
+                      />
+                    </div>
+                    <div className="cap-input-box">
+                      <label>Max RAM (MB)</label>
+                      <input
+                        type="number"
+                        min="32"
+                        max="4096"
+                        value={maxMemMb}
+                        onChange={(e) => setMaxMemMb(Number(e.target.value))}
+                      />
+                    </div>
+                    <div className="cap-input-box">
+                      <label>Max Disk (MB)</label>
+                      <input
+                        type="number"
+                        min="10"
+                        max="2048"
+                        value={maxDiskMb}
+                        onChange={(e) => setMaxDiskMb(Number(e.target.value))}
+                      />
+                    </div>
+                    <div className="cap-input-box">
+                      <label>Max Files</label>
+                      <input
+                        type="number"
+                        min="1"
+                        max="500"
+                        value={maxFileCount}
+                        onChange={(e) => setMaxFileCount(Number(e.target.value))}
+                      />
+                    </div>
+                  </div>
+
+                  {/* Presets */}
+                  <div style={{ display: "flex", gap: "4px", marginTop: "4px" }}>
+                    <button
+                      className="quick-btn secondary"
+                      style={{ fontSize: "9px", padding: "2px 6px" }}
+                      onClick={() => {
+                        setMaxCpuPct(80);
+                        setMaxMemMb(512);
+                        setMaxDiskMb(100);
+                        setMaxFileCount(50);
+                      }}
+                    >
+                      Standard (80% / 512MB / 50 files)
+                    </button>
+                    <button
+                      className="quick-btn secondary"
+                      style={{ fontSize: "9px", padding: "2px 6px" }}
+                      onClick={() => {
+                        setMaxCpuPct(30);
+                        setMaxMemMb(50);
+                        setMaxDiskMb(10);
+                        setMaxFileCount(2);
+                      }}
+                    >
+                      Strict Lab (30% / 50MB / 2 files)
+                    </button>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* Tab 3: Captured Artifacts & Cryptographic SHA-256 Verification */}
+            {inspectorTab === "artifacts" && (
+              <div style={{ display: "flex", flexDirection: "column", gap: "8px", flex: 1, overflowY: "auto" }}>
+                {artifacts.length === 0 ? (
+                  <div style={{ textAlign: "center", padding: "20px 8px", background: "rgba(15, 23, 42, 0.4)", borderRadius: "8px", border: "1px solid rgba(255, 255, 255, 0.05)", color: "var(--text-muted)", fontSize: "11px" }}>
+                    <p>No captured output artifacts for task {currentTaskId || "none"}.</p>
+                    <p style={{ marginTop: "4px", fontSize: "10px", color: "#64748b" }}>
+                      Run a tool or click &quot;🏷️ Capture Artifact &amp; Hash&quot; below to generate and verify SHA-256 evidence.
+                    </p>
+                  </div>
+                ) : (
+                  artifacts.map((art, idx) => {
+                    const vRes = verificationResults[art.sha256];
+                    const isVerifying = verifyingMap[art.sha256];
+                    return (
+                      <div
+                        key={idx}
+                        className={`artifact-evidence-item ${vRes ? (vRes.valid ? "verified" : "failed") : ""}`}
+                      >
+                        <div className="artifact-header-row">
+                          <span className="artifact-name">
+                            <span>📄</span> {art.filename}
+                          </span>
+                          <span style={{ fontSize: "10px", color: "var(--text-muted)", fontFamily: "var(--font-mono)" }}>
+                            {art.size_bytes} bytes
+                          </span>
+                        </div>
+
+                        {/* SHA-256 Hash Display */}
+                        <div className="sha256-box">
+                          <span className="hash-label">SHA-256</span>
+                          <span className="hash-value" title="Click to copy SHA-256 hash" onClick={() => copyToClipboard(art.sha256)}>
+                            {art.sha256}
+                          </span>
+                          <button
+                            className="quick-btn secondary"
+                            style={{ padding: "1px 6px", fontSize: "9px" }}
+                            onClick={() => copyToClipboard(art.sha256)}
+                          >
+                            {copiedHash === art.sha256 ? "COPIED!" : "COPY"}
+                          </button>
+                        </div>
+
+                        {/* Verification Action and Badge */}
+                        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginTop: "2px" }}>
+                          <div>
+                            {vRes ? (
+                              vRes.valid ? (
+                                <span className="integrity-badge verified">✓ SHA-256 VERIFIED INTACT</span>
+                              ) : (
+                                <span className="integrity-badge failed">✗ INTEGRITY COMPROMISED</span>
+                              )
+                            ) : (
+                              <span className="integrity-badge unverified">UNVERIFIED EVIDENCE</span>
+                            )}
+                          </div>
+
+                          <button
+                            className="quick-btn"
+                            style={{ padding: "2px 8px", fontSize: "10px" }}
+                            onClick={() => verifyArtifact(art.filepath, art.sha256)}
+                            disabled={isVerifying}
+                          >
+                            {isVerifying ? "Verifying..." : "Verify Hash"}
+                          </button>
+                        </div>
+                      </div>
+                    );
+                  })
+                )}
+              </div>
+            )}
 
             {/* Quick Live Test Scenarios & Custom Input */}
             <div style={{ borderTop: "1px solid rgba(255, 255, 255, 0.08)", paddingTop: "8px", display: "flex", flexDirection: "column", gap: "6px" }}>
@@ -580,41 +942,47 @@ export default function TerminalProcessView({
 
                 <button
                   onClick={() =>
-                    handleRunCommand("bash -c 'for i in {1..30}; do echo \"Ticking $i/30\"; sleep 1; done'")
+                    handleRunCommand("python3 -c 'import time; data = bytearray(65*1024*1024); time.sleep(10)'", {
+                      limits: { max_memory_mb: 50 },
+                    })
                   }
                   className="scenario-card-btn"
                 >
-                  <div style={{ fontSize: "11px", fontWeight: 600, color: "var(--accent-amber)" }}>
-                    ⏳ Pause/Stop (30s)
+                  <div style={{ fontSize: "11px", fontWeight: 600, color: "var(--accent-rose)" }}>
+                    ⚖️ Mem Cap (Kill 137)
                   </div>
                   <div style={{ fontSize: "9px", color: "var(--text-muted)", fontFamily: "var(--font-mono)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
-                    sleep loop 30s
+                    limit: 50MB (alloc 65MB)
                   </div>
                 </button>
 
                 <button
                   onClick={() =>
-                    handleRunCommand("bash -c 'sleep 15 & sleep 20 & wait'")
+                    handleRunCommand("touch /tmp/kairo_artifacts/f1.txt /tmp/kairo_artifacts/f2.txt /tmp/kairo_artifacts/f3.txt", {
+                      limits: { max_file_count: 2 },
+                    })
                   }
                   className="scenario-card-btn"
                 >
-                  <div style={{ fontSize: "11px", fontWeight: 600, color: "var(--accent-violet)" }}>
-                    👥 Background Procs
+                  <div style={{ fontSize: "11px", fontWeight: 600, color: "var(--accent-amber)" }}>
+                    📁 File Cap (Kill 137)
                   </div>
                   <div style={{ fontSize: "9px", color: "var(--text-muted)", fontFamily: "var(--font-mono)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
-                    spawn background & wait
+                    limit: 2 files (create 3)
                   </div>
                 </button>
 
                 <button
-                  onClick={() => handleRunCommand("nmap -sV -p 22,9999 127.0.0.1")}
+                  onClick={() =>
+                    handleRunCommand("bash -c 'echo \"KAIRO EVIDENCE $(date)\" > $KAIRO_ARTIFACT_DIR/evidence_scan.log; cat $KAIRO_ARTIFACT_DIR/evidence_scan.log'")
+                  }
                   className="scenario-card-btn"
                 >
                   <div style={{ fontSize: "11px", fontWeight: 600, color: "var(--accent-cyan)" }}>
-                    🔍 Nmap Scan
+                    🏷️ Artifact &amp; SHA-256
                   </div>
                   <div style={{ fontSize: "9px", color: "var(--text-muted)", fontFamily: "var(--font-mono)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
-                    nmap -sV 127.0.0.1
+                    create &amp; hash artifact
                   </div>
                 </button>
               </div>

@@ -9,6 +9,7 @@ Features:
 """
 
 from datetime import datetime, timezone
+import hashlib
 import json
 import os
 import signal
@@ -40,6 +41,8 @@ class TaskExecutionRecord:
         cwd: str,
         env_extra: Dict[str, str],
         timeout_ms: int,
+        limits: Optional[Dict[str, Any]] = None,
+        artifact_dir: Optional[str] = None,
     ):
         self.task_id = task_id
         self.tool_id = tool_id
@@ -50,6 +53,22 @@ class TaskExecutionRecord:
         self.env_extra = env_extra
         self.timeout_ms = timeout_ms
 
+        # Resource caps per task
+        self.limits = limits or {}
+        self.max_memory_mb = float(self.limits.get("max_memory_mb", 512.0))
+        self.max_cpu_percent = float(self.limits.get("max_cpu_percent", 95.0))
+        self.max_disk_mb = float(self.limits.get("max_disk_mb", 100.0))
+        self.max_file_count = int(self.limits.get("max_file_count", 100))
+        self.max_output_bytes = int(self.limits.get("max_output_bytes", 10 * 1024 * 1024))
+        self.cpu_grace_sec = float(self.limits.get("cpu_grace_sec", 3.0))
+
+        self.artifact_dir = artifact_dir or f"/tmp/kairo_artifacts/{task_id}"
+        self.artifacts: List[Dict[str, Any]] = []
+        self.resource_limit_exceeded = False
+        self.violation_reason: Optional[str] = None
+        self.peak_memory_mb = 0.0
+        self.peak_cpu_percent = 0.0
+
         self.proc: Optional[subprocess.Popen] = None
         self.pid: Optional[int] = None
         self.pgid: Optional[int] = None
@@ -58,7 +77,7 @@ class TaskExecutionRecord:
         self.end_time: Optional[str] = None
         self.duration_ms: int = 0
         self.exit_code: Optional[int] = None
-        self.status: str = "pending"  # pending, running, paused, stopped, completed, timeout, error
+        self.status: str = "pending"  # pending, running, paused, stopped, completed, resource_limit_exceeded, timeout, error
         self.timed_out: bool = False
 
         self.chunks: List[Dict[str, Any]] = []
@@ -112,6 +131,8 @@ class WorkerExecutionSupervisor:
         tool_version: str,
         args: Dict[str, Any],
         timeout_ms: int = 30000,
+        limits: Optional[Dict[str, Any]] = None,
+        artifact_dir: Optional[str] = None,
     ) -> TaskExecutionRecord:
         command = args.get("command", "")
         cmd_args = args.get("args", [])
@@ -127,6 +148,8 @@ class WorkerExecutionSupervisor:
             cwd=cwd,
             env_extra=env_extra,
             timeout_ms=timeout_ms,
+            limits=limits,
+            artifact_dir=artifact_dir,
         )
 
         with tasks_lock:
@@ -152,6 +175,13 @@ class WorkerExecutionSupervisor:
         env = os.environ.copy()
         if record.env_extra and isinstance(record.env_extra, dict):
             env.update({str(k): str(v) for k, v in record.env_extra.items()})
+
+        # Ensure artifact directory exists and is exported
+        try:
+            os.makedirs(record.artifact_dir, exist_ok=True)
+            env["KAIRO_ARTIFACT_DIR"] = record.artifact_dir
+        except Exception:
+            pass
 
         cwd = record.cwd
         if not os.path.exists(cwd):
@@ -201,10 +231,14 @@ class WorkerExecutionSupervisor:
             # Timeout monitor
             timeout_sec = max(0.1, record.timeout_ms / 1000.0)
 
-            # Wait with poll
+            # Wait with poll and active resource monitoring
             start_wait = time.time()
+            cpu_high_start = None
+
             while proc.poll() is None:
-                if time.time() - start_wait > timeout_sec:
+                now = time.time()
+                # 1. Hard Timeout Check
+                if now - start_wait > timeout_sec:
                     record.timed_out = True
                     record.status = "timeout"
                     record.add_chunk("system", f"\n[Supervisor Timeout] Process exceeded hard timeout of {record.timeout_ms}ms. Terminating...\n")
@@ -213,17 +247,134 @@ class WorkerExecutionSupervisor:
                     except Exception:
                         proc.kill()
                     break
+
+                # 2. Output Buffer Size Cap
+                out_bytes = sum(len(s.encode("utf-8", errors="ignore")) for s in record.stdout_full) + sum(len(s.encode("utf-8", errors="ignore")) for s in record.stderr_full)
+                if out_bytes > record.max_output_bytes:
+                    record.resource_limit_exceeded = True
+                    record.violation_reason = f"Output size cap exceeded: {out_bytes} > {record.max_output_bytes} bytes"
+                    record.add_chunk("system", f"\n[Supervisor Resource Cap] {record.violation_reason}. Terminating PGID {record.pgid}...\n")
+                    try:
+                        os.killpg(record.pgid, signal.SIGKILL)
+                    except Exception:
+                        proc.kill()
+                    break
+
+                # 3. CPU and RAM Limits (psutil)
+                if psutil:
+                    try:
+                        p = psutil.Process(proc.pid)
+                        all_p = [p] + p.children(recursive=True)
+                        rss_bytes = sum(cp.memory_info().rss for cp in all_p if cp.is_running())
+                        cpu_pct = sum(cp.cpu_percent(interval=None) for cp in all_p if cp.is_running())
+                        rss_mb = rss_bytes / (1024.0 * 1024.0)
+                        record.peak_memory_mb = max(record.peak_memory_mb, rss_mb)
+                        record.peak_cpu_percent = max(record.peak_cpu_percent, cpu_pct)
+
+                        # Check RAM Limit
+                        if rss_mb > record.max_memory_mb:
+                            record.resource_limit_exceeded = True
+                            record.violation_reason = f"Memory cap exceeded: {rss_mb:.1f}MB > {record.max_memory_mb}MB"
+                            record.add_chunk("system", f"\n[Supervisor Resource Cap] {record.violation_reason}. Terminating PGID {record.pgid}...\n")
+                            try:
+                                os.killpg(record.pgid, signal.SIGKILL)
+                            except Exception:
+                                proc.kill()
+                            break
+
+                        # Check CPU Limit with grace period
+                        if cpu_pct > record.max_cpu_percent:
+                            if cpu_high_start is None:
+                                cpu_high_start = now
+                            elif now - cpu_high_start > record.cpu_grace_sec:
+                                record.resource_limit_exceeded = True
+                                record.violation_reason = f"CPU cap exceeded: sustained {cpu_pct:.1f}% > {record.max_cpu_percent}% for >{record.cpu_grace_sec}s"
+                                record.add_chunk("system", f"\n[Supervisor Resource Cap] {record.violation_reason}. Terminating PGID {record.pgid}...\n")
+                                try:
+                                    os.killpg(record.pgid, signal.SIGKILL)
+                                except Exception:
+                                    proc.kill()
+                                break
+                        else:
+                            cpu_high_start = None
+                    except Exception:
+                        pass
+
+                # 4. Disk and File-count Limits (Artifact Directory)
+                if os.path.exists(record.artifact_dir):
+                    try:
+                        f_count = 0
+                        total_disk_bytes = 0
+                        for r, _, fnames in os.walk(record.artifact_dir):
+                            f_count += len(fnames)
+                            for fn in fnames:
+                                try:
+                                    total_disk_bytes += os.path.getsize(os.path.join(r, fn))
+                                except Exception:
+                                    pass
+                        disk_mb = total_disk_bytes / (1024.0 * 1024.0)
+
+                        if f_count > record.max_file_count:
+                            record.resource_limit_exceeded = True
+                            record.violation_reason = f"File-count cap exceeded: {f_count} files > {record.max_file_count} files"
+                            record.add_chunk("system", f"\n[Supervisor Resource Cap] {record.violation_reason}. Terminating PGID {record.pgid}...\n")
+                            try:
+                                os.killpg(record.pgid, signal.SIGKILL)
+                            except Exception:
+                                proc.kill()
+                            break
+
+                        if disk_mb > record.max_disk_mb:
+                            record.resource_limit_exceeded = True
+                            record.violation_reason = f"Disk cap exceeded: {disk_mb:.1f}MB > {record.max_disk_mb}MB"
+                            record.add_chunk("system", f"\n[Supervisor Resource Cap] {record.violation_reason}. Terminating PGID {record.pgid}...\n")
+                            try:
+                                os.killpg(record.pgid, signal.SIGKILL)
+                            except Exception:
+                                proc.kill()
+                            break
+                    except Exception:
+                        pass
+
                 time.sleep(0.05)
 
             proc.wait()
             t_out.join(timeout=1.0)
             t_err.join(timeout=1.0)
 
-            record.exit_code = proc.returncode
-            if not record.timed_out and record.status != "stopped":
+            if record.resource_limit_exceeded:
+                record.status = "resource_limit_exceeded"
+                record.exit_code = 137
+            elif record.timed_out:
+                record.status = "timeout"
+                record.exit_code = 124
+            elif record.status != "stopped":
                 record.status = "completed" if proc.returncode == 0 else "error"
+                record.exit_code = proc.returncode
 
             record.add_chunk("system", f"\n[Worker] Process finished with exit code {record.exit_code} (Status: {record.status})\n")
+
+            # Scan artifact directory and compute SHA-256 for all captured output files
+            if os.path.exists(record.artifact_dir):
+                for r, _, fnames in os.walk(record.artifact_dir):
+                    for fn in fnames:
+                        fpath = os.path.join(r, fn)
+                        try:
+                            fsize = os.path.getsize(fpath)
+                            hasher = hashlib.sha256()
+                            with open(fpath, "rb") as fp:
+                                for chk in iter(lambda: fp.read(65536), b""):
+                                    hasher.update(chk)
+                            record.artifacts.append({
+                                "task_id": record.task_id,
+                                "filename": fn,
+                                "filepath": os.path.abspath(fpath),
+                                "size_bytes": fsize,
+                                "sha256": hasher.hexdigest(),
+                                "created_at": datetime.now(timezone.utc).isoformat(),
+                            })
+                        except Exception:
+                            pass
 
         except Exception as e:
             record.status = "error"
@@ -234,6 +385,7 @@ class WorkerExecutionSupervisor:
             record.end_time = datetime.now(timezone.utc).isoformat()
             record.duration_ms = int((time.perf_counter() - t0) * 1000)
             record.done_event.set()
+
 
     @staticmethod
     def get_process_tree(task_id: str) -> Dict[str, Any]:
@@ -648,6 +800,8 @@ class WorkerHTTPHandler(BaseHTTPRequestHandler):
             args = payload.get("arguments") or payload.get("requested_args") or payload.get("args") or {}
             timeout_ms = int(payload.get("timeout_ms", args.get("timeout_ms", 30000)))
             is_async = payload.get("async", False)
+            resource_limits = payload.get("resource_limits") or args.get("resource_limits")
+            artifact_dir = payload.get("artifact_dir") or args.get("artifact_dir")
 
             record = WorkerExecutionSupervisor.start_task(
                 task_id=task_id,
@@ -655,6 +809,8 @@ class WorkerHTTPHandler(BaseHTTPRequestHandler):
                 tool_version=tool_version,
                 args=args,
                 timeout_ms=timeout_ms,
+                limits=resource_limits,
+                artifact_dir=artifact_dir,
             )
 
             if is_async:
@@ -685,6 +841,13 @@ class WorkerHTTPHandler(BaseHTTPRequestHandler):
                 "end_time": record.end_time,
                 "duration_ms": record.duration_ms,
                 "timed_out": record.timed_out,
+                "resource_limit_exceeded": record.resource_limit_exceeded,
+                "violation_reason": record.violation_reason,
+                "resource_usage": {
+                    "peak_memory_mb": round(record.peak_memory_mb, 2),
+                    "peak_cpu_percent": round(record.peak_cpu_percent, 1),
+                },
+                "artifacts": record.artifacts,
                 "command": record.command,
                 "args": record.args,
                 "process_tree": tree.get("nodes", []),

@@ -108,10 +108,15 @@ class ToolAdapter(ABC):
         target: str = "vm",
         timeout_ms: int = 60000,
         snapshot_before: bool = True,
+        rollback_after: bool = False,
+        rollback_on_failure: bool = False,
+        resource_limits: Optional[Dict[str, Any]] = None,
+        artifact_dir: Optional[str] = None,
     ) -> ToolObservation:
         """
         Builds args, executes (via VM or local supervisor), parses output,
-        returns ToolObservation.
+        returns ToolObservation. Enforces resource caps, handles automated rollback,
+        and hashes evidence artifacts.
         """
         task_id = task_id or f"task_{uuid.uuid4().hex[:8]}"
         args = self.build_args(inputs)
@@ -119,6 +124,7 @@ class ToolAdapter(ABC):
         cwd = inputs.get("cwd", "/home/kali")
 
         t0 = time.perf_counter()
+        captured_artifacts = []
 
         if target == "vm":
             result = self._vm.execute_in_vm(
@@ -131,6 +137,10 @@ class ToolAdapter(ABC):
                     "cwd": cwd,
                 },
                 snapshot_before=snapshot_before,
+                rollback_after=rollback_after,
+                rollback_on_failure=rollback_on_failure,
+                resource_limits=resource_limits,
+                artifact_dir=artifact_dir,
                 timeout_ms=timeout_ms,
             )
             stdout = result.get("stdout", "")
@@ -138,6 +148,7 @@ class ToolAdapter(ABC):
             exit_code = result.get("exit_code", -1)
             timed_out = result.get("timed_out", False)
             duration_ms = result.get("duration_ms", round((time.perf_counter() - t0) * 1000, 2))
+            captured_artifacts = [a.get("filepath", a.get("filename", "")) for a in result.get("artifacts", [])]
         else:
             from orchestrator.process_supervisor import ProcessResult
             proc: ProcessResult = self._supervisor.execute(
@@ -146,12 +157,15 @@ class ToolAdapter(ABC):
                 args=args,
                 timeout_ms=timeout_ms,
                 cwd=cwd if os.path.exists(cwd) else None,
+                limits=resource_limits,
+                artifact_dir=artifact_dir,
             )
             stdout = proc.stdout
             stderr = proc.stderr
             exit_code = proc.exit_code
             timed_out = proc.timed_out
             duration_ms = proc.duration_ms
+            captured_artifacts = [a.get("filepath", a.get("filename", "")) for a in proc.artifacts]
 
         if timed_out:
             status = "timeout"
@@ -175,6 +189,7 @@ class ToolAdapter(ABC):
             observation = {"parse_error": str(e), "raw": stdout[:2000]}
 
         artifacts = observation.pop("_artifacts", [])
+        all_artifacts = list(dict.fromkeys(artifacts + captured_artifacts))
 
         return ToolObservation(
             tool_id=self.tool_id,
@@ -186,7 +201,7 @@ class ToolAdapter(ABC):
             raw_stderr=stderr,
             duration_ms=duration_ms,
             observation=observation,
-            artifacts=artifacts,
+            artifacts=all_artifacts,
             error=stderr.strip() if status == "error" else None,
         )
 

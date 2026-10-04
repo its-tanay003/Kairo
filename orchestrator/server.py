@@ -17,7 +17,15 @@ from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
-from events.db import Event, insert_event, get_events_by_session, get_recent_events
+from events.db import (
+    Event,
+    insert_event,
+    get_events_by_session,
+    get_recent_events,
+    get_artifacts_by_task,
+    get_artifact_by_id,
+    verify_artifact_file,
+)
 from orchestrator.agent import AgentLoop
 from orchestrator.model_center import model_center
 from orchestrator.process_supervisor import supervisor
@@ -66,6 +74,17 @@ class VMExecuteRequest(BaseModel):
     cwd: Optional[str] = "/home/kali"
     timeout_ms: Optional[int] = 30000
     snapshot_before: Optional[bool] = True
+    rollback_after: Optional[bool] = False
+    rollback_on_failure: Optional[bool] = False
+    resource_limits: Optional[Dict[str, Any]] = None
+    artifact_dir: Optional[str] = None
+
+
+class ArtifactVerifyRequest(BaseModel):
+    filepath: Optional[str] = None
+    expected_sha256: Optional[str] = None
+    artifact_id: Optional[int] = None
+
 
 
 @app.get("/health")
@@ -247,19 +266,46 @@ def vm_execute(req: VMExecuteRequest):
         tool_version="1.0.0",
         args={"command": req.command, "args": req.args or [], "cwd": req.cwd or "/home/kali"},
         snapshot_before=bool(req.snapshot_before),
+        rollback_after=bool(req.rollback_after),
+        rollback_on_failure=bool(req.rollback_on_failure),
+        resource_limits=req.resource_limits,
+        artifact_dir=req.artifact_dir,
         timeout_ms=int(req.timeout_ms or 30000),
     )
     end_iso = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
 
+    # Compile artifact references with SHA-256 for evidence integrity
+    artifact_refs = []
+    for art in result.get("artifacts", []):
+        artifact_refs.append(f"sha256:{art.get('sha256')}:{art.get('filename')}")
+    if result.get("snapshot_name"):
+        artifact_refs.append(f"snapshot://{result.get('snapshot_name')}")
+    if result.get("rolled_back"):
+        artifact_refs.append(f"rollback://{result.get('rollback_info', {}).get('snapshot_restored', 'kairo_worker_ready')}")
+
     # Log to SQLite event store (Task 0.1 schema)
     try:
+        summary_msg = f"VM execution of '{req.command}' finished with exit code {result.get('exit_code')}"
+        if result.get("rolled_back"):
+            summary_msg += " (VM rolled back to clean state)"
+        if result.get("resource_limit_exceeded"):
+            summary_msg += f" (RESOURCE CAP VIOLATION: {result.get('violation_reason')})"
+
         event = Event.create(
             session_id=req.session_id or "vm_session",
             task_id=tid,
             actor="worker_agent@kali_vm",
             tool_id="kali.exec.v1",
             tool_version="1.0.0",
-            requested_args={"command": req.command, "args": req.args or [], "cwd": req.cwd or "/home/kali", "snapshot_before": req.snapshot_before},
+            requested_args={
+                "command": req.command,
+                "args": req.args or [],
+                "cwd": req.cwd or "/home/kali",
+                "snapshot_before": req.snapshot_before,
+                "rollback_after": req.rollback_after,
+                "rollback_on_failure": req.rollback_on_failure,
+                "resource_limits": req.resource_limits,
+            },
             normalized_args={"command": req.command, "args": req.args or [], "cwd": req.cwd or "/home/kali"},
             process_id=result.get("process_id"),
             start_time=start_iso,
@@ -267,10 +313,10 @@ def vm_execute(req: VMExecuteRequest):
             exit_code=result.get("exit_code"),
             stdout_ref=f"inline://{result.get('stdout', '')[:120]}" if result.get("stdout") else None,
             stderr_ref=f"inline://{result.get('stderr', '')[:120]}" if result.get("stderr") else None,
-            artifact_refs=[f"snapshot://{result.get('snapshot_name')}"] if result.get("snapshot_name") else [],
+            artifact_refs=artifact_refs,
             screenshots=[],
             network_context={"ip": "127.0.0.1", "port_ssh": 2222, "port_worker": 9999, "vm": "kali-linux-2026.1-virtualbox-amd64"},
-            result_summary=f"VM execution of '{req.command}' finished with exit code {result.get('exit_code')}",
+            result_summary=summary_msg,
             confidence=1.0,
             parent_event=None,
             timestamp=start_iso,
@@ -282,10 +328,37 @@ def vm_execute(req: VMExecuteRequest):
     return result
 
 
+@app.get("/artifacts/{task_id}")
+def get_task_artifacts(task_id: str):
+    """Returns all captured output files and their SHA-256 hashes for a given task."""
+    arts = get_artifacts_by_task(task_id, agent.db_path)
+    return {"task_id": task_id, "count": len(arts), "artifacts": arts}
+
+
+@app.post("/artifacts/verify")
+def verify_artifact(req: ArtifactVerifyRequest):
+    """Verifies SHA-256 cryptographic integrity of a captured output artifact."""
+    if req.artifact_id:
+        art = get_artifact_by_id(req.artifact_id, agent.db_path)
+        if not art:
+            raise HTTPException(status_code=404, detail=f"Artifact ID {req.artifact_id} not found")
+        fpath = art["filepath"]
+        expected_sha = art["sha256"]
+    elif req.filepath and req.expected_sha256:
+        fpath = req.filepath
+        expected_sha = req.expected_sha256
+    else:
+        raise HTTPException(status_code=400, detail="Must provide either artifact_id or (filepath and expected_sha256)")
+
+    res = verify_artifact_file(fpath, expected_sha)
+    return res
+
+
 @app.post("/vm/kill/{task_id}")
 def vm_kill(task_id: str):
     """Sends SIGKILL to an active task inside the Kali VM."""
     return vm_manager.kill_task_in_vm(task_id)
+
 
 
 if __name__ == "__main__":

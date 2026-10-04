@@ -23,6 +23,7 @@ Fields:
 - parent_event: Optional[str]
 """
 
+import hashlib
 import json
 import os
 import sqlite3
@@ -33,6 +34,74 @@ from typing import Any, Dict, List, Optional
 
 DEFAULT_DB_PATH = Path(__file__).resolve().parent / "events.db"
 SCHEMA_PATH = Path(__file__).resolve().parent / "schema.sql"
+
+
+def compute_sha256(file_path: Path | str) -> str:
+    """Computes SHA-256 hash of a file efficiently in 64KB chunks."""
+    hasher = hashlib.sha256()
+    with open(file_path, "rb") as f:
+        for chunk in iter(lambda: f.read(65536), b""):
+            hasher.update(chunk)
+    return hasher.hexdigest()
+
+
+def verify_artifact_file(file_path: Path | str, expected_sha256: str) -> Dict[str, Any]:
+    """Verifies that an artifact file matches its expected SHA-256 hash."""
+    p = Path(file_path)
+    if not p.exists():
+        return {
+            "valid": False,
+            "filepath": str(file_path),
+            "expected_sha256": expected_sha256,
+            "actual_sha256": None,
+            "error": "File does not exist",
+        }
+    actual = compute_sha256(p)
+    return {
+        "valid": actual.lower() == expected_sha256.lower(),
+        "filepath": str(p.resolve()),
+        "expected_sha256": expected_sha256.lower(),
+        "actual_sha256": actual.lower(),
+        "size_bytes": p.stat().st_size,
+    }
+
+
+@dataclass
+class Artifact:
+    task_id: str
+    filename: str
+    filepath: str
+    size_bytes: int
+    sha256: str
+    mime_type: Optional[str] = None
+    created_at: Optional[str] = None
+    metadata: Optional[str] = None
+    id: Optional[int] = None
+
+    @classmethod
+    def from_file(
+        cls,
+        task_id: str,
+        filepath: Path | str,
+        mime_type: Optional[str] = None,
+        metadata: Optional[Dict[str, Any] | str] = None,
+    ) -> "Artifact":
+        p = Path(filepath)
+        if not p.is_file():
+            raise FileNotFoundError(f"Artifact file not found: {filepath}")
+        size_bytes = p.stat().st_size
+        sha = compute_sha256(p)
+        meta_str = json.dumps(metadata) if isinstance(metadata, dict) else metadata
+        return cls(
+            task_id=task_id,
+            filename=p.name,
+            filepath=str(p.resolve()),
+            size_bytes=size_bytes,
+            sha256=sha,
+            mime_type=mime_type,
+            created_at=datetime.now(timezone.utc).isoformat(),
+            metadata=meta_str,
+        )
 
 
 @dataclass
@@ -174,3 +243,50 @@ def get_recent_events(limit: int = 50, db_path: Optional[Path | str] = None) -> 
         rows = [dict(row) for row in cursor.fetchall()]
     conn.close()
     return rows
+
+
+def insert_artifact(artifact: Artifact, db_path: Optional[Path | str] = None) -> int:
+    """Inserts a captured artifact into the SQLite artifacts table."""
+    init_db(db_path)
+    conn = get_connection(db_path)
+    query = """
+    INSERT INTO artifacts (
+        task_id, filename, filepath, size_bytes, sha256, mime_type, created_at, metadata
+    ) VALUES (
+        :task_id, :filename, :filepath, :size_bytes, :sha256, :mime_type, :created_at, :metadata
+    )
+    """
+    data = asdict(artifact)
+    data.pop("id", None)
+    with conn:
+        cursor = conn.cursor()
+        cursor.execute(query, data)
+        row_id = cursor.lastrowid
+    conn.close()
+    return row_id
+
+
+def get_artifacts_by_task(task_id: str, db_path: Optional[Path | str] = None) -> List[Dict[str, Any]]:
+    """Retrieves all artifacts and SHA-256 hashes captured for a specific task."""
+    init_db(db_path)
+    conn = get_connection(db_path)
+    with conn:
+        cursor = conn.cursor()
+        cursor.execute("SELECT * FROM artifacts WHERE task_id = ? ORDER BY id ASC", (task_id,))
+        rows = [dict(row) for row in cursor.fetchall()]
+    conn.close()
+    return rows
+
+
+def get_artifact_by_id(artifact_id: int, db_path: Optional[Path | str] = None) -> Optional[Dict[str, Any]]:
+    """Retrieves a single artifact by its primary key ID."""
+    init_db(db_path)
+    conn = get_connection(db_path)
+    with conn:
+        cursor = conn.cursor()
+        cursor.execute("SELECT * FROM artifacts WHERE id = ?", (artifact_id,))
+        row = cursor.fetchone()
+        res = dict(row) if row else None
+    conn.close()
+    return res
+

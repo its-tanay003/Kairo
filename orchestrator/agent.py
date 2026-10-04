@@ -107,17 +107,22 @@ class AgentLoop:
             exit_code = 0
             process_id = os.getpid()
             execution_details: Dict[str, Any] = {}
+            event_artifact_refs: List[str] = []
 
             if tool_id == "shell.run.v1":
                 command = requested_args.get("command") or "python"
                 args = requested_args.get("args") or ["-c", "print('Executed via shell.run.v1 adapter')"]
                 timeout_ms = int(requested_args.get("timeout_ms", 10000))
+                resource_limits = requested_args.get("resource_limits")
+                artifact_dir = requested_args.get("artifact_dir")
 
                 proc_res: ProcessResult = self.supervisor.execute(
                     task_id=task_id,
                     command=command,
                     args=args,
                     timeout_ms=timeout_ms,
+                    limits=resource_limits,
+                    artifact_dir=artifact_dir,
                 )
 
                 process_id = proc_res.process_id
@@ -126,9 +131,11 @@ class AgentLoop:
                 stderr_output = proc_res.stderr if proc_res.stderr else None
 
                 cmd_str = f"{command} {' '.join(args)}"
-                status_str = "TIMED OUT" if proc_res.timed_out else f"exit {exit_code}"
+                status_str = "TIMED OUT" if proc_res.timed_out else (f"CAP VIOLATION ({proc_res.violation_reason})" if proc_res.resource_limit_exceeded else f"exit {exit_code}")
                 reply_text = f"Adapter shell.run.v1 completed: `${cmd_str}` ({status_str}) in {proc_res.duration_ms}ms"
                 result_summary = f"Executed shell.run.v1 ({cmd_str}) -> exit {exit_code}"
+
+                event_artifact_refs = [f"sha256:{a['sha256']}:{a['filename']}" for a in proc_res.artifacts]
 
                 execution_details = {
                     "adapter": "shell.run.v1",
@@ -140,6 +147,9 @@ class AgentLoop:
                     "stderr": stderr_output or "",
                     "duration_ms": proc_res.duration_ms,
                     "timed_out": proc_res.timed_out,
+                    "resource_limit_exceeded": proc_res.resource_limit_exceeded,
+                    "violation_reason": proc_res.violation_reason,
+                    "artifacts": proc_res.artifacts,
                 }
                 actor = "orchestrator:adapter:shell.run.v1"
 
@@ -148,6 +158,10 @@ class AgentLoop:
                 args = requested_args.get("args") or ["-a"]
                 timeout_ms = int(requested_args.get("timeout_ms", 30000))
                 snapshot_before = bool(requested_args.get("snapshot_before", True))
+                rollback_after = bool(requested_args.get("rollback_after", False))
+                rollback_on_failure = bool(requested_args.get("rollback_on_failure", False))
+                resource_limits = requested_args.get("resource_limits")
+                artifact_dir = requested_args.get("artifact_dir")
 
                 vm_res = vm_manager.execute_in_vm(
                     task_id=task_id,
@@ -155,6 +169,10 @@ class AgentLoop:
                     tool_version=tool_version,
                     args={"command": command, "args": args, "cwd": requested_args.get("cwd", "/home/kali")},
                     snapshot_before=snapshot_before,
+                    rollback_after=rollback_after,
+                    rollback_on_failure=rollback_on_failure,
+                    resource_limits=resource_limits,
+                    artifact_dir=artifact_dir,
                     timeout_ms=timeout_ms,
                 )
 
@@ -164,9 +182,17 @@ class AgentLoop:
                 stderr_output = vm_res.get("stderr") if vm_res.get("stderr") else None
 
                 cmd_str = f"{command} {' '.join(str(a) for a in args)}"
-                status_str = "TIMED OUT" if vm_res.get("timed_out") else f"exit {exit_code}"
+                status_str = "TIMED OUT" if vm_res.get("timed_out") else (f"CAP VIOLATION ({vm_res.get('violation_reason')})" if vm_res.get("resource_limit_exceeded") else f"exit {exit_code}")
                 reply_text = f"Kali Sandbox [kali.exec.v1] completed: `{cmd_str}` ({status_str}) in {vm_res.get('duration_ms', 0)}ms"
                 result_summary = f"Kali Sandbox executed `{cmd_str}` -> exit {exit_code}"
+                if vm_res.get("rolled_back"):
+                    result_summary += " [VM Rolled Back]"
+
+                event_artifact_refs = [f"sha256:{a.get('sha256')}:{a.get('filename')}" for a in vm_res.get("artifacts", [])]
+                if vm_res.get("snapshot_name"):
+                    event_artifact_refs.append(f"snapshot://{vm_res.get('snapshot_name')}")
+                if vm_res.get("rolled_back"):
+                    event_artifact_refs.append(f"rollback://{vm_res.get('rollback_info', {}).get('snapshot_restored', 'kairo_worker_ready')}")
 
                 execution_details = {
                     "adapter": "kali.exec.v1",
@@ -181,8 +207,14 @@ class AgentLoop:
                     "duration_ms": vm_res.get("duration_ms", 0),
                     "timed_out": vm_res.get("timed_out", False),
                     "pre_snapshot": vm_res.get("pre_snapshot"),
+                    "rollback_info": vm_res.get("rollback_info"),
+                    "rolled_back": vm_res.get("rolled_back", False),
+                    "resource_limit_exceeded": vm_res.get("resource_limit_exceeded", False),
+                    "violation_reason": vm_res.get("violation_reason"),
+                    "artifacts": vm_res.get("artifacts", []),
                 }
                 actor = "orchestrator:sandbox:kali.exec.v1"
+
 
             elif tool_id == "hello_world":
                 greet_target = requested_args.get("target") or requested_args.get("input") or "World"
@@ -235,7 +267,7 @@ class AgentLoop:
                 exit_code=exit_code,
                 stdout_ref=f"inline://{stdout_output}" if stdout_output else None,
                 stderr_ref=f"inline://{stderr_output}" if stderr_output else None,
-                artifact_refs=["memory://context/session_state.json"],
+                artifact_refs=event_artifact_refs or ["memory://context/session_state.json"],
                 screenshots=[],
                 network_context={"ip": "127.0.0.1", "model_server": self.llama_client.base_url},
                 result_summary=result_summary,

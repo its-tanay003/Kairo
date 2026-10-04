@@ -25,6 +25,12 @@ VM_NAME = os.environ.get("KAIRO_VM_NAME", "kali-linux-2026.1-virtualbox-amd64")
 WORKER_URL = os.environ.get("KAIRO_WORKER_URL", "http://127.0.0.1:9999")
 BASELINE_SNAPSHOT = os.environ.get("KAIRO_BASELINE_SNAPSHOT", "kairo_worker_ready")
 
+try:
+    from events.db import Artifact, insert_artifact
+except ImportError:
+    Artifact = None
+    insert_artifact = None
+
 
 class VMManager:
     def __init__(self, vm_name: str = VM_NAME, worker_url: str = WORKER_URL):
@@ -190,15 +196,20 @@ class VMManager:
         tool_version: str = "1.0.0",
         args: Optional[Dict[str, Any]] = None,
         snapshot_before: bool = True,
+        rollback_after: bool = False,
+        rollback_on_failure: bool = False,
+        resource_limits: Optional[Dict[str, Any]] = None,
+        artifact_dir: Optional[str] = None,
         timeout_ms: int = 30000,
     ) -> Dict[str, Any]:
         """
         Executes a typed ToolSpec request inside the isolated Kali Linux VM.
-        Optionally takes snapshot before running.
-        Streams stdout/stderr back in the typed JSON response.
+        Automates snapshot-before-task and optional rollback-after-task.
+        Forwards resource caps and captures artifact hashes.
         """
         args = args or {}
         snap_info = None
+        snap_name = None
 
         if snapshot_before:
             snap_name = f"pre_{task_id.replace('-', '_')}"
@@ -213,6 +224,8 @@ class VMManager:
             "tool_version": tool_version,
             "arguments": args,
             "timeout_ms": timeout_ms,
+            "resource_limits": resource_limits,
+            "artifact_dir": artifact_dir,
         }
 
         t0 = time.perf_counter()
@@ -227,9 +240,45 @@ class VMManager:
 
             res_data["pre_snapshot"] = snap_info
             res_data["snapshot_name"] = snap_info.get("snapshot_name") if snap_info else None
+
+            # Persist captured artifacts into SQLite DB if available
+            raw_artifacts = res_data.get("artifacts", [])
+            if raw_artifacts and Artifact and insert_artifact:
+                for art in raw_artifacts:
+                    try:
+                        art_obj = Artifact(
+                            task_id=task_id,
+                            filename=art.get("filename", ""),
+                            filepath=art.get("filepath", ""),
+                            size_bytes=int(art.get("size_bytes", 0)),
+                            sha256=art.get("sha256", ""),
+                            created_at=art.get("created_at"),
+                            metadata=json.dumps({"source": "kali_vm", "tool_id": tool_id}),
+                        )
+                        insert_artifact(art_obj)
+                    except Exception as ins_err:
+                        print(f"[VMManager] Artifact insert error: {ins_err}")
+
+            # Check automated rollback conditions
+            status = res_data.get("status", "unknown")
+            exit_code = res_data.get("exit_code", 0)
+            is_failure = status in ("failed", "error", "timeout", "resource_limit_exceeded") or exit_code != 0
+            should_rollback = rollback_after or (rollback_on_failure and is_failure)
+
+            rollback_info = None
+            if should_rollback:
+                target_snap = snap_name if (snap_info and snap_info.get("status") == "success") else BASELINE_SNAPSHOT
+                print(f"[VMManager] Triggering automated rollback to '{target_snap}' (rollback_after={rollback_after}, rollback_on_failure={rollback_on_failure})...")
+                rollback_info = self.rollback_snapshot(snapshot_name=target_snap)
+
+            res_data["rollback_after"] = rollback_after
+            res_data["rollback_on_failure"] = rollback_on_failure
+            res_data["rollback_info"] = rollback_info
+            res_data["rolled_back"] = bool(rollback_info and rollback_info.get("status") == "success")
+
             return res_data
         except urllib.error.URLError as e:
-            return {
+            res_data = {
                 "task_id": task_id,
                 "tool_id": tool_id,
                 "tool_version": tool_version,
@@ -240,9 +289,15 @@ class VMManager:
                 "stderr": f"Worker agent connection error on {self.worker_url}: {e}",
                 "pre_snapshot": snap_info,
                 "duration_ms": int((time.perf_counter() - t0) * 1000),
+                "artifacts": [],
             }
+            if rollback_after or rollback_on_failure:
+                target_snap = snap_name if (snap_info and snap_info.get("status") == "success") else BASELINE_SNAPSHOT
+                res_data["rollback_info"] = self.rollback_snapshot(snapshot_name=target_snap)
+                res_data["rolled_back"] = True
+            return res_data
         except Exception as e:
-            return {
+            res_data = {
                 "task_id": task_id,
                 "tool_id": tool_id,
                 "tool_version": tool_version,
@@ -253,7 +308,14 @@ class VMManager:
                 "stderr": f"Execution failure: {e}",
                 "pre_snapshot": snap_info,
                 "duration_ms": int((time.perf_counter() - t0) * 1000),
+                "artifacts": [],
             }
+            if rollback_after or rollback_on_failure:
+                target_snap = snap_name if (snap_info and snap_info.get("status") == "success") else BASELINE_SNAPSHOT
+                res_data["rollback_info"] = self.rollback_snapshot(snapshot_name=target_snap)
+                res_data["rolled_back"] = True
+            return res_data
+
 
     def kill_task_in_vm(self, task_id: str) -> Dict[str, Any]:
         """Sends SIGKILL request to guest Worker Agent for active task_id."""

@@ -286,4 +286,30 @@ python -m pytest test_tool_adapters.py -v -k "not LiveVM"
 
 # Run full suite including live Kali VM sandbox execution:
 python -m pytest test_tool_adapters.py -v
+
+# Run VM snapshot-before-task, rollback, resource caps, and SHA-256 artifact verification suite:
+python test_snapshot_limits_artifacts.py
 ```
+
+---
+
+## Task Isolation, Resource Caps & Forensic Integrity
+
+### Automated VM Snapshot & Rollback Lifecycle
+- **Pre-Task Snapshot (`snapshot_before=True`)**: Automatically captures a live state checkpoint of the isolated Kali VM prior to task dispatch via `VBoxManage snapshot ... take`.
+- **Automated Rollback (`rollback_after=True` / `rollback_on_failure=True`)**: Automatically reverts VM state post-execution to its pristine baseline, guaranteeing zero residue or configuration drift from untrusted tool runs.
+- **Manual Rollback**: Instant one-click rollback to baseline or any named checkpoint via UI or API (`POST /vm/rollback`).
+
+### Process Supervisor Active Resource Caps
+Actively enforced on both host and inside the guest worker agent:
+- **CPU Cap**: Proactive usage monitoring (`max_cpu_pct`, e.g. 80%) with configurable grace period.
+- **Memory (RAM) Cap**: RSS threshold enforcement (`max_memory_mb`, e.g. 512MB) terminating offending process trees with `SIGKILL` (exit code 137).
+- **Disk Cap**: Storage consumption threshold in task artifact directory (`max_disk_mb`).
+- **File Count Cap**: Upper bound on generated files (`max_file_count`, e.g. 50 files) preventing resource exhaustion/file bombing.
+- **Violation Auditing**: Sets task status to `resource_limit_exceeded` with detailed violation diagnosis in the event record.
+
+### Cryptographic Artifact Integrity (SHA-256)
+- **Automatic Output Capture**: Any file placed in `$KAIRO_ARTIFACT_DIR` (`/tmp/kairo_artifacts/{task_id}`) is cataloged upon task completion.
+- **Cryptographic Hashing**: Every captured output is hashed with SHA-256 in 64KB chunks.
+- **SQLite Persistence**: Stored in the `artifacts` table (`task_id`, `filename`, `filepath`, `size_bytes`, `sha256`, `mime_type`, `created_at`) and referenced in `events.artifact_refs`.
+- **Integrity Verification**: `POST /artifacts/verify` endpoint verifies on-disk file contents against stored SHA-256 checksums, flagging any post-capture tampering.
