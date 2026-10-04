@@ -43,3 +43,6 @@ Thumbs.db
 # LLM Weights & GGUF Models
 models/*.gguf
 *.gguf
+
+# Runtime generated evidence artifacts
+evidence_artifacts/

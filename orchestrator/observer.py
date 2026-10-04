@@ -230,11 +230,12 @@ class Observer:
         elif "nikto" in tool_id:
             if raw.get("ip"):
                 facts.hosts.append(raw["ip"])
-            if raw.get("server"):
-                facts.technologies.append(raw["server"])
-            for v in raw.get("vulnerabilities", []):
+            srv = raw.get("server") or raw.get("server_info", {}).get("server")
+            if srv and srv not in facts.technologies:
+                facts.technologies.append(srv)
+            for v in raw.get("vulnerabilities", []) or raw.get("findings", []):
                 facts.vulnerabilities.append({
-                    "id": v.get("osvdb") or "NIKTO-FINDING",
+                    "id": v.get("osvdb") or v.get("id") or "NIKTO-FINDING",
                     "type": "web_vulnerability",
                     "severity": "MEDIUM",
                     "description": v.get("description", ""),
@@ -244,6 +245,12 @@ class Observer:
 
         # WhatWeb Adapter
         elif "whatweb" in tool_id:
+            for p in raw.get("plugins_found", []):
+                name = p.get("name", "")
+                ver = p.get("version", "")
+                tech = f"{name} {ver}".strip() if ver else name
+                if tech and tech not in facts.technologies:
+                    facts.technologies.append(tech)
             for t in raw.get("targets", []):
                 if t.get("target") and t.get("target") not in facts.hosts:
                     facts.hosts.append(t["target"])
@@ -300,7 +307,7 @@ class Observer:
 
         # Searchsploit Adapter
         elif "searchsploit" in tool_id:
-            for exp in raw.get("results", []):
+            for exp in raw.get("exploits", raw.get("results", [])):
                 facts.vulnerabilities.append({
                     "id": exp.get("edb_id") or "EDB-EXPLOIT",
                     "type": "public_exploit",
@@ -323,13 +330,28 @@ class Observer:
 
         # Hashid Adapter
         elif "hashid" in tool_id:
-            for h in raw.get("possible_hashes", []):
-                facts.hashes.append({"name": h.get("name"), "hashcat_mode": h.get("hashcat")})
+            for h in raw.get("possible_hashes", []) or raw.get("identified_types", []):
+                h_name = h.get("name")
+                h_mode = h.get("hashcat") or h.get("hashcat_mode")
+                facts.hashes.append({"name": h_name, "hashcat_mode": h_mode})
+                if h_name and h_name not in facts.technologies:
+                    facts.technologies.append(h_name)
 
         # ExifTool Adapter
         elif "exiftool" in tool_id:
             tags = raw.get("tags", {})
             facts.metadata.update(tags)
+            for f in raw.get("files", []):
+                facts.metadata.update(f)
+                if isinstance(f.get("all_tags"), dict):
+                    facts.metadata.update(f["all_tags"])
+            for sf in raw.get("sensitive_findings", []):
+                facts.vulnerabilities.append({
+                    "id": "SENSITIVE_METADATA",
+                    "type": "information_disclosure",
+                    "tag": sf.get("tag"),
+                    "value": sf.get("value"),
+                })
 
         # Metasploit Adapter
         elif "metasploit" in tool_id:

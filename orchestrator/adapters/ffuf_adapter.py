@@ -74,9 +74,14 @@ class FfufAdapter(ToolAdapter):
                 # [Status: 200, Size: 1234, Words: 100, Lines: 50]
                 m = re.search(r"\[Status:\s*(\d+),\s*Size:\s*(\d+)", line)
                 if m:
-                    url_m = re.search(r"http\S+", line)
+                    url_m = re.search(r"https?://\S+", line)
+                    word = line.split("[")[0].strip()
+                    base_url = meta.get("inputs", {}).get("url", "").rstrip("/")
+                    full_url = url_m.group(0) if url_m else f"{base_url}/{word}"
+                    fuzz_path = f"/{word}" if word and not word.startswith("/") else word
                     results.append({
-                        "url": url_m.group(0) if url_m else "",
+                        "url": full_url,
+                        "input": {"FUZZ": fuzz_path},
                         "status": int(m.group(1)),
                         "length": int(m.group(2)),
                     })

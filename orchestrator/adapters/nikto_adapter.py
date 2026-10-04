@@ -68,8 +68,20 @@ class NiktoAdapter(ToolAdapter):
                     "description": row.get("description", "").strip().strip('"'),
                 })
 
-        # Try to extract server info from text output
+        # Try to extract server info and text findings from non-CSV output
         for line in stdout.splitlines():
+            line_str = line.strip()
+            if line_str.startswith("+ /"):
+                parts = line_str[2:].split(":", 1)
+                uri = parts[0].strip()
+                desc = parts[1].strip() if len(parts) > 1 else uri
+                findings.append({
+                    "id": "NIKTO-FINDING",
+                    "method": "GET",
+                    "uri": uri,
+                    "osvdb": "OSVDB-0",
+                    "description": desc,
+                })
             m = re.search(r"Server:\s+(.+)", line)
             if m:
                 server_info["server"] = m.group(1).strip()

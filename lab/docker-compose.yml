@@ -1,0 +1,31 @@
+version: '3.8'
+
+services:
+  # Vulnerable Web Application Target (DVWA)
+  mini-dvwa:
+    image: vulnerables/web-dvwa:latest
+    container_name: kairo-lab-dvwa
+    restart: unless-stopped
+    ports:
+      - "8888:80"
+    environment:
+      - PHP_DISPLAY_ERRORS=1
+    networks:
+      - kairo-lab-net
+
+  # Vulnerable Service & Network Target (Simulated Metasploitable)
+  mini-metasploitable:
+    image: tleemcjr/metasploitable2:latest
+    container_name: kairo-lab-metasploitable
+    restart: unless-stopped
+    ports:
+      - "8889:21"
+      - "2222:22"
+      - "8080:80"
+      - "3306:3306"
+    networks:
+      - kairo-lab-net
+
+networks:
+  kairo-lab-net:
+    driver: bridge
