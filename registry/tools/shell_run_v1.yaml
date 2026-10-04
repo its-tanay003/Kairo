@@ -1,0 +1,28 @@
+id: shell.run.v1
+name: Shell Execution Adapter v1
+version: 1.0.0
+description: Executes a single command string with arguments under process supervisor control with a hard timeout.
+category: execution
+parameters:
+  type: object
+  properties:
+    command:
+      type: string
+      description: The executable command name or path (e.g. python, node, echo, ping)
+    args:
+      type: array
+      items:
+        type: string
+      description: List of string arguments to pass to the executable
+      default: []
+    timeout_ms:
+      type: integer
+      description: Hard timeout in milliseconds before process is forcibly killed
+      default: 10000
+  required:
+    - command
+timeout_ms: 15000
+metadata:
+  adapter: shell.run.v1
+  supervisor: true
+  sandboxed: false

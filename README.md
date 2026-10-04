@@ -59,19 +59,21 @@ sequenceDiagram
   - Streams back execution status and confirmed database events
 - **Port**: `4000`
 
-### 3. `/orchestrator` (Agent Loop - Python)
+### 3. `/orchestrator` (Agent Loop & Process Supervisor)
 - **Framework**: Python 3 / FastAPI / Uvicorn
 - **Features**:
   - Agent loop execution and task orchestration
-  - Loads tool specifications from `/registry`
-  - Telemetry capture (process ID, execution timing, stdout/stderr refs, args)
-  - Writes directly to `/events/events.db` conforming strictly to the 20-field schema
-  - *Hardening path*: Easily replaceable with Rust (`axum` + `rusqlite` + `serde_yaml`)
+  - **`shell.run.v1` Execution Adapter**: Hardcoded adapter taking command and string args list, executed via [orchestrator/process_supervisor.py](file:///c:/New%20Volume%20%28D%29/dev/orchestrator/process_supervisor.py).
+  - **Hard Timeout**: Forcibly kills runaway processes exceeding timeout budget.
+  - **Kill Switch**: `POST /kill` and `POST /kill/{task_id}` to issue immediate `SIGKILL` to running processes by `task_id`.
+  - Telemetry capture (child process ID, start/end timestamps, stdout/stderr refs, exit code).
+  - Writes directly to `/events/events.db` conforming strictly to the 20-field schema.
 - **Port**: `8000`
 
 ### 4. `/registry` (ToolSpec Definitions & Loaders)
 - **Format**: Declarative YAML tool specifications
 - **Includes**:
+  - `shell_run_v1.yaml`: Execution adapter spec with command, args, and timeout
   - `hello_world.yaml`: Minimal boundary verification tool
   - `system_ping.yaml`: System diagnostic tool
   - `loader.py`: Python loader and validator

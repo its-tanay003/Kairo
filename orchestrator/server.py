@@ -1,10 +1,11 @@
 """
-FastAPI Server for Orchestrator. Exposes endpoints to trigger agent loop and query events.
+FastAPI Server for Orchestrator. Exposes endpoints to trigger agent loop, query events,
+and activate SIGKILL kill switch for running supervisor processes.
 """
 
 from pathlib import Path
 import sys
-from typing import Optional
+from typing import Any, Dict, Optional
 
 # Ensure monorepo root in path
 ROOT_DIR = Path(__file__).resolve().parent.parent
@@ -17,6 +18,7 @@ from pydantic import BaseModel
 
 from events.db import get_events_by_session, get_recent_events
 from orchestrator.agent import AgentLoop
+from orchestrator.process_supervisor import supervisor
 
 app = FastAPI(title="Agent Orchestrator Service", version="1.0.0")
 
@@ -36,6 +38,12 @@ class RunRequest(BaseModel):
     message: str
     task_id: Optional[str] = None
     parent_event: Optional[str] = None
+    explicit_tool: Optional[str] = None
+    explicit_args: Optional[Dict[str, Any]] = None
+
+
+class KillRequest(BaseModel):
+    task_id: str
 
 
 @app.get("/health")
@@ -48,6 +56,7 @@ def health():
             "url": agent.llama_client.base_url,
         },
         "registered_tools": [t.id for t in agent.registry.list_tools()],
+        "active_processes": len(supervisor.list_active()),
     }
 
 
@@ -59,10 +68,31 @@ def run_loop(req: RunRequest):
             message=req.message,
             task_id=req.task_id,
             parent_event=req.parent_event,
+            explicit_tool=req.explicit_tool,
+            explicit_args=req.explicit_args,
         )
         return result
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/kill")
+def kill_process(req: KillRequest):
+    """Kill switch endpoint: SIGKILL running process by task_id."""
+    res = supervisor.kill_by_task_id(req.task_id)
+    return res
+
+
+@app.post("/kill/{task_id}")
+def kill_process_by_path(task_id: str):
+    """Kill switch endpoint by path parameter."""
+    res = supervisor.kill_by_task_id(task_id)
+    return res
+
+
+@app.get("/processes")
+def list_active_processes():
+    return {"active_processes": supervisor.list_active()}
 
 
 @app.get("/events")

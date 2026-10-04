@@ -26,16 +26,30 @@ interface EventRecord {
   parent_event?: string;
 }
 
+interface ExecutionDetails {
+  adapter?: string;
+  command?: string;
+  args?: string[];
+  exit_code?: number;
+  process_id?: number;
+  stdout?: string;
+  stderr?: string;
+  duration_ms?: number;
+  timed_out?: boolean;
+}
+
 interface ChatMessage {
   id: string;
   sender: "user" | "agent" | "system";
   text: string;
   timestamp: string;
+  taskId?: string;
   tool?: {
     id: string;
     version: string;
     name: string;
   };
+  execution?: ExecutionDetails;
   durationMs?: number;
 }
 
@@ -47,6 +61,7 @@ export default function Home() {
   const [latestEvent, setLatestEvent] = useState<EventRecord | null>(null);
   const [allEvents, setAllEvents] = useState<EventRecord[]>([]);
   const [activeTab, setActiveTab] = useState<"latest" | "all">("latest");
+  const [activeTaskId, setActiveTaskId] = useState<string | null>(null);
 
   const wsRef = useRef<WebSocket | null>(null);
   const messagesEndRef = useRef<HTMLDivElement | null>(null);
@@ -86,16 +101,21 @@ export default function Home() {
               },
             ]);
           } else if (data.type === "status") {
+            if (data.taskId) {
+              setActiveTaskId(data.taskId);
+            }
             setMessages((prev) => [
               ...prev,
               {
                 id: `msg_${Date.now()}_status`,
                 sender: "system",
+                taskId: data.taskId,
                 text: data.text || `Status: ${data.status}`,
                 timestamp: new Date().toLocaleTimeString(),
               },
             ]);
           } else if (data.type === "agent_response") {
+            setActiveTaskId(null);
             setMessages((prev) => [
               ...prev,
               {
@@ -104,6 +124,7 @@ export default function Home() {
                 text: data.reply,
                 timestamp: new Date().toLocaleTimeString(),
                 tool: data.toolExecuted,
+                execution: data.execution,
                 durationMs: data.durationMs,
               },
             ]);
@@ -111,7 +132,30 @@ export default function Home() {
               setLatestEvent(data.event);
               setAllEvents((prev) => [data.event, ...prev]);
             }
+          } else if (data.type === "kill_confirmed") {
+            setActiveTaskId(null);
+            setMessages((prev) => [
+              ...prev,
+              {
+                id: `msg_${Date.now()}_kill`,
+                sender: "system",
+                text: `☠️ Kill switch confirmed for task ${data.taskId}: ${JSON.stringify(data.result)}`,
+                timestamp: new Date().toLocaleTimeString(),
+              },
+            ]);
+          } else if (data.type === "validation_error") {
+            setActiveTaskId(null);
+            setMessages((prev) => [
+              ...prev,
+              {
+                id: `msg_${Date.now()}_val_err`,
+                sender: "system",
+                text: `[Gateway Schema Validation Error] Tool: ${data.tool} -> ${data.error}`,
+                timestamp: new Date().toLocaleTimeString(),
+              },
+            ]);
           } else if (data.type === "error") {
+            setActiveTaskId(null);
             setMessages((prev) => [
               ...prev,
               {
@@ -161,12 +205,48 @@ export default function Home() {
     setMessages((prev) => [...prev, userMsg]);
     setInputVal("");
 
-    // Send chat command over WebSocket
     wsRef.current.send(
       JSON.stringify({
         type: "chat",
         content: text,
         sessionId,
+      })
+    );
+  };
+
+  const sendToolCall = (tool: string, args: Record<string, unknown>) => {
+    if (wsStatus !== "connected" || !wsRef.current) return;
+    const taskId = `task_${Date.now().toString(36)}`;
+    setActiveTaskId(taskId);
+
+    const userMsg: ChatMessage = {
+      id: `msg_${Date.now()}_user`,
+      sender: "user",
+      text: `[Propose Tool Call] ${tool} with args: ${JSON.stringify(args)}`,
+      timestamp: new Date().toLocaleTimeString(),
+      taskId,
+    };
+    setMessages((prev) => [...prev, userMsg]);
+
+    wsRef.current.send(
+      JSON.stringify({
+        type: "tool_call",
+        tool,
+        args,
+        sessionId,
+        taskId,
+      })
+    );
+  };
+
+  const killRunningTask = (targetTaskId?: string) => {
+    const tid = targetTaskId || activeTaskId;
+    if (!tid || !wsRef.current) return;
+
+    wsRef.current.send(
+      JSON.stringify({
+        type: "kill",
+        taskId: tid,
       })
     );
   };
@@ -233,27 +313,65 @@ export default function Home() {
         {/* Left: Chat Pane */}
         <section className="chat-pane">
           <div className="action-bar">
+            {/* Tool 1: shell.run.v1 safe execution */}
             <button
               className="quick-btn"
-              onClick={() => sendMessage("Please execute hello_world tool for Tanay")}
+              onClick={() =>
+                sendToolCall("shell.run.v1", {
+                  command: "python",
+                  args: ["-c", "import sys; print(f'Execution via shell.run.v1 adapter on Python {sys.version.split()[0]}')"],
+                  timeout_ms: 10000,
+                })
+              }
               disabled={wsStatus !== "connected"}
             >
-              ⚡ Tool Call: hello_world
+              ⚡ Tool: shell.run.v1 (Python)
             </button>
+
+            {/* Tool 2: shell.run.v1 hard timeout */}
             <button
               className="quick-btn secondary"
-              onClick={() => sendMessage("Run system ping diagnostic")}
+              onClick={() =>
+                sendToolCall("shell.run.v1", {
+                  command: "python",
+                  args: ["-c", "import time; time.sleep(10)"],
+                  timeout_ms: 800,
+                })
+              }
               disabled={wsStatus !== "connected"}
             >
-              📡 Tool Call: system_ping
+              ⏱️ Hard Timeout (800ms)
             </button>
+
+            {/* Tool 3: Kill Switch demo */}
             <button
               className="quick-btn secondary"
-              onClick={() => sendMessage("Hello! What is your role as an assistant?")}
+              style={{ color: "var(--accent-rose)", borderColor: "rgba(244, 63, 94, 0.3)" }}
+              onClick={() => {
+                const sleepTaskId = `task_kill_demo_${Date.now().toString(36)}`;
+                sendToolCall("shell.run.v1", {
+                  command: "python",
+                  args: ["-c", "import time; time.sleep(25)"],
+                  timeout_ms: 30000,
+                });
+                setTimeout(() => {
+                  killRunningTask(sleepTaskId);
+                }, 1200);
+              }}
               disabled={wsStatus !== "connected"}
             >
-              💬 Chat Message (No Tool)
+              ☠️ Test Kill Switch (SIGKILL)
             </button>
+
+            {/* Conversational chat trigger */}
+            <button
+              className="quick-btn secondary"
+              onClick={() => sendMessage("Hi! What adapters do you support?")}
+              disabled={wsStatus !== "connected"}
+            >
+              💬 Chat Message
+            </button>
+
             <button
               className="quick-btn secondary"
               onClick={refreshEvents}
@@ -269,7 +387,8 @@ export default function Home() {
                   Connected to Gateway WebSocket.
                 </p>
                 <p style={{ fontSize: "13px" }}>
-                  Click <strong>&quot;Verify Boundary (Hello World)&quot;</strong> to trigger the complete service chain.
+                  Click <strong>&quot;⚡ Tool: shell.run.v1 (Python)&quot;</strong> to test adapter execution,
+                  schema validation, and the rich Tool Card output.
                 </p>
               </div>
             )}
@@ -283,11 +402,61 @@ export default function Home() {
                   {msg.durationMs !== undefined && (
                     <span>• {msg.durationMs}ms</span>
                   )}
+                  {msg.taskId && <span>• {msg.taskId}</span>}
                 </div>
+
                 <div>{msg.text}</div>
-                {msg.tool && (
+
+                {/* Tool Tag */}
+                {msg.tool && !msg.execution && (
                   <div className="tool-tag">
                     <span>⚡ Tool: {msg.tool.name} (v{msg.tool.version})</span>
+                  </div>
+                )}
+
+                {/* Rich Tool Execution Card */}
+                {msg.execution && (
+                  <div className="tool-execution-card">
+                    <div className="tool-card-header">
+                      <div className="tool-title">
+                        <span>⚡ {msg.execution.adapter || "shell.run.v1"}</span>
+                      </div>
+                      <div className="tool-badges">
+                        {msg.execution.timed_out ? (
+                          <span className="exit-badge timeout">⚠️ TIMED OUT (SIGKILL)</span>
+                        ) : msg.execution.exit_code === 0 ? (
+                          <span className="exit-badge success">✓ EXIT 0 (SUCCESS)</span>
+                        ) : (
+                          <span className="exit-badge error">✗ EXIT {msg.execution.exit_code}</span>
+                        )}
+                        <span className="meta-chip">#PID {msg.execution.process_id}</span>
+                        <span className="meta-chip">{msg.execution.duration_ms}ms</span>
+                      </div>
+                    </div>
+
+                    {/* Executed Command Line */}
+                    <div className="cmd-box">
+                      <span className="cmd-prompt">$</span>
+                      <span>
+                        {msg.execution.command} {(msg.execution.args || []).join(" ")}
+                      </span>
+                    </div>
+
+                    {/* STDOUT Viewer */}
+                    {msg.execution.stdout ? (
+                      <div className="output-section">
+                        <span className="output-label">Captured STDOUT</span>
+                        <pre className="terminal-stdout">{msg.execution.stdout}</pre>
+                      </div>
+                    ) : null}
+
+                    {/* STDERR Viewer */}
+                    {msg.execution.stderr ? (
+                      <div className="output-section">
+                        <span className="output-label">Captured STDERR / Supervisor</span>
+                        <pre className="terminal-stderr">{msg.execution.stderr}</pre>
+                      </div>
+                    ) : null}
                   </div>
                 )}
               </div>
@@ -301,7 +470,7 @@ export default function Home() {
               className="chat-input"
               placeholder={
                 wsStatus === "connected"
-                  ? "Type a message or tool invocation..."
+                  ? "Type a message or command (e.g. 'shell.run.v1: echo hello')..."
                   : "Connecting to gateway..."
               }
               value={inputVal}
@@ -311,6 +480,19 @@ export default function Home() {
               }}
               disabled={wsStatus !== "connected"}
             />
+            {activeTaskId && (
+              <button
+                className="quick-btn"
+                style={{
+                  background: "rgba(244, 63, 94, 0.2)",
+                  borderColor: "rgba(244, 63, 94, 0.5)",
+                  color: "var(--accent-rose)",
+                }}
+                onClick={() => killRunningTask()}
+              >
+                ☠️ SIGKILL
+              </button>
+            )}
             <button
               className="send-btn"
               onClick={() => sendMessage()}
@@ -346,23 +528,27 @@ export default function Home() {
           <div className="inspector-content">
             {/* Proof Card */}
             <div className="proof-card">
-              <h3>Service Boundary Verification</h3>
+              <h3>Adapter & Service Verification</h3>
               <ul className="checklist">
                 <li className="checked">
                   <span className="check-icon">✓</span>
                   <span>/ui connects to /gateway via WebSocket</span>
                 </li>
-                <li className={latestEvent ? "checked" : ""}>
+                <li className="checked">
                   <span className="check-icon">✓</span>
-                  <span>/gateway dispatches call to /orchestrator</span>
+                  <span>/gateway validates ToolSpec schema</span>
+                </li>
+                <li className="checked">
+                  <span className="check-icon">✓</span>
+                  <span>Process Supervisor enforces hard timeout</span>
+                </li>
+                <li className="checked">
+                  <span className="check-icon">✓</span>
+                  <span>Kill switch endpoint supports SIGKILL by task_id</span>
                 </li>
                 <li className={latestEvent ? "checked" : ""}>
                   <span className="check-icon">✓</span>
-                  <span>/orchestrator resolves tool spec from /registry</span>
-                </li>
-                <li className={latestEvent ? "checked" : ""}>
-                  <span className="check-icon">✓</span>
-                  <span>/orchestrator writes exact 20-field Event to /events/events.db</span>
+                  <span>stdout/stderr/exit_code captured into SQLite (20 cols)</span>
                 </li>
               </ul>
             </div>
@@ -426,7 +612,9 @@ export default function Home() {
                       </tr>
                       <tr>
                         <td className="schema-key">exit_code</td>
-                        <td className="schema-val">{latestEvent.exit_code ?? 0}</td>
+                        <td className="schema-val" style={{ color: latestEvent.exit_code === 0 ? "var(--accent-emerald)" : "var(--accent-rose)" }}>
+                          {latestEvent.exit_code ?? 0}
+                        </td>
                       </tr>
                       <tr>
                         <td className="schema-key">stdout_ref</td>
@@ -470,7 +658,7 @@ export default function Home() {
                   </table>
                 ) : (
                   <p style={{ fontSize: "12px", color: "var(--text-muted)" }}>
-                    No events recorded yet. Send &quot;Hello World&quot; to write an event row.
+                    No events recorded yet. Send a command to write an event row.
                   </p>
                 )}
               </div>

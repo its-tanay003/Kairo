@@ -3,7 +3,6 @@ Generates minimal ToolSpec-shaped JSON schemas for llama.cpp grammar-constrained
 """
 
 from typing import Any, Dict, List
-import json
 
 
 def build_tool_call_json_schema(tools: List[Dict[str, Any]]) -> Dict[str, Any]:
@@ -12,7 +11,7 @@ def build_tool_call_json_schema(tools: List[Dict[str, Any]]) -> Dict[str, Any]:
     - either plain text response
     - or a structured tool call validated against registered ToolSpec ids and properties.
     """
-    tool_ids = [t["id"] for t in tools] if tools else ["hello_world"]
+    tool_ids = [t["id"] for t in tools] if tools else ["hello_world", "shell.run.v1"]
 
     schema = {
         "type": "object",
@@ -41,6 +40,19 @@ def build_tool_call_json_schema(tools: List[Dict[str, Any]]) -> Dict[str, Any]:
                     "arguments": {
                         "type": "object",
                         "properties": {
+                            "command": {
+                                "type": "string",
+                                "description": "The command executable for shell.run.v1 (e.g. python, node, echo)"
+                            },
+                            "args": {
+                                "type": "array",
+                                "items": {"type": "string"},
+                                "description": "List of string arguments for the command"
+                            },
+                            "timeout_ms": {
+                                "type": "integer",
+                                "description": "Execution timeout in milliseconds"
+                            },
                             "input": {
                                 "type": "string",
                                 "description": "Primary argument or query payload"
