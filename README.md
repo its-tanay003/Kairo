@@ -494,3 +494,29 @@ To prevent infinite retry loops common in black-box ReAct agents:
 - **Operator Surfacing**: Upon reaching attempt 3 without moving the graph forward, recovery halts immediately. The node status is updated to `failed`, error code is set to `RECOVERY_EXHAUSTED`, and full diagnostic telemetry (attempt history, failure reasons, and suggested manual operator actions) is surfaced in the UI.
 - **Audit Logging**: Logs a structured event (`recovery_agent:cap_exceeded`) to the immutable SQLite event store for post-incident review.
 
+---
+
+## 📈 Reporter Component & Failure-Aware Resilience (Task 2.4)
+
+### 1. Differentiator: Full Recovery Lineage vs. "Happy-Path" Demos
+Most competitor autonomous security demos only display the happy path, masking timeouts, crashes, tool swaps, and retries. In professional security testing, execution anomalies are standard; what defines an industrial-grade agent is **failure-aware autonomy and complete audit transparency**.
+
+When Task 2.4 self-healing fires, Kairo's **Reporter** (`orchestrator/reporter.py`) captures and surfaces the complete attempt sequence:
+
+```text
+"Attempted gobuster (common wordlist) -> timed out after 30s -> switched to ffuf with reduced thread count -> succeeded, found 3 endpoints."
+```
+
+### 2. Causal Lineage via `parent_event`
+
+- All retries, tool switches, and recovery actions are saved into the SQLite event store linked by the `parent_event` ID.
+- Reconstructs a complete, tamper-evident causal graph: `initial_execution (failed)` ➔ `recovery_decision (repaired args / swapped tool)` ➔ `retry_execution` ➔ `observation (progress confirmed)`.
+
+### 3. Comprehensive Audit & Evidence Drawer Integration
+
+- **Resilience Metrics Banner**: Tracks `autonomous_healing_rate_pct`, `nodes_requiring_recovery`, `total_recovery_interventions`, and `recovery_exhausted_caps`.
+- **Evidence Drawer Recovery Paths**: Findings (open ports, discovered endpoints, identified CVEs) in the **Evidence Drawer** include an inline collapsed `<details>` section detailing the exact recovery lineage that uncovered them.
+- **In-Chat Tool Execution Cards**: Displays a failure-aware self-healing chip showing the human-readable narrative and step-by-step causal chain with parent event IDs.
+- **Cryptographic Report Signing**: Reports can be downloaded or previewed as Markdown/JSON with cryptographic SHA-256 integrity hashes stored in the SQLite `artifacts` table.
+
+

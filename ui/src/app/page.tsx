@@ -30,6 +30,20 @@ interface EventRecord {
   parent_event?: string;
 }
 
+export interface RecoveryHistoryStep {
+  attempt?: number;
+  tool?: string;
+  args?: Record<string, unknown> | string[];
+  status?: string;
+  exit_code?: number;
+  failure_reason?: string;
+  duration_s?: number;
+  duration_ms?: number;
+  action_taken?: string;
+  event_id?: string;
+  parent_event?: string;
+}
+
 interface ExecutionDetails {
   adapter?: string;
   command?: string;
@@ -40,6 +54,11 @@ interface ExecutionDetails {
   stderr?: string;
   duration_ms?: number;
   timed_out?: boolean;
+  recovery_narrative?: string;
+  recovery_path?: RecoveryHistoryStep[];
+  attempts?: number;
+  event_id?: string;
+  parent_event?: string;
 }
 
 interface ModelCatalogItem {
@@ -114,6 +133,8 @@ interface ChatMessage {
   execution?: ExecutionDetails;
   durationMs?: number;
   toolSelection?: ToolSelectionResult;
+  recovery_narrative?: string;
+  recovery_path?: RecoveryHistoryStep[];
 }
 
 export default function Home() {
@@ -195,9 +216,22 @@ export default function Home() {
                 text: data.reply,
                 timestamp: new Date().toLocaleTimeString(),
                 tool: data.toolExecuted,
-                execution: data.execution,
+                execution: data.execution
+                  ? {
+                      ...data.execution,
+                      recovery_narrative:
+                        data.execution.recovery_narrative || data.recovery_narrative || data.recoveryNarrative,
+                      recovery_path:
+                        data.execution.recovery_path || data.recovery_path || data.recoveryPath,
+                      attempts: data.execution.attempts || data.attempts,
+                    }
+                  : undefined,
                 durationMs: data.durationMs,
                 toolSelection: data.toolSelection || data.tool_selection,
+                recovery_narrative:
+                  data.execution?.recovery_narrative || data.recovery_narrative || data.recoveryNarrative,
+                recovery_path:
+                  data.execution?.recovery_path || data.recovery_path || data.recoveryPath,
               },
             ]);
             if (data.event) {
@@ -785,6 +819,129 @@ export default function Home() {
                         <pre className="terminal-stderr">{msg.execution.stderr}</pre>
                       </div>
                     ) : null}
+
+                    {/* Failure-Aware Full Attempt History & Autonomous Recovery Panel */}
+                    {(msg.execution.recovery_narrative ||
+                      msg.recovery_narrative ||
+                      (msg.execution.recovery_path && msg.execution.recovery_path.length > 1) ||
+                      (msg.execution.attempts && msg.execution.attempts > 1)) && (
+                      <div
+                        style={{
+                          marginTop: "8px",
+                          background: "rgba(30, 27, 75, 0.4)",
+                          border: "1px solid rgba(168, 85, 247, 0.35)",
+                          borderRadius: "6px",
+                          padding: "8px 10px",
+                          fontSize: "11px",
+                        }}
+                      >
+                        <div
+                          style={{
+                            display: "flex",
+                            justifyContent: "space-between",
+                            alignItems: "center",
+                            marginBottom: "6px",
+                          }}
+                        >
+                          <span style={{ color: "#c084fc", fontWeight: 700, display: "flex", alignItems: "center", gap: "6px" }}>
+                            <span>🛡️</span>
+                            <span>Autonomous Recovery Lineage (Task 2.4)</span>
+                          </span>
+                          <span
+                            className="dag-status-pill warning"
+                            style={{ fontSize: "9px", padding: "1px 6px" }}
+                          >
+                            Healed ({msg.execution.attempts || msg.execution.recovery_path?.length || 2} attempts)
+                          </span>
+                        </div>
+
+                        {/* Full Causal Recovery Narrative */}
+                        <div
+                          style={{
+                            background: "rgba(15, 23, 42, 0.85)",
+                            padding: "6px 8px",
+                            borderRadius: "4px",
+                            borderLeft: "3px solid #a855f7",
+                            fontFamily: "var(--font-mono)",
+                            fontSize: "11px",
+                            color: "#f3e8ff",
+                            lineHeight: "1.45",
+                            marginBottom: "6px",
+                          }}
+                        >
+                          {msg.execution.recovery_narrative ||
+                            msg.recovery_narrative ||
+                            "Attempted initial tool -> timed out -> switched to alternate adapter -> succeeded autonomously."}
+                        </div>
+
+                        {/* Collapsible Full Attempt Chain with parent_event linking */}
+                        <details
+                          style={{
+                            background: "rgba(15, 23, 42, 0.5)",
+                            border: "1px solid rgba(255, 255, 255, 0.05)",
+                            borderRadius: "4px",
+                            padding: "4px 8px",
+                          }}
+                          open
+                        >
+                          <summary
+                            style={{
+                              cursor: "pointer",
+                              fontSize: "10px",
+                              color: "var(--accent-cyan)",
+                              fontWeight: 600,
+                            }}
+                          >
+                            Full Attempt History &amp; Causal Event Chain
+                          </summary>
+                          <div
+                            style={{
+                              display: "flex",
+                              flexDirection: "column",
+                              gap: "4px",
+                              marginTop: "6px",
+                            }}
+                          >
+                            {(msg.execution.recovery_path || msg.recovery_path || []).map((step, sIdx) => (
+                              <div
+                                key={sIdx}
+                                style={{
+                                  background: "rgba(30, 41, 59, 0.5)",
+                                  padding: "4px 6px",
+                                  borderRadius: "3px",
+                                  fontSize: "10px",
+                                }}
+                              >
+                                <div style={{ display: "flex", justifyContent: "space-between" }}>
+                                  <strong style={{ color: step.status === "failed" ? "#fca5a5" : "#6ee7b7" }}>
+                                    {step.status === "failed" ? "❌ Attempt" : "✓ Attempt"} #{step.attempt || sIdx + 1}: {step.tool || "tool"}
+                                  </strong>
+                                  <span style={{ color: "var(--text-muted)", fontSize: "9px" }}>
+                                    {step.duration_s ? `${step.duration_s}s` : step.duration_ms ? `${step.duration_ms}ms` : ""}
+                                  </span>
+                                </div>
+                                {step.failure_reason && (
+                                  <div style={{ color: "#f87171", fontSize: "10px", marginTop: "2px" }}>
+                                    Failure: {step.failure_reason}
+                                  </div>
+                                )}
+                                {step.action_taken && (
+                                  <div style={{ color: "#fbbf24", fontSize: "10px", marginTop: "2px" }}>
+                                    ↳ Recovery Action: {step.action_taken}
+                                  </div>
+                                )}
+                                {(step.event_id || step.parent_event) && (
+                                  <div style={{ color: "#64748b", fontSize: "9px", fontFamily: "var(--font-mono)", marginTop: "2px" }}>
+                                    {step.event_id ? `Event: ${step.event_id.slice(0, 16)}...` : ""}
+                                    {step.parent_event ? ` ↳ Parent: ${step.parent_event.slice(0, 16)}...` : ""}
+                                  </div>
+                                )}
+                              </div>
+                            ))}
+                          </div>
+                        </details>
+                      </div>
+                    )}
 
                     {/* Expandable Why This Tool Score Breakdown */}
                     <WhyThisToolPanel

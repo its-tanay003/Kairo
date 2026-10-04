@@ -52,6 +52,7 @@ from orchestrator.observer import observer
 from orchestrator.critic import critic
 from orchestrator.recovery_agent import recovery_agent
 from orchestrator.cognitive_engine import cognitive_engine
+from orchestrator.reporter import reporter
 
 app = FastAPI(title="Agent Orchestrator Service", version="1.0.0")
 
@@ -760,6 +761,49 @@ def recovery_recover_endpoint(req: RecoveryRequest):
         session_id=req.session_id or "recovery_session",
     )
     return res.to_dict()
+
+
+# ==============================================================================
+# REPORTER & FAILURE-AWARE AUDIT SYNTHESIS ENDPOINTS
+# ==============================================================================
+
+@app.get("/planner/plans/{plan_id}/report")
+def get_plan_report_endpoint(plan_id: str, format: str = "json"):
+    """
+    Synthesizes and returns the final security audit report for a plan.
+    Includes full attempt history narrative for any node where Task 2.4 recovery fired.
+    """
+    try:
+        report_data = reporter.generate_plan_report(plan_id=plan_id, include_markdown=True)
+        if format.lower() == "markdown":
+            return {"plan_id": plan_id, "markdown": report_data.get("markdown", "")}
+        return report_data
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to generate report: {e}")
+
+
+@app.post("/planner/plans/{plan_id}/report")
+def save_plan_report_artifact_endpoint(plan_id: str):
+    """
+    Generates the final report and commits it as SHA-256 verified JSON/Markdown artifacts.
+    """
+    try:
+        report_data = reporter.generate_plan_report(plan_id=plan_id, include_markdown=True)
+        artifact_info = reporter.save_report_artifact(plan_id=plan_id, report_data=report_data)
+        return {
+            "status": "saved",
+            "plan_id": plan_id,
+            "report_id": report_data["report_id"],
+            "artifacts": artifact_info,
+            "metrics": report_data["metrics"],
+            "markdown_preview": report_data.get("markdown", "")[:400] + "...",
+        }
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to save report: {e}")
 
 
 if __name__ == "__main__":

@@ -32,6 +32,7 @@ from orchestrator.critic import critic, CritiqueResult
 from orchestrator.recovery_agent import recovery_agent, RecoveryPlan
 from orchestrator.tool_selector import tool_selector
 from orchestrator.agent import AgentLoop
+from orchestrator.reporter import format_recovery_narrative
 
 logger = logging.getLogger("orchestrator.cognitive_engine")
 
@@ -55,6 +56,7 @@ class CognitiveEngine:
         """
         Executes a single DAG node through the full Observer -> Critic -> Recovery Agent cycle.
         Strictly caps recovery attempts at max_attempts (default 3) before failing and surfacing to user.
+        Maintains an unbroken causal chain of events via parent_event.
         """
         node_id = node["node_id"]
         capability = node.get("capability", "general_execution")
@@ -80,6 +82,8 @@ class CognitiveEngine:
 
         execution_history: List[Dict[str, Any]] = []
         previous_observations: List[Dict[str, Any]] = []
+        recovery_path: List[Dict[str, Any]] = []
+        current_parent_event: Optional[str] = None
 
         update_node_status(
             plan_id=plan_id,
@@ -92,7 +96,7 @@ class CognitiveEngine:
         for attempt in range(1, max_attempts + 1):
             logger.info(
                 f"[CognitiveEngine] Attempt {attempt}/{max_attempts} for node #{node_id} "
-                f"using tool '{current_tool}'"
+                f"using tool '{current_tool}' (parent_event={current_parent_event})"
             )
 
             # Step 1: Validate Tool Tier against Active Scope Contract
@@ -118,6 +122,7 @@ class CognitiveEngine:
                     exit_code=403,
                     result_summary=f"SCOPE_REJECTION: Node #{node_id} blocked. Tool tier {tool_tier} not permitted.",
                     confidence=0.0,
+                    parent_event=current_parent_event,
                     network_context={"plan_id": plan_id, "node_id": node_id, "tool_tier": tool_tier, "authorized": False},
                 )
                 insert_event(rejection_event, self.db_path)
@@ -130,7 +135,7 @@ class CognitiveEngine:
                     "surfaced_to_user": True,
                 }
 
-            # Step 2: Execute Tool via Agent / Sandbox
+            # Step 2: Execute Tool via Agent / Sandbox (chained via parent_event)
             t0 = time.time()
             exec_res = self.agent.execute_task(
                 session_id=session_id,
@@ -138,8 +143,10 @@ class CognitiveEngine:
                 task_id=f"{plan_id}_{node_id}_try{attempt}",
                 explicit_tool=current_tool,
                 explicit_args=current_args,
+                parent_event=current_parent_event,
             )
             duration_ms = round((time.time() - t0) * 1000, 2)
+            exec_event_id = str(exec_res.get("event_id")) if exec_res.get("event_id") else None
 
             raw_details = exec_res.get("execution") or {}
             raw_stdout = raw_details.get("stdout", "") or exec_res.get("reply", "")
@@ -186,12 +193,48 @@ class CognitiveEngine:
                 "critique": critique.critique,
                 "has_progress": critique.has_progress,
                 "critic_status": critique.status,
+                "event_id": exec_event_id,
+                "parent_event": current_parent_event,
             }
             execution_history.append(attempt_record)
 
             # Step 5: Check if Progress Was Achieved
             if critique.has_progress:
                 logger.info(f"[CognitiveEngine] Node #{node_id} succeeded on attempt {attempt}: {obs.summary}")
+
+                # Build final resolution step for recovery path if recovery occurred
+                if attempt > 1 or recovery_path:
+                    facts_desc = []
+                    if len(obs.facts.endpoints) > 0:
+                        facts_desc.append(f"found {len(obs.facts.endpoints)} endpoints")
+                    elif len(obs.facts.ports) > 0:
+                        facts_desc.append(f"found {len(obs.facts.ports)} open ports")
+                    elif len(obs.facts.vulnerabilities) > 0:
+                        facts_desc.append(f"found {len(obs.facts.vulnerabilities)} vulnerabilities")
+                    elif len(obs.facts.credentials) > 0:
+                        facts_desc.append(f"found {len(obs.facts.credentials)} credentials")
+                    else:
+                        facts_desc.append(f"found {obs.facts.total_facts_count()} facts")
+
+                    res_detail = f"succeeded, {', '.join(facts_desc)}"
+                    recovery_path.append({
+                        "attempt": attempt,
+                        "action": f"Executed {current_tool}",
+                        "tool": current_tool,
+                        "args": current_args,
+                        "status": "succeeded",
+                        "details": res_detail,
+                        "event_id": exec_event_id,
+                        "parent_event": current_parent_event,
+                    })
+
+                narrative = format_recovery_narrative(
+                    recovery_path=recovery_path,
+                    node_label=node.get("label", capability),
+                    succeeded=True,
+                    final_facts_count=obs.facts.total_facts_count(),
+                )
+
                 final_result = {
                     "summary": obs.summary,
                     "facts": obs.facts.to_dict(),
@@ -199,6 +242,9 @@ class CognitiveEngine:
                     "attempts": attempt,
                     "tool": current_tool,
                     "duration_ms": duration_ms,
+                    "recovery_narrative": narrative,
+                    "recovery_path": recovery_path,
+                    "history": execution_history,
                 }
                 update_node_status(
                     plan_id=plan_id,
@@ -209,7 +255,7 @@ class CognitiveEngine:
                     db_path=self.db_path,
                 )
 
-                # Log success event
+                # Log success event linked to the execution event
                 success_event = Event.create(
                     session_id=session_id,
                     task_id=f"{plan_id}_{node_id}",
@@ -218,7 +264,13 @@ class CognitiveEngine:
                     exit_code=0,
                     result_summary=f"SUCCESS: Node #{node_id} confirmed progress ({obs.facts.total_facts_count()} facts discovered).",
                     confidence=critique.score,
-                    network_context={"node_id": node_id, "facts": obs.facts.to_dict(), "critique": critique.critique},
+                    parent_event=exec_event_id or current_parent_event,
+                    network_context={
+                        "node_id": node_id,
+                        "facts": obs.facts.to_dict(),
+                        "critique": critique.critique,
+                        "recovery_narrative": narrative,
+                    },
                 )
                 insert_event(success_event, self.db_path)
 
@@ -229,6 +281,8 @@ class CognitiveEngine:
                     "attempts": attempt,
                     "observation": obs_dict,
                     "critique": critique_dict,
+                    "recovery_narrative": narrative,
+                    "recovery_path": recovery_path,
                     "history": execution_history,
                 }
 
@@ -253,11 +307,57 @@ class CognitiveEngine:
                 session_id=session_id,
             )
 
+            # Determine diagnostics & transition for human-readable narrative
+            if timed_out:
+                fail_detail = f"timed out after {int(duration_ms/1000) or 30}s"
+            elif obs.parser_mismatch:
+                fail_detail = "parser schema mismatch on output"
+            elif "malformed" in critique.status.lower() or "arg" in critique.critique.lower():
+                fail_detail = "malformed arguments rejected by schema"
+            elif exit_code != 0:
+                fail_detail = f"exited with error code {exit_code}"
+            else:
+                fail_detail = "no progress detected (zero facts found)"
+
+            if rec_plan.strategy == "switch_tool":
+                transition = f"switched to {rec_plan.tool_id}"
+                if rec_plan.repaired_args:
+                    if "threads" in rec_plan.repaired_args:
+                        transition += " with reduced thread count"
+                    elif "wordlist" in rec_plan.repaired_args:
+                        transition += " with common wordlist"
+            elif rec_plan.strategy == "retry_timeout":
+                transition = "retried with increased timeout & lighter flags"
+            elif rec_plan.strategy == "repair_args":
+                transition = "repaired arguments against tool schema"
+            else:
+                transition = f"strategy {rec_plan.strategy}"
+
+            step_entry = {
+                "attempt": attempt,
+                "action": f"Attempted {current_tool}",
+                "tool": current_tool,
+                "args": current_args,
+                "status": "failed",
+                "error_type": rec_plan.error_type,
+                "details": fail_detail,
+                "recovery_strategy": rec_plan.strategy,
+                "transition": transition,
+                "event_id": exec_event_id,
+                "parent_event": current_parent_event,
+            }
+            recovery_path.append(step_entry)
+
             # Check if Recovery Cap Exceeded
             if not rec_plan.can_recover or attempt >= max_attempts:
                 logger.error(
                     f"[CognitiveEngine] RECOVERY EXHAUSTED for node #{node_id} after {attempt} attempts. "
                     f"Surfacing failure to user."
+                )
+                narrative = format_recovery_narrative(
+                    recovery_path=recovery_path,
+                    node_label=node.get("label", capability),
+                    succeeded=False,
                 )
                 failure_payload = {
                     "error": "RECOVERY_EXHAUSTED",
@@ -267,6 +367,8 @@ class CognitiveEngine:
                     "last_tool": current_tool,
                     "critique": critique_dict,
                     "last_observation": obs_dict,
+                    "recovery_narrative": narrative,
+                    "recovery_path": recovery_path,
                     "history": execution_history,
                     "surfaced_to_user": True,
                 }
@@ -284,6 +386,8 @@ class CognitiveEngine:
                     "error": "RECOVERY_EXHAUSTED",
                     "attempts": attempt,
                     "reason": rec_plan.reason,
+                    "recovery_narrative": narrative,
+                    "recovery_path": recovery_path,
                     "history": execution_history,
                     "surfaced_to_user": True,
                 }
@@ -296,18 +400,22 @@ class CognitiveEngine:
             elif rec_plan.strategy in ("repair_args", "retry_timeout"):
                 current_args = rec_plan.repaired_args
 
-            # Log recovery intervention event
+            # Log recovery intervention event linked to the failed execution event
             rec_event = Event.create(
                 session_id=session_id,
                 task_id=f"{plan_id}_{node_id}",
                 actor=f"recovery_agent:strategy:{rec_plan.strategy}",
                 tool_id=current_tool,
                 exit_code=0,
-                result_summary=f"RECOVERY_ATTEMPT {attempt+1}: {rec_plan.reason}",
+                result_summary=f"RECOVERY_ATTEMPT {attempt+1}: {fail_detail} -> {transition}",
                 confidence=0.8,
-                network_context={"strategy": rec_plan.strategy, "repaired_args": current_args},
+                parent_event=exec_event_id or current_parent_event,
+                network_context={"strategy": rec_plan.strategy, "repaired_args": current_args, "step": step_entry},
             )
-            insert_event(rec_event, self.db_path)
+            rec_event_id = str(insert_event(rec_event, self.db_path))
+
+            # The next attempt's causal parent is this recovery intervention!
+            current_parent_event = rec_event_id
 
         # Fallthrough safety
         return {

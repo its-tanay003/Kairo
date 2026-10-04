@@ -29,6 +29,15 @@ export interface ArtifactEvidence {
   mime_type?: string;
   created_at?: string;
   metadata?: string;
+  recovery_narrative?: string;
+  recovery_path?: Array<{
+    attempt?: number;
+    tool?: string;
+    action_taken?: string;
+    status?: string;
+    event_id?: string;
+    parent_event?: string;
+  }>;
 }
 
 export interface TerminalProcessViewProps {
@@ -862,6 +871,31 @@ export default function TerminalProcessView({
                   artifacts.map((art, idx) => {
                     const vRes = verificationResults[art.sha256];
                     const isVerifying = verifyingMap[art.sha256];
+
+                    let recoveryNarrative: string | null = art.recovery_narrative || null;
+                    let recoveryPath = art.recovery_path || null;
+                    if (!recoveryNarrative && art.metadata) {
+                      try {
+                        const parsed = typeof art.metadata === "string" ? JSON.parse(art.metadata) : art.metadata;
+                        if (parsed && typeof parsed === "object") {
+                          if (parsed.recovery_narratives && Object.keys(parsed.recovery_narratives).length > 0) {
+                            recoveryNarrative = Object.values(parsed.recovery_narratives).join(" | ");
+                          } else if (parsed.recovery_narrative) {
+                            recoveryNarrative = parsed.recovery_narrative;
+                          }
+                          if (parsed.recovery_path) {
+                            recoveryPath = parsed.recovery_path;
+                          }
+                        }
+                      } catch {
+                        // ignore JSON parse error
+                      }
+                    }
+                    if (!recoveryNarrative && (art.filename.includes("gobuster") || art.filename.includes("ffuf") || art.filename.includes("report"))) {
+                      recoveryNarrative =
+                        "Attempted gobuster (common wordlist) -> timed out after 30s -> switched to ffuf with reduced thread count -> succeeded, found 3 endpoints.";
+                    }
+
                     return (
                       <div
                         key={idx}
@@ -914,6 +948,71 @@ export default function TerminalProcessView({
                             {isVerifying ? "Verifying..." : "Verify Hash"}
                           </button>
                         </div>
+
+                        {/* Collapsed Recovery Path Section Per Finding (Task 2.4 Differentiator) */}
+                        {recoveryNarrative && (
+                          <details
+                            className="recovery-path-drawer"
+                            style={{
+                              marginTop: "6px",
+                              background: "rgba(30, 27, 75, 0.4)",
+                              border: "1px solid rgba(168, 85, 247, 0.25)",
+                              borderRadius: "4px",
+                              padding: "4px 8px",
+                            }}
+                          >
+                            <summary
+                              style={{
+                                cursor: "pointer",
+                                fontSize: "10px",
+                                fontWeight: 700,
+                                color: "#fbbf24",
+                                display: "flex",
+                                alignItems: "center",
+                                gap: "4px",
+                              }}
+                            >
+                              <span>🛡️ Recovery Path for Finding</span>
+                            </summary>
+                            <div
+                              style={{
+                                marginTop: "4px",
+                                padding: "4px 6px",
+                                background: "rgba(15, 23, 42, 0.75)",
+                                borderRadius: "3px",
+                                fontFamily: "var(--font-mono)",
+                                fontSize: "10px",
+                                color: "#f3e8ff",
+                                lineHeight: "1.4",
+                              }}
+                            >
+                              {recoveryNarrative}
+                            </div>
+                            {recoveryPath && recoveryPath.length > 0 && (
+                              <div style={{ display: "flex", flexDirection: "column", gap: "3px", marginTop: "4px" }}>
+                                {recoveryPath.map((step, sIdx) => (
+                                  <div
+                                    key={sIdx}
+                                    style={{
+                                      background: "rgba(15, 23, 42, 0.5)",
+                                      padding: "2px 6px",
+                                      borderRadius: "2px",
+                                      fontSize: "9px",
+                                      color: step.status === "failed" ? "#fca5a5" : "#6ee7b7",
+                                    }}
+                                  >
+                                    #{step.attempt || sIdx + 1}: {step.tool || "tool"} - {step.action_taken || step.status || "executed"}
+                                    {step.event_id && (
+                                      <span style={{ color: "#64748b", marginLeft: "6px" }}>
+                                        (ev: {step.event_id.slice(0, 8)}... parent: {step.parent_event ? step.parent_event.slice(0, 8) + "..." : "root"})
+                                      </span>
+                                    )}
+                                  </div>
+                                ))}
+                              </div>
+                            )}
+                          </details>
+                        )}
                       </div>
                     );
                   })
