@@ -1,0 +1,18 @@
+id: system_ping
+name: System Ping Tool
+version: 1.0.0
+description: Emits a ping with timestamp, host status, and process health to confirm orchestrator readiness.
+category: diagnostic
+parameters:
+  type: object
+  properties:
+    echo_token:
+      type: string
+      description: Unique echo verification token
+  required: []
+timeout_ms: 3000
+metadata:
+  author: system
+  tags:
+    - diagnostic
+    - health

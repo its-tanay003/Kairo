@@ -1,0 +1,24 @@
+id: hello_world
+name: Hello World Tool
+version: 1.0.0
+description: A minimal verification tool that returns a greeting and verifies service boundary execution.
+category: utility
+parameters:
+  type: object
+  properties:
+    message:
+      type: string
+      description: The greeting message payload
+      default: "Hello from ToolRegistry!"
+    target:
+      type: string
+      description: Target recipient name
+      default: "World"
+  required:
+    - message
+timeout_ms: 5000
+metadata:
+  author: system
+  tags:
+    - boundary-test
+    - hello-world
