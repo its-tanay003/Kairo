@@ -46,3 +46,7 @@ models/*.gguf
 
 # Runtime generated evidence artifacts
 evidence_artifacts/
+
+# Training checkpoints and temporary outputs
+training/checkpoints/
+training/*_output/

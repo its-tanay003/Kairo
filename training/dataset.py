@@ -86,8 +86,12 @@ class KairoDataCollator:
 
         for item in batch:
             input_ids = item["input_ids"]
-            attention_mask = item["attention_mask"]
-            labels = item["labels"]
+            attention_mask = item.get("attention_mask")
+            if attention_mask is None:
+                attention_mask = [1] * len(input_ids)
+            labels = item.get("labels")
+            if labels is None:
+                labels = list(input_ids)
 
             pad_len = max_len - len(input_ids)
             padded_input_ids = input_ids + [self.pad_token_id] * pad_len
@@ -103,3 +107,29 @@ class KairoDataCollator:
             "attention_mask": torch.tensor(batch_attention_mask, dtype=torch.long),
             "labels": torch.tensor(batch_labels, dtype=torch.long)
         }
+
+
+def load_hf_sft_dataset(
+    jsonl_path: str,
+    tokenizer_manager: Optional[KairoTokenizerManager] = None,
+    max_length: int = 4096,
+    mask_prompt_labels: bool = True,
+    max_samples: Optional[int] = None
+):
+    """
+    Loads Kairo SFT dataset as a Hugging Face Dataset instance (for TRL SFTTrainer).
+    """
+    from datasets import Dataset
+
+    raw_ds = KairoSFTDataset(
+        jsonl_path=jsonl_path,
+        tokenizer_manager=tokenizer_manager,
+        max_length=max_length,
+        mask_prompt_labels=mask_prompt_labels,
+        max_samples=max_samples
+    )
+    records_list = [raw_ds[i] for i in range(len(raw_ds))]
+    hf_ds = Dataset.from_list(records_list)
+    # Store raw records for schema validation callbacks
+    hf_ds.raw_records = raw_ds.records
+    return hf_ds
