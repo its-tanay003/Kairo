@@ -218,9 +218,11 @@ class Observer:
         elif "ffuf" in tool_id:
             results = raw.get("results", [])
             for r in results:
+                inp = r.get("input", {})
+                path = inp.get("FUZZ", "") if isinstance(inp, dict) else str(inp or "")
                 facts.endpoints.append({
                     "url": r.get("url"),
-                    "path": r.get("input", {}).get("FUZZ", ""),
+                    "path": path,
                     "status": r.get("status"),
                     "words": r.get("words"),
                     "length": r.get("length"),

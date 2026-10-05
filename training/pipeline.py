@@ -25,6 +25,8 @@ if str(ROOT_DIR) not in sys.path:
 from events.db import DEFAULT_DB_PATH, is_target_in_scope
 from training.harvest import DataHarvestPipeline, ToolSpecDoc
 from training.synthesizer import SFTDataSynthesizer, SFTExample
+from training.preferences import TaskGraphPreferenceAuthor
+from training.pretrain import SecurityCorpusBuilder
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(name)s: %(message)s")
 logger = logging.getLogger("training.pipeline")
@@ -154,8 +156,24 @@ class KairoDataPipeline:
         )
         logger.info(f"   Synthesized {len(raw_examples)} raw examples.")
 
-        # Step 3: Strict Validation
-        logger.info("[3/5] Validating examples against ToolSpec schemas, conversation roles, and scope bounds...")
+        # Step 3: Generate Preference Pairs (Better vs. Worse Plans)
+        logger.info("[3/7] Generating task-graph preference pairs (better vs. worse plans)...")
+        pref_author = TaskGraphPreferenceAuthor(seed=self.seed)
+        preferences = pref_author.generate_all(count_per_category=60)
+        pref_path = self.output_dir / "preferences.jsonl"
+        with open(pref_path, "w", encoding="utf-8") as f:
+            for p in preferences:
+                f.write(json.dumps(p.to_dict(), ensure_ascii=False) + "\n")
+        logger.info(f"   Wrote {len(preferences)} preference pairs to {pref_path.name}")
+
+        # Step 4: Build Expanded Kali / Security Pretraining Corpus
+        logger.info("[4/7] Building expanded Kali/security pretraining corpus...")
+        corpus_builder = SecurityCorpusBuilder(output_dir=self.output_dir)
+        corpus_text = corpus_builder.build_corpus()
+        logger.info(f"   Built security pretraining corpus ({len(corpus_text):,} chars) at {corpus_builder.corpus_path.name}")
+
+        # Step 5: Strict Validation
+        logger.info("[5/7] Validating examples against ToolSpec schemas, conversation roles, and scope bounds...")
         validator = DatasetValidator(toolspecs)
         valid_examples: List[SFTExample] = []
         validation_failures = 0
@@ -172,8 +190,8 @@ class KairoDataPipeline:
             f"   Validation complete: {len(valid_examples)} PASSED | {validation_failures} REJECTED ({len(valid_examples) / len(raw_examples) * 100:.1f}% pass rate)"
         )
 
-        # Step 4: Train / Val Split
-        logger.info(f"[4/5] Splitting dataset ({100 - int(self.val_ratio * 100)}% Train / {int(self.val_ratio * 100)}% Val)...")
+        # Step 6: Train / Val Split
+        logger.info(f"[6/7] Splitting dataset ({100 - int(self.val_ratio * 100)}% Train / {int(self.val_ratio * 100)}% Val)...")
         rng = random.Random(self.seed)
         rng.shuffle(valid_examples)
 
@@ -195,22 +213,32 @@ class KairoDataPipeline:
         logger.info(f"   Wrote {len(train_examples)} train examples to {train_path.name}")
         logger.info(f"   Wrote {len(val_examples)} val examples to {val_path.name}")
 
-        # Step 5: Statistical Profiling & Dataset Summary
-        logger.info("[5/5] Generating dataset profiling report and metadata summary...")
-        summary = self._generate_summary(train_examples, val_examples, toolspecs, validation_failures)
+        # Step 7: Statistical Profiling & Dataset Summary
+        logger.info("[7/7] Generating dataset profiling report and metadata summary...")
+        summary = self._generate_summary(
+            train_examples,
+            val_examples,
+            toolspecs,
+            validation_failures,
+            len(preferences),
+            len(corpus_text),
+        )
         summary_path = self.output_dir / "dataset_summary.json"
         with open(summary_path, "w", encoding="utf-8") as f:
             json.dump(summary, f, indent=2)
 
         logger.info(f"   Saved dataset summary report to {summary_path.name}")
         logger.info("=" * 80)
-        logger.info("✅ KAIRO DATA PIPELINE v1 COMPLETED SUCCESSFULLY")
+        logger.info("✅ KAIRO DATA PIPELINE v2 COMPLETED SUCCESSFULLY")
         logger.info(f"   Total Verified Examples: {summary['total_examples']}")
         logger.info(f"   Tool Coverage: {len(summary['tool_distribution'])} / {len(toolspecs)} tools")
+        logger.info(f"   Preference Pairs: {summary['preference_pairs_count']}")
+        logger.info(f"   Security Corpus Chars: {summary['security_corpus_size_chars']:,}")
         logger.info(f"   Recovery Chains: {summary['source_distribution'].get('counterfactual_recovery', 0)} examples ({summary['recovery_percentage']}%)")
         logger.info("=" * 80)
 
         return summary
+
 
     def _generate_summary(
         self,
@@ -218,6 +246,8 @@ class KairoDataPipeline:
         val_examples: List[SFTExample],
         toolspecs: Dict[str, ToolSpecDoc],
         validation_failures: int,
+        preferences_count: int = 0,
+        security_corpus_size_chars: int = 0,
     ) -> Dict[str, Any]:
         all_examples = train_examples + val_examples
         total = len(all_examples)
@@ -260,8 +290,8 @@ class KairoDataPipeline:
         approx_tokens = total_chars // 4
 
         return {
-            "pipeline_version": "1.0.0",
-            "task": "Task 3.1 - Data pipeline v1 (Track B)",
+            "pipeline_version": "2.0.0",
+            "task": "Task 3.1 - Data pipeline v2 (Track B: Scaled 1B-1.5B & Preference Pairs)",
             "total_examples": total,
             "train_examples": len(train_examples),
             "val_examples": len(val_examples),
@@ -271,6 +301,8 @@ class KairoDataPipeline:
             "mean_tokens_per_example": round(approx_tokens / total, 1) if total else 0,
             "recovery_examples_count": rec_count,
             "recovery_percentage": round(rec_count / total * 100, 2) if total else 0.0,
+            "preference_pairs_count": preferences_count,
+            "security_corpus_size_chars": security_corpus_size_chars,
             "source_distribution": source_dist,
             "tool_distribution": dict(sorted(tool_dist.items(), key=lambda x: x[1], reverse=True)),
             "tier_distribution": tier_dist,
@@ -279,6 +311,7 @@ class KairoDataPipeline:
             "registered_tools_count": len(toolspecs),
             "covered_tools_count": len(tool_dist),
         }
+
 
 
 def main():

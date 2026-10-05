@@ -1,0 +1,122 @@
+id: zap.gui.v1
+name: OWASP ZAP GUI Adapter
+version: 1.0.0
+description: Supervises and automates OWASP ZAP GUI inside the Kali worker plane with periodic screenshot capture, UI-state extraction, and bounded scripted workflows.
+category: web_security
+binary: zaproxy
+capabilities:
+  - web_vulnerability_scan
+  - web_spider
+  - active_scan
+  - alert_inspection
+  - gui_automation
+  - visual_evidence
+
+inputs:
+  type: object
+  properties:
+    action:
+      type: string
+      description: Action to perform (launch, workflow, click, type, extract_state, screenshot, stop)
+      default: "workflow"
+    workflow:
+      type: string
+      description: Scripted workflow name (quick_start, run_spider, inspect_alerts, export_report)
+      default: "quick_start"
+    params:
+      type: object
+      description: Parameters for the selected scripted workflow
+      default: {}
+    x:
+      type: integer
+      description: X coordinate for bounded mouse click
+    y:
+      type: integer
+      description: Y coordinate for bounded mouse click
+    control_id:
+      type: string
+      description: Named UI control identifier to interact with
+    text:
+      type: string
+      description: Text string to type into target control
+    caption:
+      type: string
+      description: Optional caption for on-demand visual evidence screenshot
+  required: []
+
+outputs:
+  type: object
+  properties:
+    status:
+      type: string
+      description: Execution outcome status
+    ui_state:
+      type: object
+      description: Extracted UI state including window title, active panel/subpanel, and interactable controls
+    workflow:
+      type: string
+      description: Name of executed workflow
+    alerts:
+      type: array
+      items:
+        type: object
+      description: Security vulnerability alerts identified by scanner
+    screenshots:
+      type: array
+      items:
+        type: object
+      description: Captured Visual Evidence screenshots with SHA-256 provenance hashes
+    duration_ms:
+      type: number
+      description: Total execution duration in milliseconds
+
+side_effects:
+  - active_http_probing
+  - web_crawling
+  - disk_write_artifacts
+
+privilege: user
+gui: true
+
+parser:
+  type: gui_state_json
+  format: zap_ui_state_protocol
+
+prerequisites:
+  - java_runtime_environment
+  - zaproxy_package
+  - kali_worker_x11_or_virtual_framebuffer
+
+docs:
+  summary: Automates OWASP ZAP GUI for site spidering, active scanning, alert inspection, and report export.
+  usage: Pass workflow name (quick_start, run_spider, inspect_alerts, export_report) with parameters.
+  examples:
+    - action: workflow
+      workflow: quick_start
+      params:
+        target_url: http://target.local
+    - action: workflow
+      workflow: run_spider
+    - action: workflow
+      workflow: inspect_alerts
+
+success_signals:
+  exit_codes:
+    - 0
+
+failure_signals:
+  exit_codes:
+    - 1
+    - 127
+  timeout: true
+
+rollback:
+  supported: true
+  strategy: process_kill_and_scope_revert
+  action: orchestrator.adapters.zap_adapter.stop()
+
+version_compatibility:
+  min_agent_version: 1.0.0
+  zaproxy_version: "2.14+"
+
+timeout_ms: 60000

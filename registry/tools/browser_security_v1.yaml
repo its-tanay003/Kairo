@@ -1,0 +1,131 @@
+id: browser.security.v1
+name: Playwright Security Testing Browser Adapter
+version: 1.0.0
+description: Playwright-driven security-testing browser with visible state extraction, sequential action history, and scripted testing workflows (XSS checks, auth walkthroughs, DOM/cookie audits) captured as Visual Evidence.
+category: web_security
+binary: playwright
+capabilities:
+  - browser_automation
+  - dast_testing
+  - xss_testing
+  - auth_walkthrough
+  - dom_inspection
+  - cookie_security
+  - visual_evidence
+
+inputs:
+  type: object
+  properties:
+    action:
+      type: string
+      description: Action to perform (workflow, navigate, click, fill, type, extract_state, screenshot, history, stop)
+      default: "workflow"
+    workflow:
+      type: string
+      description: Scripted security workflow (xss_check, auth_walkthrough, dom_audit, cookie_audit, navigate_and_inspect)
+      default: "xss_check"
+    params:
+      type: object
+      description: Workflow-specific parameters (url, selector, payload, username, password, submit_selector)
+      default: {}
+    url:
+      type: string
+      description: Target URL for browser navigation
+    selector:
+      type: string
+      description: Target CSS or XPath selector for click, fill, or inspection
+    value:
+      type: string
+      description: Value or text to fill into target input selector
+    payload:
+      type: string
+      description: Security test payload (e.g. XSS payload string)
+    caption:
+      type: string
+      description: Optional caption for captured visual evidence screenshot
+  required: []
+
+outputs:
+  type: object
+  properties:
+    status:
+      type: string
+      description: Execution outcome status (success, vulnerability_detected, error, blocked)
+    visible_state:
+      type: object
+      description: Visible browser state (url, page_title, status_code, security_context, dom_snapshot, alerts)
+    action_history:
+      type: array
+      items:
+        type: object
+      description: Sequential step-by-step action history rendered in Activity Rail
+    findings:
+      type: array
+      items:
+        type: object
+      description: Security findings detected during execution (XSS reflections, insecure cookies, missing CSRF)
+    screenshots:
+      type: array
+      items:
+        type: object
+      description: Captured Visual Evidence screenshots with SHA-256 provenance hashes
+    duration_ms:
+      type: number
+      description: Total execution duration in milliseconds
+
+side_effects:
+  - outbound_http_traffic
+  - form_submission
+  - disk_write_artifacts
+
+privilege: user
+gui: true
+
+parser:
+  type: browser_state_json
+  format: kairo_browser_observation_protocol
+
+prerequisites:
+  - python_playwright_or_chromium
+  - network_access_to_target
+
+docs:
+  summary: Automates security-testing browser workflows with Playwright, tracking visible state and step-by-step action history rendered in the Activity Rail with Visual Evidence provenance.
+  usage: Pass workflow (xss_check, auth_walkthrough, dom_audit, cookie_audit) or discrete actions (navigate, click, fill) with target parameters.
+  examples:
+    - action: workflow
+      workflow: xss_check
+      params:
+        url: "http://target.local/search.php"
+        selector: "input[name='q']"
+        payload: "<script>alert('kairo-xss')</script>"
+    - action: workflow
+      workflow: auth_walkthrough
+      params:
+        login_url: "http://target.local/login.php"
+        username_selector: "input#user"
+        username: "admin"
+        password_selector: "input#pass"
+        password: "secretpassword"
+        submit_selector: "button[type='submit']"
+
+success_signals:
+  exit_codes:
+    - 0
+
+failure_signals:
+  exit_codes:
+    - 1
+    - 127
+  timeout: true
+
+rollback:
+  supported: true
+  strategy: browser_session_close
+  action: orchestrator.adapters.browser_adapter.stop()
+
+version_compatibility:
+  min_agent_version: 1.0.0
+  playwright_version: "1.40+"
+
+timeout_ms: 60000

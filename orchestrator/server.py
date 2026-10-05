@@ -5,6 +5,7 @@ and activate SIGKILL kill switch for running supervisor processes.
 
 from pathlib import Path
 import json
+import os
 import sys
 import time
 from typing import Any, Dict, List, Optional
@@ -14,9 +15,10 @@ ROOT_DIR = Path(__file__).resolve().parent.parent
 if str(ROOT_DIR) not in sys.path:
     sys.path.insert(0, str(ROOT_DIR))
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Response
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
+from orchestrator.vnc_server import vnc_server
 
 from dataclasses import asdict
 from events.db import (
@@ -61,6 +63,9 @@ from orchestrator.evidence_store import (
     EvidenceClass,
 )
 from orchestrator.report_generator import report_generator
+from orchestrator.adapters.registry import adapter_registry
+from orchestrator.adapters.gui_base import BaseGuiAdapter
+
 
 app = FastAPI(title="Agent Orchestrator Service", version="1.0.0")
 
@@ -191,6 +196,20 @@ class NodeExecuteRequest(BaseModel):
     max_attempts: Optional[int] = 3
 
 
+class GuiExecuteRequest(BaseModel):
+    tool_id: str = "burpsuite.gui.v1"
+    action: str = "workflow"  # "launch", "workflow", "click", "type", "extract_state", "screenshot", "stop"
+    workflow: Optional[str] = "init_project"
+    params: Optional[Dict[str, Any]] = None
+    x: Optional[int] = None
+    y: Optional[int] = None
+    control_id: Optional[str] = None
+    text: Optional[str] = None
+    caption: Optional[str] = None
+    task_id: Optional[str] = None
+    session_id: Optional[str] = "gui_session"
+
+
 @app.get("/health")
 def health():
     vm_stat = vm_manager.get_status()
@@ -213,10 +232,103 @@ def health():
     }
 
 
+from orchestrator.kali_connector import kali_connector
+from orchestrator.auth import auth_manager
+from orchestrator.workspace_manager import workspace_manager, WorkspaceStatus
+
+
+class TokenRequest(BaseModel):
+    user_id: Optional[str] = "operator"
+    role: Optional[str] = "operator"
+    client_type: Optional[str] = "browser-desktop"
+    metadata: Optional[Dict[str, Any]] = None
+
+
+class WorkspaceProvisionRequest(BaseModel):
+    project_name: str
+    session_id: str
+    owner_id: Optional[str] = "default_user"
+    network_isolated: Optional[bool] = True
+    metadata: Optional[Dict[str, Any]] = None
+
+
 @app.get("/model-center")
 def get_model_center_status():
     """Reports which model is currently loaded, VRAM/RAM usage, and context length."""
     return model_center.get_status(llama_url=agent.llama_client.base_url)
+
+
+@app.get("/execution-plane")
+def get_execution_plane_endpoint():
+    """Reports detected local execution plane (Linux native, Windows WSL2, macOS Virtualization)."""
+    return kali_connector.get_status()
+
+
+# --- Auth & Session State Endpoints ---
+
+@app.post("/auth/token")
+def issue_token_endpoint(req: TokenRequest):
+    """Issues an authenticated session token for browser or mobile client."""
+    sess = auth_manager.issue_token(
+        user_id=req.user_id or "operator",
+        role=req.role or "operator",
+        client_type=req.client_type or "browser-desktop",
+        metadata=req.metadata,
+    )
+    return sess.to_dict()
+
+
+@app.get("/auth/verify")
+def verify_token_endpoint(token: Optional[str] = None):
+    """Verifies token validity and returns session state."""
+    is_valid, sess, err = auth_manager.verify_token(token)
+    if not is_valid:
+        raise HTTPException(status_code=401, detail=err or "Unauthorized")
+    return {"valid": True, "session": sess.to_dict() if sess else None}
+
+
+@app.get("/auth/sessions")
+def list_sessions_endpoint():
+    """Lists active client sessions and connection types."""
+    return {"sessions": auth_manager.list_active_sessions()}
+
+
+# --- Workspace Manager Endpoints (Disposable Kali VM per project/session) ---
+
+@app.post("/workspaces/provision")
+def provision_workspace_endpoint(req: WorkspaceProvisionRequest):
+    """Server-side provisioning of disposable Kali sandbox VM per project/session."""
+    ws = workspace_manager.provision_disposable_workspace(
+        project_name=req.project_name,
+        session_id=req.session_id,
+        owner_id=req.owner_id or "default_user",
+        network_isolated=bool(req.network_isolated),
+        custom_metadata=req.metadata,
+    )
+    return {"workspace": ws.to_dict(), **ws.to_dict()}
+
+
+@app.get("/workspaces")
+def list_workspaces_endpoint(status: Optional[str] = None, project_name: Optional[str] = None):
+    """Lists managed workspaces across projects and sessions."""
+    workspaces = workspace_manager.list_workspaces(status=status, project_name=project_name)
+    return {"workspaces": [w.to_dict() for w in workspaces]}
+
+
+@app.get("/workspaces/{workspace_id}")
+def get_workspace_endpoint(workspace_id: str):
+    """Retrieves metadata and status for a specific workspace."""
+    ws = workspace_manager.get_workspace(workspace_id)
+    if not ws:
+        raise HTTPException(status_code=404, detail=f"Workspace '{workspace_id}' not found")
+    return {"workspace": ws.to_dict(), **ws.to_dict()}
+
+
+@app.post("/workspaces/{workspace_id}/terminate")
+def terminate_workspace_endpoint(workspace_id: str, purge_storage: bool = False):
+    """Tears down and disposes of ephemeral Kali VM / workspace."""
+    res = workspace_manager.terminate_workspace(workspace_id, purge_storage=purge_storage)
+    return res
 
 
 @app.post("/run")
@@ -992,6 +1104,276 @@ def list_evidence_artifacts(task_id: Optional[str] = None, limit: int = 50):
             r["evidence_class"] = "file"
 
     return {"count": len(rows), "artifacts": rows}
+
+
+@app.on_event("startup")
+async def startup_vnc_streamer():
+    """Starts the RFB 3.8 noVNC streaming server for the Kali worker desktop."""
+    try:
+        await vnc_server.start()
+    except Exception as e:
+        import logging
+        logging.getLogger("orchestrator.server").warning(f"Could not start VNC streamer on startup: {e}")
+
+
+@app.on_event("shutdown")
+async def shutdown_vnc_streamer():
+    """Stops the VNC streamer on orchestrator shutdown."""
+    try:
+        await vnc_server.stop()
+    except Exception:
+        pass
+
+
+@app.get("/screen/status")
+def get_screen_status():
+    """Returns the operational status and metrics of the Kali worker noVNC stream."""
+    return {
+        "status": "running" if vnc_server._running else "stopped",
+        "ws_port": vnc_server.port,
+        "width": vnc_server.desktop.width,
+        "height": vnc_server.desktop.height,
+        "clients": len(vnc_server.clients),
+        "plane": vnc_server.desktop.active_plane_name,
+        "upstream_vnc_detected": vnc_server.check_upstream_vnc(),
+        "protocol": "RFB 003.008",
+    }
+
+
+@app.get("/screen/snapshot.png")
+def get_screen_snapshot():
+    """Returns a real-time PNG snapshot of the Kali worker virtual desktop framebuffer."""
+    png_bytes = vnc_server.desktop.get_png_bytes()
+    return Response(content=png_bytes, media_type="image/png")
+
+
+# --- Tier 3 GUI Tool Adapter Endpoints ---
+
+_active_gui_instances: Dict[str, BaseGuiAdapter] = {}
+
+
+def _get_or_create_gui_adapter(tool_id: str) -> BaseGuiAdapter:
+    """Returns active instance or instantiates from registry."""
+    if tool_id not in _active_gui_instances:
+        instance = adapter_registry.get_instance(tool_id)
+        if not instance or not isinstance(instance, BaseGuiAdapter):
+            raise HTTPException(status_code=404, detail=f"GUI tool adapter not found: {tool_id}")
+        _active_gui_instances[tool_id] = instance
+    return _active_gui_instances[tool_id]
+
+
+@app.get("/gui/adapters")
+def list_gui_adapters():
+    """Lists available Tier 3 GUI tool adapters and their supported scripted workflows."""
+    adapters_info = []
+    gui_tool_ids = ["burpsuite.gui.v1", "wireshark.gui.v1", "zap.gui.v1"]
+    for tid in gui_tool_ids:
+        inst = adapter_registry.get_instance(tid)
+        if inst and isinstance(inst, BaseGuiAdapter):
+            adapters_info.append({
+                "tool_id": inst.tool_id,
+                "tool_version": inst.tool_version,
+                "app_name": inst.app_name,
+                "tier": inst.tier,
+                "is_running": inst.is_running(),
+                "workflows": inst.list_workflows(),
+            })
+    return {"count": len(adapters_info), "adapters": adapters_info}
+
+
+@app.post("/gui/execute")
+def execute_gui_tool(req: GuiExecuteRequest):
+    """
+    Executes an action or bounded scripted workflow on a Tier 3 GUI Tool Adapter.
+    Enforces Scope Contract authorization for Tier 3 intrusive GUI tools.
+    """
+    params = req.params or {}
+    target = params.get("target") or params.get("host") or params.get("target_url")
+    
+    # 1. Scope Contract Authorization Check for Tier 3
+    scope_val = validate_scope_request(target=target, tool_id=req.tool_id, tool_tier=3)
+    if not scope_val.get("authorized", True):
+        raise HTTPException(
+            status_code=403,
+            detail=f"Scope violation: Tool {req.tool_id} (Tier 3) is not authorized for target {target} under active contract.",
+        )
+
+    # 2. Get or create adapter instance
+    adapter = _get_or_create_gui_adapter(req.tool_id)
+
+    # 3. Build input envelope
+    task_id = req.task_id or f"task_{req.tool_id.split('.')[0]}_{int(time.time()*1000)%10000}"
+    inputs = {
+        "action": req.action,
+        "workflow": req.workflow,
+        "params": params,
+        "x": req.x,
+        "y": req.y,
+        "control_id": req.control_id,
+        "text": req.text,
+        "caption": req.caption,
+    }
+
+    # 4. Execute action
+    observation = adapter.execute(inputs=inputs, task_id=task_id, target="local")
+
+    # 5. Record Event in events database
+    event = Event.create(
+        session_id=req.session_id or "gui_session",
+        task_id=task_id,
+        actor="agent",
+        tool_id=req.tool_id,
+        tool_version=adapter.tool_version,
+        requested_args=inputs,
+        normalized_args=inputs,
+        process_id=adapter.pid,
+        exit_code=observation.exit_code,
+        artifact_refs=observation.artifacts,
+        screenshots=[s["filepath"] for s in adapter.screenshots if s.get("filepath")],
+        result_summary=f"GUI action {req.action} ({req.workflow or ''}): {observation.status}",
+    )
+    insert_event(event)
+
+    return observation.to_dict()
+
+
+@app.get("/gui/state/{tool_id}")
+def get_gui_tool_state(tool_id: str):
+    """Returns current extracted UI-state for a given GUI tool adapter."""
+    adapter = _get_or_create_gui_adapter(tool_id)
+    return adapter.extract_ui_state()
+
+
+@app.post("/gui/screenshot/{tool_id}")
+def capture_gui_tool_screenshot(tool_id: str, caption: Optional[str] = "Manual Visual Capture"):
+    """Triggers an on-demand Visual Evidence screenshot for a GUI tool adapter."""
+    adapter = _get_or_create_gui_adapter(tool_id)
+    task_id = f"snap_{tool_id.split('.')[0]}_{int(time.time()*1000)%10000}"
+    vis = adapter.capture_screenshot(task_id=task_id, caption=caption, workflow_step="manual_snapshot")
+    return {
+        "evidence_id": vis.evidence_id,
+        "filepath": vis.filepath,
+        "sha256": vis.sha256,
+        "caption": vis.caption,
+        "dimensions": vis.dimensions,
+        "thumbnail_b64": vis.thumbnail_b64,
+    }
+
+
+@app.post("/gui/stop/{tool_id}")
+def stop_gui_tool(tool_id: str):
+    """Stops the active GUI tool session."""
+    if tool_id in _active_gui_instances:
+        adapter = _active_gui_instances[tool_id]
+        res = adapter.stop()
+        return res
+    return {"status": "not_running", "tool_id": tool_id}
+
+
+
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Security Testing Browser Endpoints (Playwright-driven / Activity Rail)
+# ─────────────────────────────────────────────────────────────────────────────
+
+from orchestrator.adapters.browser_adapter import browser_adapter, SecurityBrowserAdapter
+
+
+class BrowserExecuteRequest(BaseModel):
+    session_id: Optional[str] = "browser_session"
+    task_id: Optional[str] = None
+    action: str = "workflow"  # workflow, navigate, click, fill, extract_state, screenshot, history, stop
+    workflow: Optional[str] = "xss_check"
+    url: Optional[str] = None
+    selector: Optional[str] = None
+    value: Optional[str] = None
+    payload: Optional[str] = None
+    caption: Optional[str] = None
+    params: Optional[Dict[str, Any]] = None
+
+
+@app.get("/browser/state")
+def get_browser_state():
+    """Returns the current visible state of the security testing browser."""
+    return browser_adapter.extract_visible_state()
+
+
+@app.get("/browser/history")
+def get_browser_history():
+    """Returns the sequential action history rendered in the Activity Rail."""
+    return {
+        "count": len(browser_adapter.action_history),
+        "history": browser_adapter.get_action_history(),
+        "findings": browser_adapter.findings,
+        "is_running": browser_adapter.is_running,
+    }
+
+
+@app.post("/browser/execute")
+def execute_browser_action(req: BrowserExecuteRequest):
+    """
+    Executes an action or scripted workflow on the Security Testing Browser.
+    Enforces Scope Contract authorization for Tier 2 active scanning / DAST testing.
+    """
+    params = req.params or {}
+    target = req.url or params.get("url") or params.get("target") or "http://target.local"
+
+    # 1. Scope Contract Authorization Check for Tier 2
+    scope_val = validate_scope_request(target=target, tool_id=browser_adapter.tool_id, tool_tier=2)
+    if not scope_val.get("authorized", True):
+        raise HTTPException(
+            status_code=403,
+            detail=f"Scope violation: Tool {browser_adapter.tool_id} (Tier 2) is not authorized for target {target} under active contract.",
+        )
+
+    # 2. Build input envelope
+    task_id = req.task_id or f"task_browser_{int(time.time()*1000)%10000}"
+    inputs = {
+        "action": req.action,
+        "workflow": req.workflow,
+        "url": req.url,
+        "selector": req.selector,
+        "value": req.value,
+        "payload": req.payload,
+        "caption": req.caption,
+        "params": params,
+    }
+
+    # 3. Execute action
+    observation = browser_adapter.execute(inputs=inputs, task_id=task_id, target="local")
+
+    # 4. Record Event in SQLite database
+    event = Event.create(
+        session_id=req.session_id or "browser_session",
+        task_id=task_id,
+        actor="agent",
+        tool_id=browser_adapter.tool_id,
+        tool_version=browser_adapter.tool_version,
+        requested_args=inputs,
+        normalized_args=inputs,
+        process_id=os.getpid(),
+        exit_code=observation.exit_code,
+        artifact_refs=observation.artifacts,
+        screenshots=[s["filepath"] for s in browser_adapter.screenshots if s.get("filepath")],
+        result_summary=f"Security Browser action {req.action} ({req.workflow or ''}): {observation.status}",
+    )
+    insert_event(event)
+
+    return observation.to_dict()
+
+
+@app.post("/browser/screenshot")
+def capture_browser_screenshot(caption: Optional[str] = "Manual Visual Capture"):
+    """Triggers an on-demand Visual Evidence screenshot for the security browser."""
+    task_id = f"snap_browser_{int(time.time()*1000)%10000}"
+    return browser_adapter.capture_screenshot(caption=caption, task_id=task_id)
+
+
+@app.post("/browser/stop")
+def stop_browser():
+    """Stops the active security browser session."""
+    return browser_adapter.stop()
 
 
 if __name__ == "__main__":

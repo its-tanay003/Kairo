@@ -138,3 +138,19 @@ CREATE INDEX IF NOT EXISTS idx_findings_session ON findings(session_id);
 CREATE INDEX IF NOT EXISTS idx_findings_plan ON findings(plan_id);
 CREATE INDEX IF NOT EXISTS idx_findings_asset ON findings(affected_asset);
 CREATE INDEX IF NOT EXISTS idx_findings_severity ON findings(severity);
+
+-- Model Memory Store: Blueprint memory model tracking model versions, prompt formats, adapters, and benchmark scores
+CREATE TABLE IF NOT EXISTS model_memory (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    model_id TEXT NOT NULL,
+    version TEXT NOT NULL,
+    prompt_format TEXT NOT NULL,
+    adapter TEXT NOT NULL,
+    benchmark_score REAL NOT NULL,
+    recorded_at TEXT NOT NULL,
+    metrics TEXT NOT NULL DEFAULT '{}',
+    metadata TEXT
+);
+
+CREATE INDEX IF NOT EXISTS idx_model_memory_model ON model_memory(model_id);
+CREATE INDEX IF NOT EXISTS idx_model_memory_version ON model_memory(version);

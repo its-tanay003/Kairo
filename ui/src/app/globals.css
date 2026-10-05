@@ -162,10 +162,201 @@ body {
   overflow: hidden;
 }
 
-@media (max-width: 1024px) {
+/* Mobile View Switcher (Visible on phone viewports < 768px) */
+.mobile-view-nav {
+  display: none;
+  background: rgba(16, 21, 34, 0.95);
+  border-bottom: 1px solid var(--card-border);
+  padding: 6px 10px;
+  gap: 6px;
+  z-index: 20;
+  -webkit-backdrop-filter: blur(12px);
+  backdrop-filter: blur(12px);
+}
+
+.mobile-tab-btn {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 8px 10px;
+  min-height: 42px;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  color: var(--text-muted);
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  touch-action: manipulation;
+  position: relative;
+}
+
+.mobile-tab-btn.active {
+  background: rgba(56, 189, 248, 0.16);
+  border-color: rgba(56, 189, 248, 0.4);
+  color: var(--accent-blue);
+  box-shadow: 0 0 12px rgba(56, 189, 248, 0.2);
+}
+
+.tab-pulse-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background-color: var(--accent-cyan);
+  box-shadow: 0 0 6px var(--accent-cyan);
+  animation: pulse 1.2s infinite;
+}
+
+.mobile-terminal-container {
+  display: none;
+}
+
+@media (max-width: 1024px) and (min-width: 769px) {
   .main-layout {
-    grid-template-columns: 1fr;
-    grid-template-rows: 1fr 1fr;
+    grid-template-columns: 1fr 380px;
+  }
+}
+
+@media (max-width: 768px) {
+  .app-container {
+    height: 100dvh;
+    max-height: 100dvh;
+    overflow: hidden;
+  }
+
+  .app-header {
+    padding: 10px 14px;
+    gap: 8px;
+  }
+
+  .brand-logo {
+    width: 32px;
+    height: 32px;
+    font-size: 15px;
+  }
+
+  .brand-info h1 {
+    font-size: 15px;
+  }
+
+  .brand-info p {
+    display: none;
+  }
+
+  .status-badges {
+    gap: 6px;
+    flex-wrap: wrap;
+    justify-content: flex-end;
+  }
+
+  .desktop-only-badge {
+    display: none !important;
+  }
+
+  .mobile-view-nav {
+    display: flex;
+  }
+
+  .main-layout {
+    display: flex;
+    flex-direction: column;
+    flex: 1;
+    overflow: hidden;
+    height: calc(100dvh - 105px);
+  }
+
+  .chat-pane {
+    flex: 1;
+    height: 100%;
+    border-right: none;
+  }
+
+  .chat-pane.mobile-hidden {
+    display: none !important;
+  }
+
+  .inspector-pane {
+    flex: 1;
+    height: 100%;
+    width: 100%;
+    border-left: none;
+  }
+
+  .inspector-pane.mobile-hidden {
+    display: none !important;
+  }
+
+  .mobile-terminal-container {
+    display: flex;
+    flex-direction: column;
+    flex: 1;
+    height: 100%;
+    width: 100%;
+    overflow: hidden;
+  }
+
+  .mobile-terminal-container.mobile-hidden {
+    display: none !important;
+  }
+
+  .action-bar {
+    padding: 8px 12px;
+    gap: 6px;
+  }
+
+  .quick-btn {
+    padding: 6px 10px;
+    min-height: 36px;
+    font-size: 11px;
+    touch-action: manipulation;
+  }
+
+  .messages-container {
+    padding: 12px;
+    gap: 12px;
+  }
+
+  .message-card {
+    max-width: 92%;
+    padding: 10px 14px;
+    font-size: 13px;
+  }
+
+  .chat-input-area {
+    padding: 8px 12px;
+    gap: 8px;
+    background: rgba(16, 21, 34, 0.95);
+  }
+
+  .chat-input {
+    font-size: 16px !important; /* Critical to prevent iOS Safari auto-zoom on input focus */
+    min-height: 44px;
+    padding: 8px 12px;
+  }
+
+  .send-btn {
+    min-height: 44px;
+    min-width: 54px;
+    padding: 0 14px;
+    font-size: 14px;
+    touch-action: manipulation;
+  }
+
+  .inspector-header {
+    padding: 10px 12px;
+  }
+
+  .inspector-header h2 {
+    font-size: 13px;
+  }
+
+  .inspector-content {
+    padding: 10px 12px;
+    height: calc(100% - 50px);
+    overflow-y: auto;
   }
 }
 

@@ -5,6 +5,10 @@ import TerminalProcessView from "./components/TerminalProcessView";
 import TaskGraphView from "./components/TaskGraphView";
 import WhyThisToolPanel, { ToolSelectionResult } from "./components/WhyThisToolPanel";
 import ScopeContractChip from "./components/ScopeContractChip";
+import OfflineIndicator from "./components/OfflineIndicator";
+import MobileTerminalView from "./components/MobileTerminalView";
+import ScreenPanel from "./components/ScreenPanel";
+import SecurityBrowserPanel from "./components/SecurityBrowserPanel";
 
 interface EventRecord {
   id?: number;
@@ -99,6 +103,25 @@ interface VMSnapshot {
   description: string;
 }
 
+interface ExecutionPlaneData {
+  platform: string;
+  plane_type: string;
+  backend_name: string;
+  is_connected: boolean;
+  host_os: string;
+  host_arch: string;
+  distro_name?: string;
+  wsl_version?: number;
+  win_kex?: {
+    installed: boolean;
+    ready_for_phase5_gui: boolean;
+    mode?: string;
+  };
+  macos_backend?: string;
+  worker_online: boolean;
+  latency_ms: number;
+}
+
 interface VMStatus {
   vm_name: string;
   vm_state: string;
@@ -117,6 +140,19 @@ interface VMStatus {
   snapshots: VMSnapshot[];
   baseline_snapshot: string;
   timestamp: string;
+  execution_plane?: ExecutionPlaneData;
+}
+
+interface WorkspaceRecord {
+  workspace_id: string;
+  project_name: string;
+  session_id: string;
+  owner_id: string;
+  status: string;
+  host_dir: string;
+  guest_dir: string;
+  created_at: string;
+  updated_at: string;
 }
 
 interface ChatMessage {
@@ -140,11 +176,16 @@ interface ChatMessage {
 export default function Home() {
   const [wsStatus, setWsStatus] = useState<"connected" | "connecting" | "disconnected">("connecting");
   const [sessionId, setSessionId] = useState<string>("init");
+  const [clientType, setClientType] = useState<string>("browser-desktop");
+  const [mobileTab, setMobileTab] = useState<"chat" | "activity" | "terminal">("chat");
+  const [activeWorkspace, setActiveWorkspace] = useState<string | null>(null);
+  const [isAuthenticated, setIsAuthenticated] = useState<boolean>(true);
+  const [workspacesList, setWorkspacesList] = useState<WorkspaceRecord[]>([]);
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [inputVal, setInputVal] = useState<string>("");
   const [latestEvent, setLatestEvent] = useState<EventRecord | null>(null);
   const [allEvents, setAllEvents] = useState<EventRecord[]>([]);
-  const [activeTab, setActiveTab] = useState<"terminal_process" | "task_graph" | "model_center" | "vm_sandbox" | "latest" | "all">("task_graph");
+  const [activeTab, setActiveTab] = useState<"terminal_process" | "task_graph" | "model_center" | "vm_sandbox" | "screen" | "browser" | "latest" | "all">("task_graph");
   const [modelCenter, setModelCenter] = useState<ModelCenterStatus | null>(null);
   const [vmStatus, setVmStatus] = useState<VMStatus | null>(null);
   const [isRollingBack, setIsRollingBack] = useState<boolean>(false);
@@ -155,7 +196,23 @@ export default function Home() {
 
   const [socket, setSocket] = useState<WebSocket | null>(null);
   const wsRef = useRef<WebSocket | null>(null);
+  const sessionIdRef = useRef<string>(sessionId);
+  useEffect(() => {
+    sessionIdRef.current = sessionId;
+  }, [sessionId]);
   const messagesEndRef = useRef<HTMLDivElement | null>(null);
+
+  // Auto-detect mobile viewport / device
+  useEffect(() => {
+    if (typeof window !== "undefined") {
+      const isMobile =
+        /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent) ||
+        window.innerWidth <= 768;
+      if (isMobile) {
+        setClientType("browser-mobile");
+      }
+    }
+  }, []);
 
   // Auto-scroll chat
   useEffect(() => {
@@ -175,6 +232,20 @@ export default function Home() {
       ws.onopen = () => {
         setWsStatus("connected");
         setSocket(ws);
+        const isMobile =
+          typeof window !== "undefined" &&
+          (/Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent) ||
+            window.innerWidth <= 768);
+        try {
+          ws.send(
+            JSON.stringify({
+              type: "client_identify",
+              client_type: isMobile ? "browser-mobile" : "browser-desktop",
+            })
+          );
+        } catch {
+          // ignore
+        }
       };
 
       ws.onmessage = (event) => {
@@ -183,12 +254,63 @@ export default function Home() {
 
           if (data.type === "handshake") {
             setSessionId(data.sessionId);
+            if (data.clientType) setClientType(data.clientType);
+            if (data.authenticated !== undefined) setIsAuthenticated(Boolean(data.authenticated));
+            if (data.workspaceId) setActiveWorkspace(data.workspaceId);
             setMessages((prev) => [
               ...prev,
               {
                 id: `msg_${Date.now()}_handshake`,
                 sender: "system",
-                text: `WebSocket connected to Gateway (${data.sessionId})`,
+                text: `WebSocket connected to Gateway (${data.sessionId}, DataPath: ${data.dataPlane || "local-only"})`,
+                timestamp: new Date().toLocaleTimeString(),
+              },
+            ]);
+          } else if (data.type === "auth_success") {
+            setIsAuthenticated(true);
+            setMessages((prev) => [
+              ...prev,
+              {
+                id: `msg_${Date.now()}_auth_ok`,
+                sender: "system",
+                text: `🔐 Authenticated session verified for user ${data.user?.user_id || "operator"}.`,
+                timestamp: new Date().toLocaleTimeString(),
+              },
+            ]);
+          } else if (data.type === "auth_failure") {
+            setIsAuthenticated(false);
+            setMessages((prev) => [
+              ...prev,
+              {
+                id: `msg_${Date.now()}_auth_fail`,
+                sender: "system",
+                text: `⚠️ Authentication error: ${data.error}`,
+                timestamp: new Date().toLocaleTimeString(),
+              },
+            ]);
+          } else if (data.type === "workspace_provisioned") {
+            if (data.workspace) {
+              setActiveWorkspace(data.workspace.workspace_id);
+              setMessages((prev) => [
+                ...prev,
+                {
+                  id: `msg_${Date.now()}_ws_prov`,
+                  sender: "system",
+                  text: `⚡ Disposable Kali VM Workspace provisioned: ${data.workspace.workspace_id} [Guest: ${data.workspace.guest_dir}]`,
+                  timestamp: new Date().toLocaleTimeString(),
+                },
+              ]);
+            }
+          } else if (data.type === "workspaces_list") {
+            setWorkspacesList(data.workspaces || []);
+          } else if (data.type === "workspace_terminated") {
+            setActiveWorkspace(null);
+            setMessages((prev) => [
+              ...prev,
+              {
+                id: `msg_${Date.now()}_ws_term`,
+                sender: "system",
+                text: `🧹 Disposable Kali VM Workspace ${data.workspaceId} terminated & storage purged.`,
                 timestamp: new Date().toLocaleTimeString(),
               },
             ]);
@@ -297,6 +419,68 @@ export default function Home() {
               },
             ]);
             refreshVMStatus();
+          } else if (data.type === "user_message_broadcast") {
+            // Received a message broadcast from peer device (Linux, Windows, or Mobile)
+            if (data.senderSessionId && data.senderSessionId !== sessionIdRef.current) {
+              const clientBadge = data.clientType ? `[${data.clientType}] ` : "";
+              setMessages((prev) => [
+                ...prev,
+                {
+                  id: `msg_${Date.now()}_peer_${data.senderSessionId.slice(0, 6)}`,
+                  sender: "user",
+                  taskId: data.taskId,
+                  text: `${clientBadge}${data.text}`,
+                  timestamp: new Date().toLocaleTimeString(),
+                },
+              ]);
+            }
+          } else if (data.type === "peer_joined") {
+            setMessages((prev) => [
+              ...prev,
+              {
+                id: `msg_${Date.now()}_peer_join`,
+                sender: "system",
+                text: `🔗 ${data.text || `Peer joined: ${data.clientType} (${data.sessionId})`}`,
+                timestamp: new Date().toLocaleTimeString(),
+              },
+            ]);
+          } else if (data.type === "workspace_joined") {
+            if (data.workspace) {
+              setActiveWorkspace(data.workspace.workspace_id);
+              setMessages((prev) => [
+                ...prev,
+                {
+                  id: `msg_${Date.now()}_ws_joined`,
+                  sender: "system",
+                  text: `📂 Attached to project workspace: ${data.workspace.project_name} (${data.workspace.workspace_id})`,
+                  timestamp: new Date().toLocaleTimeString(),
+                },
+              ]);
+            }
+          } else if (data.type === "vm_snapshot_result") {
+            setIsTakingSnapshot(false);
+            setMessages((prev) => [
+              ...prev,
+              {
+                id: `msg_${Date.now()}_snap_res`,
+                sender: "system",
+                text: `📸 VM Snapshot captured: ${data.data?.name || "snapshot"}`,
+                timestamp: new Date().toLocaleTimeString(),
+              },
+            ]);
+            refreshVMStatus();
+          } else if (data.type === "vm_rollback_result") {
+            setIsRollingBack(false);
+            setMessages((prev) => [
+              ...prev,
+              {
+                id: `msg_${Date.now()}_rb_res`,
+                sender: "system",
+                text: `✅ VM Rollback confirmed: ${data.data?.name || "ready state"}`,
+                timestamp: new Date().toLocaleTimeString(),
+              },
+            ]);
+            refreshVMStatus();
           } else if (data.type === "error") {
             setActiveTaskId(null);
             setMessages((prev) => [
@@ -339,12 +523,14 @@ export default function Home() {
   const sendMessage = (textToSend?: string) => {
     const text = (textToSend !== undefined ? textToSend : inputVal).trim();
     if (!text || wsStatus !== "connected" || !wsRef.current) return;
+    const taskId = `task_${Date.now().toString(36)}`;
 
     const userMsg: ChatMessage = {
       id: `msg_${Date.now()}_user`,
       sender: "user",
       text,
       timestamp: new Date().toLocaleTimeString(),
+      taskId,
     };
     setMessages((prev) => [...prev, userMsg]);
     setInputVal("");
@@ -354,6 +540,7 @@ export default function Home() {
         type: "chat",
         content: text,
         sessionId,
+        taskId,
       })
     );
   };
@@ -379,6 +566,7 @@ export default function Home() {
         args,
         sessionId,
         taskId,
+        workspace_id: activeWorkspace || undefined,
       })
     );
   };
@@ -549,11 +737,11 @@ export default function Home() {
         })
         .catch(() => {});
 
-      fetch("http://localhost:8000/vm/status")
+      fetch("http://localhost:4000/workspaces")
         .then((res) => (res.ok ? res.json() : null))
         .then((data) => {
-          if (!ignore && data) {
-            setVmStatus(data);
+          if (!ignore && data?.workspaces) {
+            setWorkspacesList(data.workspaces);
           }
         })
         .catch(() => {});
@@ -564,6 +752,89 @@ export default function Home() {
       clearInterval(interval);
     };
   }, []);
+
+  const refreshWorkspaces = async () => {
+    try {
+      const res = await fetch("http://localhost:4000/workspaces");
+      if (res.ok) {
+        const data = await res.json();
+        if (data.workspaces) setWorkspacesList(data.workspaces);
+      }
+    } catch (e) {
+      console.error("Failed to fetch workspaces", e);
+    }
+  };
+
+  const handleProvisionWorkspace = async () => {
+    if (socket && socket.readyState === WebSocket.OPEN) {
+      socket.send(
+        JSON.stringify({
+          type: "provision_workspace",
+          projectName: "kairo-project",
+          sessionId,
+        })
+      );
+    } else {
+      try {
+        const res = await fetch("http://localhost:4000/workspaces/provision", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            project_name: "kairo-project",
+            session_id: sessionId,
+          }),
+        });
+        const data = await res.json();
+        if (data.workspace) {
+          setActiveWorkspace(data.workspace.workspace_id);
+          setMessages((prev) => [
+            ...prev,
+            {
+              id: `msg_${Date.now()}_ws_prov`,
+              sender: "system",
+              text: `⚡ Disposable Kali VM Workspace provisioned: ${data.workspace.workspace_id} [Guest: ${data.workspace.guest_dir}]`,
+              timestamp: new Date().toLocaleTimeString(),
+            },
+          ]);
+        }
+      } catch (err) {
+        console.error("Workspace provision failed:", err);
+      }
+    }
+  };
+
+  const handleTerminateWorkspace = async () => {
+    if (!activeWorkspace) return;
+    if (socket && socket.readyState === WebSocket.OPEN) {
+      socket.send(
+        JSON.stringify({
+          type: "terminate_workspace",
+          workspaceId: activeWorkspace,
+          purgeStorage: true,
+        })
+      );
+    } else {
+      try {
+        await fetch(`http://localhost:4000/workspaces/${activeWorkspace}/terminate`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ purge_storage: true }),
+        });
+        setActiveWorkspace(null);
+        setMessages((prev) => [
+          ...prev,
+          {
+            id: `msg_${Date.now()}_ws_term`,
+            sender: "system",
+            text: `🧹 Disposable Kali VM Workspace terminated & storage purged.`,
+            timestamp: new Date().toLocaleTimeString(),
+          },
+        ]);
+      } catch (err) {
+        console.error("Workspace terminate failed:", err);
+      }
+    }
+  };
 
   return (
     <div className="app-container">
@@ -578,10 +849,22 @@ export default function Home() {
         </div>
 
         <div className="status-badges">
+          {/* Explicit Offline Indicator UI element (fully offline / local-only / connected) */}
+          <OfflineIndicator
+            wsStatus={wsStatus}
+            clientType={clientType}
+            sessionId={sessionId}
+            workspaceId={activeWorkspace}
+            gatewayUrl="http://localhost:4000"
+            authenticated={isAuthenticated}
+            onProvisionWorkspace={handleProvisionWorkspace}
+            onTerminateWorkspace={handleTerminateWorkspace}
+          />
+
           {/* Persistent Scope Contract Chip */}
           <ScopeContractChip />
 
-          <div className="status-chip" style={{ borderColor: "rgba(16, 185, 129, 0.4)" }}>
+          <div className="status-chip desktop-only-badge" style={{ borderColor: "rgba(16, 185, 129, 0.4)" }}>
             <span className="dot connected" />
             <span>
               {modelCenter
@@ -590,12 +873,12 @@ export default function Home() {
             </span>
           </div>
           {modelCenter?.vram && (
-            <div className="status-chip" style={{ borderColor: "rgba(6, 182, 212, 0.3)" }}>
+            <div className="status-chip desktop-only-badge" style={{ borderColor: "rgba(6, 182, 212, 0.3)" }}>
               <span>GPU VRAM: {modelCenter.vram.used_mb}MB / {modelCenter.vram.total_mb}MB ({modelCenter.vram.utilization_pct}%)</span>
             </div>
           )}
           <div
-            className="status-chip"
+            className="status-chip desktop-only-badge"
             style={{
               borderColor: vmStatus?.worker_online ? "rgba(16, 185, 129, 0.4)" : "rgba(244, 63, 94, 0.4)",
               cursor: "pointer",
@@ -608,20 +891,44 @@ export default function Home() {
               Kali VM: {vmStatus?.vm_state || "checking"} | Worker: {vmStatus?.worker_online ? "online" : "offline"}
             </span>
           </div>
-          <div className="status-chip">
+          <div className="status-chip desktop-only-badge">
             <span className={`dot ${wsStatus}`} />
             <span>Gateway WS: {wsStatus}</span>
           </div>
-          <div className="status-chip">
+          <div className="status-chip desktop-only-badge">
             <span>Session: {sessionId}</span>
           </div>
         </div>
       </header>
 
+      {/* Mobile Segmented Navigation */}
+      <nav className="mobile-view-nav" aria-label="Mobile View Navigation">
+        <button
+          className={`mobile-tab-btn ${mobileTab === "chat" ? "active" : ""}`}
+          onClick={() => setMobileTab("chat")}
+        >
+          💬 Chat
+          {messages.length > 0 && <span className="tab-pulse-dot" />}
+        </button>
+        <button
+          className={`mobile-tab-btn ${mobileTab === "activity" ? "active" : ""}`}
+          onClick={() => setMobileTab("activity")}
+        >
+          ⚡ Activity Rail
+        </button>
+        <button
+          className={`mobile-tab-btn ${mobileTab === "terminal" ? "active" : ""}`}
+          onClick={() => setMobileTab("terminal")}
+        >
+          🖥️ Terminal
+          <span className="tab-pulse-dot" style={{ background: "var(--accent-emerald)" }} />
+        </button>
+      </nav>
+
       {/* Main Grid */}
       <div className="main-layout">
         {/* Left: Chat Pane */}
-        <section className="chat-pane">
+        <section className={`chat-pane ${mobileTab !== "chat" ? "mobile-hidden" : ""}`}>
           <div className="action-bar">
             {/* Tool: kali.exec.v1 with snapshot-before */}
             <button
@@ -664,6 +971,73 @@ export default function Home() {
               disabled={wsStatus !== "connected" || isRollingBack}
             >
               🐉 Kali: whoami / id
+            </button>
+
+            {/* Quick Button: Boot / Terminate Disposable Kali VM */}
+            <button
+              className="quick-btn secondary"
+              style={{
+                color: activeWorkspace ? "var(--accent-amber)" : "var(--accent-cyan)",
+                borderColor: activeWorkspace ? "rgba(245, 158, 11, 0.4)" : "rgba(6, 182, 212, 0.4)",
+                background: activeWorkspace ? "rgba(245, 158, 11, 0.12)" : "rgba(6, 182, 212, 0.12)",
+              }}
+              onClick={activeWorkspace ? handleTerminateWorkspace : handleProvisionWorkspace}
+              disabled={wsStatus !== "connected" || isRollingBack}
+              title={activeWorkspace ? "Click to terminate and purge disposable workspace" : "Boot a disposable Kali VM per project/session"}
+            >
+              {activeWorkspace ? `⚡ Purge VM (${activeWorkspace.slice(0, 8)})` : "⚡ Boot Disposable VM"}
+            </button>
+
+            {/* Tool: Security Browser XSS Check */}
+            <button
+              className="quick-btn secondary"
+              style={{
+                color: "var(--accent-cyan)",
+                borderColor: "rgba(6, 182, 212, 0.4)",
+                background: "rgba(6, 182, 212, 0.12)",
+              }}
+              onClick={() => {
+                setActiveTab("browser");
+                sendToolCall("browser.security.v1", {
+                  action: "workflow",
+                  workflow: "xss_check",
+                  params: {
+                    url: "http://target.local/search.php",
+                    selector: "input[name='q']",
+                    payload: "<script>alert('kairo-xss')</script>",
+                  },
+                });
+              }}
+              disabled={wsStatus !== "connected" || isRollingBack}
+              title="Runs automated XSS payload reflection check with Playwright and Visual Evidence"
+            >
+              🌐 Browser: XSS Check
+            </button>
+
+            {/* Tool: Security Browser Auth Walkthrough */}
+            <button
+              className="quick-btn secondary"
+              style={{
+                color: "var(--accent-emerald)",
+                borderColor: "rgba(16, 185, 129, 0.4)",
+                background: "rgba(16, 185, 129, 0.1)",
+              }}
+              onClick={() => {
+                setActiveTab("browser");
+                sendToolCall("browser.security.v1", {
+                  action: "workflow",
+                  workflow: "auth_walkthrough",
+                  params: {
+                    login_url: "http://target.local/login.php",
+                    username: "admin",
+                    password: "P@ssw0rd2026!",
+                  },
+                });
+              }}
+              disabled={wsStatus !== "connected" || isRollingBack}
+              title="Runs automated authentication flow walkthrough with cookie capture"
+            >
+              🔑 Browser: Auth Flow
             </button>
 
             {/* Tool 1: shell.run.v1 safe execution */}
@@ -995,13 +1369,17 @@ export default function Home() {
         </section>
 
         {/* Right: SQLite Event Inspector & Model Center */}
-        <aside className={`inspector-pane ${isTerminalMaximized && activeTab === "terminal_process" ? "maximized-overlay" : ""}`}>
+        <aside className={`inspector-pane ${isTerminalMaximized && activeTab === "terminal_process" ? "maximized-overlay" : ""} ${mobileTab !== "activity" ? "mobile-hidden" : ""}`}>
           <div className="inspector-header">
             <h2>
               {activeTab === "task_graph"
                 ? "Task Graph (DAG Planner)"
                 : activeTab === "terminal_process"
                 ? "Live Terminal (xterm.js) & Process Tree"
+                : activeTab === "screen"
+                ? "Kali Worker Desktop Stream (noVNC)"
+                : activeTab === "browser"
+                ? "Security Testing Browser (Playwright / DAST)"
                 : activeTab === "model_center"
                 ? "Model Center (Phase 4 Manager)"
                 : activeTab === "vm_sandbox"
@@ -1032,6 +1410,30 @@ export default function Home() {
                 onClick={() => setActiveTab("terminal_process")}
               >
                 🖥️ Terminal & Tree
+              </button>
+              <button
+                className={`quick-btn ${activeTab === "screen" ? "" : "secondary"}`}
+                style={{
+                  padding: "3px 8px",
+                  fontSize: "11px",
+                  borderColor: activeTab === "screen" ? "var(--accent-cyan)" : undefined,
+                  background: activeTab === "screen" ? "rgba(6, 182, 212, 0.15)" : undefined,
+                }}
+                onClick={() => setActiveTab("screen")}
+              >
+                🖥️ SCREEN
+              </button>
+              <button
+                className={`quick-btn ${activeTab === "browser" ? "" : "secondary"}`}
+                style={{
+                  padding: "3px 8px",
+                  fontSize: "11px",
+                  borderColor: activeTab === "browser" ? "var(--accent-cyan)" : undefined,
+                  background: activeTab === "browser" ? "rgba(6, 182, 212, 0.15)" : undefined,
+                }}
+                onClick={() => setActiveTab("browser")}
+              >
+                🌐 Browser
               </button>
               <button
                 className={`quick-btn ${activeTab === "vm_sandbox" ? "" : "secondary"}`}
@@ -1080,6 +1482,22 @@ export default function Home() {
                   onSelectTask={(tid) => setActiveTaskId(tid)}
                   isMaximized={isTerminalMaximized}
                   onToggleMaximize={() => setIsTerminalMaximized((prev) => !prev)}
+                />
+              </div>
+            ) : activeTab === "screen" ? (
+              <div style={{ height: isTerminalMaximized ? "calc(100vh - 120px)" : "calc(100vh - 190px)", minHeight: "560px", display: "flex", flexDirection: "column" }}>
+                <ScreenPanel
+                  ws={socket || wsRef.current}
+                  activeSessionId={sessionId}
+                  isMaximized={isTerminalMaximized}
+                  onToggleMaximize={() => setIsTerminalMaximized((prev) => !prev)}
+                />
+              </div>
+            ) : activeTab === "browser" ? (
+              <div style={{ height: isTerminalMaximized ? "calc(100vh - 120px)" : "calc(100vh - 190px)", minHeight: "560px", display: "flex", flexDirection: "column" }}>
+                <SecurityBrowserPanel
+                  ws={socket || wsRef.current}
+                  activeSessionId={sessionId}
                 />
               </div>
             ) : activeTab === "model_center" ? (
@@ -1243,25 +1661,28 @@ export default function Home() {
               </>
             ) : activeTab === "vm_sandbox" ? (
               <>
-                {/* VM Sandbox Banner */}
-                <div className={`vm-status-banner ${vmStatus?.worker_online ? "" : "offline"}`}>
+                {/* VM Sandbox / Execution Plane Banner */}
+                <div className={`vm-status-banner ${vmStatus?.worker_online || vmStatus?.execution_plane?.is_connected ? "" : "offline"}`}>
                   <div>
                     <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
-                      <span className={`dot ${vmStatus?.worker_online ? "connected" : "disconnected"}`} />
+                      <span className={`dot ${vmStatus?.worker_online || vmStatus?.execution_plane?.is_connected ? "connected" : "disconnected"}`} />
                       <strong style={{ fontSize: "13px", color: "#f1f5f9" }}>
-                        {vmStatus?.vm_name || "kali-linux-2026.1-virtualbox-amd64"}
+                        {vmStatus?.execution_plane?.backend_name || vmStatus?.vm_name || "Kali Execution Plane"}
                       </strong>
                     </div>
                     <div style={{ fontSize: "11px", color: "var(--text-muted)", marginTop: "4px" }}>
-                      VirtualBox NAT • Host 2222 ➔ Guest 22 (SSH) • Host 9999 ➔ Guest 9999 (Worker)
+                      {vmStatus?.execution_plane?.host_os
+                        ? `Host: ${vmStatus.execution_plane.host_os} • Plane: ${vmStatus.execution_plane.plane_type}`
+                        : "VirtualBox NAT • Host 2222 ➔ Guest 22 (SSH) • Host 9999 ➔ Guest 9999 (Worker)"}
+                      {vmStatus?.execution_plane?.win_kex?.ready_for_phase5_gui ? " • Win-KeX (GUI Ready)" : ""}
                     </div>
                   </div>
                   <div style={{ textAlign: "right" }}>
-                    <span className={`role-badge ${vmStatus?.worker_online ? "primary" : "fallback"}`}>
-                      {vmStatus?.worker_online ? "WORKER READY" : "OFFLINE"}
+                    <span className={`role-badge ${vmStatus?.worker_online || vmStatus?.execution_plane?.is_connected ? "primary" : "fallback"}`}>
+                      {vmStatus?.worker_online ? "WORKER READY" : vmStatus?.execution_plane?.is_connected ? "PLANE READY" : "OFFLINE"}
                     </span>
                     <div style={{ fontSize: "10px", color: "var(--text-muted)", marginTop: "4px" }}>
-                      State: {vmStatus?.vm_state || "unknown"}
+                      State: {vmStatus?.execution_plane?.is_connected ? "Connected" : vmStatus?.vm_state || "unknown"}
                     </div>
                   </div>
                 </div>
@@ -1346,6 +1767,68 @@ export default function Home() {
                       ⏪ Reset to Baseline
                     </button>
                   </div>
+                </div>
+
+                {/* Disposable Workspace Manager (Per Project/Session) */}
+                <div className="proof-card">
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "8px" }}>
+                    <h3>Disposable Kali VM Workspaces (Per Project/Session)</h3>
+                    <div style={{ display: "flex", gap: "6px" }}>
+                      <button
+                        className="quick-btn secondary"
+                        style={{ padding: "2px 8px", fontSize: "10px" }}
+                        onClick={refreshWorkspaces}
+                      >
+                        🔄 Refresh
+                      </button>
+                      <button
+                        className="quick-btn"
+                        style={{ padding: "2px 8px", fontSize: "10px", background: "rgba(56, 189, 248, 0.2)", color: "#38bdf8" }}
+                        onClick={handleProvisionWorkspace}
+                        disabled={wsStatus !== "connected"}
+                      >
+                        ⚡ Boot New VM
+                      </button>
+                    </div>
+                  </div>
+
+                  {activeWorkspace ? (
+                    <div style={{ background: "rgba(16, 185, 129, 0.08)", border: "1px solid rgba(16, 185, 129, 0.3)", borderRadius: "8px", padding: "10px", marginBottom: "10px" }}>
+                      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                        <span style={{ fontSize: "12px", fontWeight: 600, color: "#10b981" }}>
+                          Active Disposable Workspace: {activeWorkspace}
+                        </span>
+                        <button
+                          className="quick-btn"
+                          style={{ padding: "2px 6px", fontSize: "10px", background: "rgba(244, 63, 94, 0.2)", color: "#f43f5e", borderColor: "rgba(244, 63, 94, 0.4)" }}
+                          onClick={handleTerminateWorkspace}
+                        >
+                          Purge Storage &amp; Destroy VM
+                        </button>
+                      </div>
+                      <div style={{ fontSize: "11px", color: "var(--text-muted)", marginTop: "4px", fontFamily: "var(--font-mono)" }}>
+                        Ephemeral Guest: /tmp/kairo_workspaces/{activeWorkspace}/artifacts
+                      </div>
+                    </div>
+                  ) : (
+                    <div style={{ fontSize: "12px", color: "var(--text-muted)", fontStyle: "italic", marginBottom: "8px" }}>
+                      No active disposable workspace bound. Commands execute in default guest path /home/kali.
+                    </div>
+                  )}
+
+                  {workspacesList.length > 0 && (
+                    <div style={{ display: "flex", flexDirection: "column", gap: "6px" }}>
+                      <div style={{ fontSize: "11px", color: "#64748b", fontWeight: 600 }}>Provisioned Workspaces ({workspacesList.length}):</div>
+                      {workspacesList.slice(0, 5).map((w) => (
+                        <div key={w.workspace_id} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", background: "rgba(255, 255, 255, 0.03)", padding: "6px 8px", borderRadius: "6px", fontSize: "11px" }}>
+                          <span style={{ fontFamily: "var(--font-mono)", color: "#e2e8f0" }}>{w.workspace_id.slice(0, 16)}... ({w.project_name})</span>
+                          <span style={{ padding: "1px 6px", borderRadius: "4px", fontSize: "9px", background: w.status === "READY" ? "rgba(16, 185, 129, 0.2)" : "rgba(244, 63, 94, 0.2)", color: w.status === "READY" ? "#10b981" : "#f43f5e" }}>
+                            {w.status}
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                  )}
                 </div>
 
                 {/* VM Snapshot Inventory & Rollback */}
@@ -1581,6 +2064,23 @@ export default function Home() {
             )}
           </div>
         </aside>
+
+        {/* Mobile-Only Read-Only / Limited Terminal View */}
+        <section className={`mobile-terminal-container ${mobileTab !== "terminal" ? "mobile-hidden" : ""}`}>
+          <MobileTerminalView
+            ws={socket || wsRef.current}
+            activeTaskId={activeTaskId}
+            activeWorkspace={activeWorkspace}
+            onRunCommand={(cmd: string, args: string[]) => {
+              sendToolCall("kali.exec.v1", {
+                command: cmd,
+                args: args,
+                snapshot_before: false,
+                timeout_ms: 10000,
+              });
+            }}
+          />
+        </section>
       </div>
     </div>
   );

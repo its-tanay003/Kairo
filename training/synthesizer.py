@@ -452,6 +452,25 @@ class SFTDataSynthesizer:
         elif tool_id == "metasploit.rpc.v1":
             args["module"] = "auxiliary/scanner/http/dir_scanner"
             args["rhosts"] = target_obj["ip"]
+        elif tool_id == "burpsuite.gui.v1":
+            if "workflow" not in args:
+                args["workflow"] = "toggle_proxy"
+                args["params"] = {"enable": True}
+        elif tool_id == "wireshark.gui.v1":
+            if "workflow" not in args:
+                args["workflow"] = "start_capture"
+                args["params"] = {"interface": "eth0", "capture_filter": f"host {target_obj['ip']}"}
+        elif tool_id == "zap.gui.v1":
+            if "workflow" not in args:
+                args["workflow"] = "run_spider"
+                args["params"] = {"target_url": target_obj["url"], "max_depth": 3}
+        elif tool_id == "browser.security.v1":
+            if "workflow" not in args and "action" not in args:
+                args["workflow"] = "xss_check"
+                args["target_url"] = f"{target_obj['url']}/search.php"
+                args["selector"] = "input[name='q']"
+                args["payload"] = "<script>alert('kairo-xss')</script>"
+
 
     def _ensure_required_inputs(self, tool_id: str, args: Dict[str, Any]) -> None:
         target_obj = LAB_TARGETS[0]
@@ -716,12 +735,75 @@ class SFTDataSynthesizer:
             obs = {"exit_code": 0, "summary": "System alive and responsive"}
             return goal, args, obs, "diagnostic"
 
+        elif t_id == "burpsuite.gui.v1":
+            goal = f"Intercept and inspect HTTP proxy traffic on {target['host']}"
+            args = {
+                "workflow": "toggle_proxy",
+                "params": {"enable": True},
+            }
+            obs = {
+                "exit_code": 0,
+                "status": "success",
+                "intercept_enabled": True,
+                "summary": "Burp Suite proxy intercept active on 127.0.0.1:8080",
+                "visual_evidence": "screenshot_burp_intercept.png",
+            }
+            return goal, args, obs, "gui_automation"
+
+        elif t_id == "wireshark.gui.v1":
+            goal = f"Capture raw network packet trace on interface eth0 for {target['ip']}"
+            args = {
+                "workflow": "start_capture",
+                "params": {"interface": "eth0", "capture_filter": f"host {target['ip']}"},
+            }
+            obs = {
+                "exit_code": 0,
+                "status": "success",
+                "interface": "eth0",
+                "summary": f"Wireshark packet capture active on eth0 for {target['ip']}",
+                "visual_evidence": "screenshot_wireshark_capture.png",
+            }
+            return goal, args, obs, "packet_capture_analysis"
+
+        elif t_id == "zap.gui.v1":
+            goal = f"Execute automated spider crawl and alert audit on {target['url']}"
+            args = {
+                "workflow": "run_spider",
+                "params": {"target_url": target["url"], "max_depth": 3},
+            }
+            obs = {
+                "exit_code": 0,
+                "status": "success",
+                "summary": f"OWASP ZAP spider mapped 34 endpoints on {target['url']}",
+                "visual_evidence": "screenshot_zap_spider.png",
+            }
+            return goal, args, obs, "web_vulnerability_scan"
+
+        elif t_id == "browser.security.v1":
+            goal = f"Perform visible browser verification for reflected XSS and authentication on {target['url']}"
+            args = {
+                "workflow": "xss_check",
+                "target_url": f"{target['url']}/search.php",
+                "selector": "input[name='q']",
+                "payload": "<script>alert('kairo-verified')</script>",
+            }
+            obs = {
+                "exit_code": 0,
+                "status": "success",
+                "xss_reflected": True,
+                "dialog_intercepted": "kairo-verified",
+                "summary": f"Reflected XSS verified with dialog alert on {target['url']}",
+                "visual_evidence": "screenshot_browser_xss.png",
+            }
+            return goal, args, obs, "xss_testing"
+
         else:
             # shell.run.v1
             goal = f"Execute supervised diagnostic command on {target['ip']}"
             args = {"command": f"python -c 'print(\"target {target['ip']} active\")'"}
             obs = {"exit_code": 0, "summary": f"target {target['ip']} active"}
             return goal, args, obs, cap
+
 
     def _infer_next_step(self, category: str, success: bool) -> str:
         if not success:

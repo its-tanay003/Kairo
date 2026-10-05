@@ -18,7 +18,9 @@ Each finding is represented as a structured card:
 - recovery_path: Full attempt history / recovery lineage if Task 2.4/2.5 fired
 """
 
+import base64
 import hashlib
+import io
 import json
 import os
 import sqlite3
@@ -540,6 +542,106 @@ class EvidenceStore:
             image_path=image_path,
             thumbnail_b64=thumbnail_b64,
             dom_snapshot=dom_snapshot,
+        )
+        self.store_evidence(ev)
+        return ev
+
+    def save_visual_evidence(
+        self,
+        task_id: str,
+        caption: str,
+        image_data: Union[bytes, str, Path, Any] = None,
+        dom_snapshot: Optional[str] = None,
+        title: Optional[str] = None,
+        session_id: Optional[str] = None,
+        plan_id: Optional[str] = None,
+        metadata: Optional[Dict[str, Any]] = None,
+    ) -> VisualEvidence:
+        """
+        Saves screenshot image bytes or file as an artifact with SHA-256 provenance,
+        generates thumbnail and metadata, and persists VisualEvidence in SQLite artifacts table.
+        """
+        img_filename = f"screenshot_{task_id}_{uuid.uuid4().hex[:8]}.png"
+        img_target_path = self.artifacts_dir / img_filename
+
+        raw_bytes: Optional[bytes] = None
+        dimensions: Optional[Dict[str, int]] = None
+        thumbnail_b64: Optional[str] = None
+
+        if isinstance(image_data, bytes):
+            raw_bytes = image_data
+            img_target_path.write_bytes(raw_bytes)
+        elif isinstance(image_data, (str, Path)):
+            p = Path(image_data)
+            if p.is_file():
+                raw_bytes = p.read_bytes()
+                img_target_path.write_bytes(raw_bytes)
+        elif image_data is not None and hasattr(image_data, "save"):
+            # PIL Image object
+            buf = io.BytesIO()
+            image_data.save(buf, format="PNG")
+            raw_bytes = buf.getvalue()
+            img_target_path.write_bytes(raw_bytes)
+            dimensions = {"width": int(getattr(image_data, "width", 1024)), "height": int(getattr(image_data, "height", 768))}
+
+        sha256_hash = ""
+        size_bytes = 0
+        if raw_bytes:
+            sha256_hash = hashlib.sha256(raw_bytes).hexdigest()
+            size_bytes = len(raw_bytes)
+            try:
+                from PIL import Image
+                if dimensions is None:
+                    with Image.open(io.BytesIO(raw_bytes)) as pil_img:
+                        dimensions = {"width": pil_img.width, "height": pil_img.height}
+                with Image.open(io.BytesIO(raw_bytes)) as pil_img:
+                    thumb = pil_img.copy()
+                    thumb.thumbnail((240, 160))
+                    thumb_buf = io.BytesIO()
+                    thumb.save(thumb_buf, format="PNG")
+                    thumbnail_b64 = f"data:image/png;base64,{base64.b64encode(thumb_buf.getvalue()).decode('ascii')}"
+            except Exception:
+                pass
+
+            img_meta = {
+                "evidence_class": "visual",
+                "caption": caption,
+                "dimensions": dimensions,
+                **(metadata or {}),
+            }
+            img_artifact = Artifact(
+                task_id=task_id,
+                filename=img_filename,
+                filepath=str(img_target_path.resolve()),
+                size_bytes=size_bytes,
+                sha256=sha256_hash,
+                mime_type="image/png",
+                created_at=datetime.now(timezone.utc).isoformat(),
+                metadata=json.dumps(img_meta),
+            )
+            insert_artifact(img_artifact, self.db_path)
+
+        meta = {
+            "window_title": (metadata or {}).get("window_title", ""),
+            "visible_panel": (metadata or {}).get("visible_panel", ""),
+            "workflow": (metadata or {}).get("workflow", ""),
+            "image_sha256": sha256_hash,
+            **(metadata or {}),
+        }
+
+        ev = VisualEvidence(
+            evidence_id=f"vis_{uuid.uuid4().hex[:10]}",
+            evidence_class=EvidenceClass.VISUAL,
+            title=title or f"Visual: {caption[:40]}",
+            task_id=task_id,
+            session_id=session_id,
+            plan_id=plan_id,
+            caption=caption,
+            image_path=str(img_target_path.resolve()) if raw_bytes else None,
+            thumbnail_b64=thumbnail_b64,
+            dimensions=dimensions,
+            dom_snapshot=dom_snapshot,
+            metadata=meta,
         )
         self.store_evidence(ev)
         return ev

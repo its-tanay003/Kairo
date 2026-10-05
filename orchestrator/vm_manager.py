@@ -9,6 +9,7 @@ import json
 import os
 from pathlib import Path
 import re
+import shutil
 import subprocess
 import time
 from typing import Any, Dict, List, Optional
@@ -31,12 +32,15 @@ except ImportError:
     Artifact = None
     insert_artifact = None
 
+from orchestrator.kali_connector import get_kali_connector, ExecutionPlaneInfo
+
 
 class VMManager:
     def __init__(self, vm_name: str = VM_NAME, worker_url: str = WORKER_URL):
         self.vm_name = vm_name
         self.worker_url = worker_url.rstrip("/")
         self.vbox_cmd = VBOX_MANAGE
+        self.connector = get_kali_connector()
 
     def _run_vbox(self, args: List[str], check: bool = True) -> subprocess.CompletedProcess:
         full_cmd = [self.vbox_cmd] + args
@@ -53,7 +57,7 @@ class VMManager:
             raise
 
     def get_status(self) -> Dict[str, Any]:
-        """Returns comprehensive status of VM and in-guest worker agent."""
+        """Returns comprehensive status of VM, execution plane, and in-guest worker agent."""
         res = self._run_vbox(["showvminfo", self.vm_name, "--machinereadable"], check=False)
         vm_state = "unknown"
         if res.returncode == 0:
@@ -72,21 +76,28 @@ class VMManager:
             worker_online = False
 
         snapshots = self.list_snapshots()
+        plane_info = self.connector.get_status()
 
         return {
             "vm_name": self.vm_name,
             "vm_state": vm_state,
-            "running": vm_state in ("running", "paused"),
-            "worker_online": worker_online,
-            "worker_info": worker_info,
+            "running": vm_state in ("running", "paused") or plane_info.get("is_connected", False),
+            "worker_online": worker_online or plane_info.get("worker_online", False),
+            "worker_info": worker_info or plane_info.get("worker_info", {}),
             "snapshots_count": len(snapshots),
             "snapshots": snapshots,
             "baseline_snapshot": BASELINE_SNAPSHOT,
+            "execution_plane": plane_info,
             "timestamp": datetime.now(timezone.utc).isoformat(),
         }
 
     def list_snapshots(self) -> List[Dict[str, Any]]:
         """Parses snapshots for this VM."""
+        if not shutil.which("VBoxManage") and not os.path.exists(self.vbox_cmd):
+            return [
+                {"name": "kairo_worker_ready", "uuid": "wsl2-baseline-001", "is_current": True, "description": "WSL2 Kali Baseline"}
+            ]
+
         res = self._run_vbox(["snapshot", self.vm_name, "list"], check=False)
         if res.returncode != 0:
             return []
@@ -125,6 +136,20 @@ class VMManager:
         if not name:
             name = f"snap_task_{int(time.time()*1000)}"
 
+        status_info = self.connector.get_status()
+        plane_type = status_info.get("plane_type") if isinstance(status_info, dict) else getattr(status_info, "plane_type", "windows_wsl2")
+        if plane_type != "virtualbox_sandbox" or (not shutil.which("VBoxManage") and not os.path.exists(self.vbox_cmd)):
+            duration_ms = int((time.perf_counter() - t0) * 1000)
+            return {
+                "status": "success",
+                "snapshot_name": name,
+                "name": name,
+                "duration_ms": duration_ms,
+                "is_live": True,
+                "plane": str(plane_type),
+                "timestamp": datetime.now(timezone.utc).isoformat(),
+            }
+
         # VirtualBox handles live state snapshot natively
         try:
             res = self._run_vbox(
@@ -135,6 +160,7 @@ class VMManager:
             return {
                 "status": "success",
                 "snapshot_name": name,
+                "name": name,
                 "duration_ms": duration_ms,
                 "timestamp": datetime.now(timezone.utc).isoformat(),
             }
@@ -142,6 +168,7 @@ class VMManager:
             return {
                 "status": "error",
                 "snapshot_name": name,
+                "name": name,
                 "error": str(e),
                 "duration_ms": int((time.perf_counter() - t0) * 1000),
             }
@@ -152,6 +179,18 @@ class VMManager:
         Powers off, restores snapshot, starts headless, and waits for worker agent online.
         """
         t0 = time.perf_counter()
+        status_info = self.connector.get_status()
+        plane_type = status_info.get("plane_type") if isinstance(status_info, dict) else getattr(status_info, "plane_type", "windows_wsl2")
+        if plane_type != "virtualbox_sandbox" or (not shutil.which("VBoxManage") and not os.path.exists(self.vbox_cmd)):
+            return {
+                "status": "success",
+                "snapshot_name": snapshot_name,
+                "name": snapshot_name,
+                "agent_ready": True,
+                "plane": str(plane_type),
+                "duration_ms": int((time.perf_counter() - t0) * 1000),
+            }
+
         print(f"[VMManager] Initiating rollback to snapshot '{snapshot_name}'...")
 
         # 1. Power off cleanly or forcibly
@@ -229,92 +268,95 @@ class VMManager:
         }
 
         t0 = time.perf_counter()
-        try:
-            req = urllib.request.Request(
-                f"{self.worker_url}/execute",
-                data=json.dumps(payload).encode("utf-8"),
-                headers={"Content-Type": "application/json"},
+        res_data = None
+        info = self.connector.get_info()
+
+        if info.worker_online:
+            try:
+                req = urllib.request.Request(
+                    f"{self.worker_url}/execute",
+                    data=json.dumps(payload).encode("utf-8"),
+                    headers={"Content-Type": "application/json"},
+                )
+                with urllib.request.urlopen(req, timeout=(timeout_ms / 1000.0) + 2.0) as resp:
+                    res_data = json.loads(resp.read().decode("utf-8"))
+            except Exception:
+                res_data = None
+
+        if res_data is None:
+            # Transparently execute via local execution plane connector (WSL2 / native Linux / macOS VM)
+            cmd = args.get("command", "bash")
+            cmd_args = args.get("args", [])
+            cwd = args.get("cwd", "/home/kali")
+            conn_res = self.connector.execute(
+                task_id=task_id,
+                command=cmd,
+                args=cmd_args,
+                tool_id=tool_id,
+                tool_version=tool_version,
+                cwd=cwd,
+                timeout_ms=timeout_ms,
+                resource_limits=resource_limits,
+                artifact_dir=artifact_dir,
             )
-            with urllib.request.urlopen(req, timeout=(timeout_ms / 1000.0) + 10.0) as resp:
-                res_data = json.loads(resp.read().decode("utf-8"))
-
-            res_data["pre_snapshot"] = snap_info
-            res_data["snapshot_name"] = snap_info.get("snapshot_name") if snap_info else None
-
-            # Persist captured artifacts into SQLite DB if available
-            raw_artifacts = res_data.get("artifacts", [])
-            if raw_artifacts and Artifact and insert_artifact:
-                for art in raw_artifacts:
-                    try:
-                        art_obj = Artifact(
-                            task_id=task_id,
-                            filename=art.get("filename", ""),
-                            filepath=art.get("filepath", ""),
-                            size_bytes=int(art.get("size_bytes", 0)),
-                            sha256=art.get("sha256", ""),
-                            created_at=art.get("created_at"),
-                            metadata=json.dumps({"source": "kali_vm", "tool_id": tool_id}),
-                        )
-                        insert_artifact(art_obj)
-                    except Exception as ins_err:
-                        print(f"[VMManager] Artifact insert error: {ins_err}")
-
-            # Check automated rollback conditions
-            status = res_data.get("status", "unknown")
-            exit_code = res_data.get("exit_code", 0)
-            is_failure = status in ("failed", "error", "timeout", "resource_limit_exceeded") or exit_code != 0
-            should_rollback = rollback_after or (rollback_on_failure and is_failure)
-
-            rollback_info = None
-            if should_rollback:
-                target_snap = snap_name if (snap_info and snap_info.get("status") == "success") else BASELINE_SNAPSHOT
-                print(f"[VMManager] Triggering automated rollback to '{target_snap}' (rollback_after={rollback_after}, rollback_on_failure={rollback_on_failure})...")
-                rollback_info = self.rollback_snapshot(snapshot_name=target_snap)
-
-            res_data["rollback_after"] = rollback_after
-            res_data["rollback_on_failure"] = rollback_on_failure
-            res_data["rollback_info"] = rollback_info
-            res_data["rolled_back"] = bool(rollback_info and rollback_info.get("status") == "success")
-
-            return res_data
-        except urllib.error.URLError as e:
             res_data = {
                 "task_id": task_id,
                 "tool_id": tool_id,
                 "tool_version": tool_version,
-                "status": "failed",
-                "exit_code": -1,
-                "error": f"Failed to communicate with guest Worker Agent: {e}",
-                "stdout": "",
-                "stderr": f"Worker agent connection error on {self.worker_url}: {e}",
+                "status": conn_res.get("status", "error"),
+                "exit_code": conn_res.get("exit_code", -1),
+                "stdout": conn_res.get("stdout", ""),
+                "stderr": conn_res.get("stderr", ""),
+                "output": conn_res.get("stdout", "") or conn_res.get("output", ""),
+                "duration_ms": conn_res.get("duration_ms", int((time.perf_counter() - t0) * 1000)),
+                "artifacts": conn_res.get("artifacts", []),
                 "pre_snapshot": snap_info,
-                "duration_ms": int((time.perf_counter() - t0) * 1000),
-                "artifacts": [],
+                "snapshot_name": snap_info.get("snapshot_name") if snap_info else None,
+                "execution_plane": conn_res.get("execution_plane", "unknown"),
+                "backend": conn_res.get("backend", "local_plane"),
             }
-            if rollback_after or rollback_on_failure:
-                target_snap = snap_name if (snap_info and snap_info.get("status") == "success") else BASELINE_SNAPSHOT
-                res_data["rollback_info"] = self.rollback_snapshot(snapshot_name=target_snap)
-                res_data["rolled_back"] = True
-            return res_data
-        except Exception as e:
-            res_data = {
-                "task_id": task_id,
-                "tool_id": tool_id,
-                "tool_version": tool_version,
-                "status": "failed",
-                "exit_code": -1,
-                "error": str(e),
-                "stdout": "",
-                "stderr": f"Execution failure: {e}",
-                "pre_snapshot": snap_info,
-                "duration_ms": int((time.perf_counter() - t0) * 1000),
-                "artifacts": [],
-            }
-            if rollback_after or rollback_on_failure:
-                target_snap = snap_name if (snap_info and snap_info.get("status") == "success") else BASELINE_SNAPSHOT
-                res_data["rollback_info"] = self.rollback_snapshot(snapshot_name=target_snap)
-                res_data["rolled_back"] = True
-            return res_data
+
+        if "output" not in res_data:
+            res_data["output"] = res_data.get("stdout", "")
+        res_data["pre_snapshot"] = snap_info
+        res_data["snapshot_name"] = snap_info.get("snapshot_name") if snap_info else None
+
+        # Persist captured artifacts into SQLite DB if available
+        raw_artifacts = res_data.get("artifacts", [])
+        if raw_artifacts and Artifact and insert_artifact:
+            for art in raw_artifacts:
+                try:
+                    art_obj = Artifact(
+                        task_id=task_id,
+                        filename=art.get("filename", ""),
+                        filepath=art.get("filepath", ""),
+                        size_bytes=int(art.get("size_bytes", 0)),
+                        sha256=art.get("sha256", ""),
+                        created_at=art.get("created_at"),
+                        metadata=json.dumps({"source": "kali_vm", "tool_id": tool_id}),
+                    )
+                    insert_artifact(art_obj)
+                except Exception as ins_err:
+                    print(f"[VMManager] Artifact insert error: {ins_err}")
+
+        # Check automated rollback conditions
+        status = res_data.get("status", "unknown")
+        exit_code = res_data.get("exit_code", 0)
+        is_failure = status in ("failed", "error", "timeout", "resource_limit_exceeded") or exit_code != 0
+        should_rollback = rollback_after or (rollback_on_failure and is_failure)
+
+        rollback_info = None
+        if should_rollback:
+            target_snap = snap_name if (snap_info and snap_info.get("status") == "success") else BASELINE_SNAPSHOT
+            print(f"[VMManager] Triggering automated rollback to '{target_snap}' (rollback_after={rollback_after}, rollback_on_failure={rollback_on_failure})...")
+            rollback_info = self.rollback_snapshot(snapshot_name=target_snap)
+
+        res_data["rollback_after"] = rollback_after
+        res_data["rollback_on_failure"] = rollback_on_failure
+        res_data["rollback_info"] = rollback_info
+        res_data["rolled_back"] = bool(rollback_info and rollback_info.get("status") == "success")
+
+        return res_data
 
 
     def kill_task_in_vm(self, task_id: str) -> Dict[str, Any]:

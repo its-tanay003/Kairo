@@ -1,0 +1,1877 @@
+=== SECTION 1: KAIRO REGISTERED TOOL SPECIFICATIONS & MAN PAGES ===
+TOOL SPECIFICATION: browser.security.v1
+NAME: Playwright Security Testing Browser Adapter (Version 1.0.0)
+CATEGORY: web_security | TIER: 2 | NOISE: medium
+BINARY: playwright
+DESCRIPTION: Playwright-driven security-testing browser with visible state extraction, sequential action history, and scripted testing workflows (XSS checks, auth walkthroughs, DOM/cookie audits) captured as Visual Evidence.
+CAPABILITIES: browser_automation, dast_testing, xss_testing, auth_walkthrough, dom_inspection, cookie_security, visual_evidence
+SYNOPSIS:
+NAME
+    playwright - Playwright Security Testing Browser Adapter (Version 1.0.0)
+
+SYNOPSIS
+    playwright [--action=<string>] [--workflow=<string>] [--params=<object>] [--url=<string>] [--selector=<string>] [--value=<string>] [OPTIONS...]
+
+DESCRIPTION
+    Playwright-driven security-testing browser with visible state extraction, sequential action history, and scripted testing workflows (XSS checks, auth walkthroughs, DOM/cookie audits) captured as Visual Evidence.
+    Category: WEB_SECURITY | Security Tier: 2 | Noise Rating: MEDIUM
+    Capabilities: browser_automation, dast_testing, xss_testing, auth_walkthrough, dom_inspection, cookie_security, visual_evidence
+
+OPTIONS & PARAMETERS
+    --action <string> [OPTIONAL] (default: workflow)
+        Action to perform (workflow, navigate, click, fill, type, extract_state, screenshot, history, stop)
+    --workflow <string> [OPTIONAL] (default: xss_check)
+        Scripted security workflow (xss_check, auth_walkthrough, dom_audit, cookie_audit, navigate_and_inspect)
+    --params <object> [OPTIONAL] (default: {})
+        Workflow-specific parameters (url, selector, payload, username, password, submit_selector)
+    --url <string> [OPTIONAL]
+        Target URL for browser navigation
+    --selector <string> [OPTIONAL]
+        Target CSS or XPath selector for click, fill, or inspection
+    --value <string> [OPTIONAL]
+        Value or text to fill into target input selector
+    --payload <string> [OPTIONAL]
+        Security test payload (e.g. XSS payload string)
+    --caption <string> [OPTIONAL]
+        Optional caption for captured visual evidence screenshot
+HELP TEXT:
+Usage: playwright [OPTIONS]
+
+Playwright-driven security-testing browser with visible state extraction, sequential action history, and scripted testing workflows (XSS checks, auth walkthroughs, DOM/cookie audits) captured as Visual Evidence.
+
+Options:
+  --action               Action to perform (workflow, navigate, click, fill, type, extract_state, screenshot, history, stop) [default: workflow]
+  --workflow             Scripted security workflow (xss_check, auth_walkthrough, dom_audit, cookie_audit, navigate_and_inspect) [default: xss_check]
+  --params               Workflow-specific parameters (url, selector, payload, username, password, submit_selector) [default: {}]
+  --url                  Target URL for browser navigation
+  --selector             Target CSS or XPath selector for click, fill, or inspection
+  --value                Value or text to fill into target input selector
+  --payload              Security test payload (e.g. XSS payload string)
+  --caption              Optional caption for captured visual evidence screenshot
+INPUT PROPERTIES: {
+  "action": {
+    "type": "string",
+    "description": "Action to perform (workflow, navigate, click, fill, type, extract_state, screenshot, history, stop)",
+    "default": "workflow"
+  },
+  "workflow": {
+    "type": "string",
+    "description": "Scripted security workflow (xss_check, auth_walkthrough, dom_audit, cookie_audit, navigate_and_inspect)",
+    "default": "xss_check"
+  },
+  "params": {
+    "type": "object",
+    "description": "Workflow-specific parameters (url, selector, payload, username, password, submit_selector)",
+    "default": {}
+  },
+  "url": {
+    "type": "string",
+    "description": "Target URL for browser navigation"
+  },
+  "selector": {
+    "type": "string",
+    "description": "Target CSS or XPath selector for click, fill, or inspection"
+  },
+  "value": {
+    "type": "string",
+    "description": "Value or text to fill into target input selector"
+  },
+  "payload": {
+    "type": "string",
+    "description": "Security test payload (e.g. XSS payload string)"
+  },
+  "caption": {
+    "type": "string",
+    "description": "Optional caption for captured visual evidence screenshot"
+  }
+}
+REQUIRED INPUTS: []
+--------------------------------------------------
+TOOL SPECIFICATION: burpsuite.gui.v1
+NAME: Burp Suite Community Edition GUI Adapter (Version 1.0.0)
+CATEGORY: web_security | TIER: 3 | NOISE: high
+BINARY: burpsuite
+DESCRIPTION: Supervises and automates Burp Suite Community Edition inside the Kali worker plane with periodic screenshot capture, UI-state extraction, and bounded scripted workflows.
+CAPABILITIES: web_proxy, http_interception, packet_repeater, target_mapping, gui_automation, visual_evidence
+SYNOPSIS:
+NAME
+    burpsuite - Burp Suite Community Edition GUI Adapter (Version 1.0.0)
+
+SYNOPSIS
+    burpsuite [--action=<string>] [--workflow=<string>] [--params=<object>] [--x=<integer>] [--y=<integer>] [--control_id=<string>] [OPTIONS...]
+
+DESCRIPTION
+    Supervises and automates Burp Suite Community Edition inside the Kali worker plane with periodic screenshot capture, UI-state extraction, and bounded scripted workflows.
+    Category: WEB_SECURITY | Security Tier: 3 | Noise Rating: HIGH
+    Capabilities: web_proxy, http_interception, packet_repeater, target_mapping, gui_automation, visual_evidence
+
+OPTIONS & PARAMETERS
+    --action <string> [OPTIONAL] (default: workflow)
+        Action to perform (launch, workflow, click, type, extract_state, screenshot, stop)
+    --workflow <string> [OPTIONAL] (default: init_project)
+        Scripted workflow name (init_project, toggle_proxy, inspect_proxy_history, send_to_repeater, export_target_sitemap)
+    --params <object> [OPTIONAL] (default: {})
+        Parameters for the selected scripted workflow
+    --x <integer> [OPTIONAL]
+        X coordinate for bounded mouse click
+    --y <integer> [OPTIONAL]
+        Y coordinate for bounded mouse click
+    --control_id <string> [OPTIONAL]
+        Named UI control identifier to interact with
+    --text <string> [OPTIONAL]
+        Text string to type into target control
+    --caption <string> [OPTIONAL]
+        Optional caption for on-demand visual evidence screenshot
+HELP TEXT:
+Usage: burpsuite [OPTIONS]
+
+Supervises and automates Burp Suite Community Edition inside the Kali worker plane with periodic screenshot capture, UI-state extraction, and bounded scripted workflows.
+
+Options:
+  --action               Action to perform (launch, workflow, click, type, extract_state, screenshot, stop) [default: workflow]
+  --workflow             Scripted workflow name (init_project, toggle_proxy, inspect_proxy_history, send_to_repeater, export_target_sitemap) [default: init_project]
+  --params               Parameters for the selected scripted workflow [default: {}]
+  --x                    X coordinate for bounded mouse click
+  --y                    Y coordinate for bounded mouse click
+  --control_id           Named UI control identifier to interact with
+  --text                 Text string to type into target control
+  --caption              Optional caption for on-demand visual evidence screenshot
+INPUT PROPERTIES: {
+  "action": {
+    "type": "string",
+    "description": "Action to perform (launch, workflow, click, type, extract_state, screenshot, stop)",
+    "default": "workflow"
+  },
+  "workflow": {
+    "type": "string",
+    "description": "Scripted workflow name (init_project, toggle_proxy, inspect_proxy_history, send_to_repeater, export_target_sitemap)",
+    "default": "init_project"
+  },
+  "params": {
+    "type": "object",
+    "description": "Parameters for the selected scripted workflow",
+    "default": {}
+  },
+  "x": {
+    "type": "integer",
+    "description": "X coordinate for bounded mouse click"
+  },
+  "y": {
+    "type": "integer",
+    "description": "Y coordinate for bounded mouse click"
+  },
+  "control_id": {
+    "type": "string",
+    "description": "Named UI control identifier to interact with"
+  },
+  "text": {
+    "type": "string",
+    "description": "Text string to type into target control"
+  },
+  "caption": {
+    "type": "string",
+    "description": "Optional caption for on-demand visual evidence screenshot"
+  }
+}
+REQUIRED INPUTS: []
+--------------------------------------------------
+TOOL SPECIFICATION: dig.lookup.v1
+NAME: DNS Lookup and Enumeration (dig) (Version 1.0.0)
+CATEGORY: recon | TIER: 1 | NOISE: low
+BINARY: dig
+DESCRIPTION: DNS interrogation tool. Supports A, AAAA, MX, TXT, NS, SOA, CNAME, and ANY record queries. Outputs structured DNS records.
+CAPABILITIES: dns_resolution, dns_record_enumeration, zone_transfer_attempt, reverse_dns_lookup
+SYNOPSIS:
+NAME
+    dig - DNS Lookup and Enumeration (dig) (Version 1.0.0)
+
+SYNOPSIS
+    dig --target=<string> [--record_type=<string>] [--server=<string>] [--port=<integer>] [--timeout=<integer>] [--extra_args=<array>]
+
+DESCRIPTION
+    DNS interrogation tool. Supports A, AAAA, MX, TXT, NS, SOA, CNAME, and ANY record queries. Outputs structured DNS records.
+    Category: RECON | Security Tier: 1 | Noise Rating: LOW
+    Capabilities: dns_resolution, dns_record_enumeration, zone_transfer_attempt, reverse_dns_lookup
+
+OPTIONS & PARAMETERS
+    --target <string> [REQUIRED]
+        Domain name or IP to query
+    --record_type <string> [OPTIONAL] (default: A) [Choices: A, AAAA, MX, TXT, NS, SOA, CNAME, PTR, ANY, AXFR]
+        DNS record type
+    --server <string> [OPTIONAL] (default: )
+        DNS server to query (e.g. @8.8.8.8)
+    --port <integer> [OPTIONAL] (default: 53)
+        DNS server port
+    --timeout <integer> [OPTIONAL] (default: 5)
+        Query timeout in seconds
+    --extra_args <array> [OPTIONAL] (default: [])
+        No description provided.
+HELP TEXT:
+Usage: dig [OPTIONS]
+
+DNS interrogation tool. Supports A, AAAA, MX, TXT, NS, SOA, CNAME, and ANY record queries. Outputs structured DNS records.
+
+Options:
+  --target               Domain name or IP to query
+  --record_type          DNS record type [default: A]
+  --server               DNS server to query (e.g. @8.8.8.8) [default: ]
+  --port                 DNS server port [default: 53]
+  --timeout              Query timeout in seconds [default: 5]
+  --extra_args            [default: []]
+INPUT PROPERTIES: {
+  "target": {
+    "type": "string",
+    "description": "Domain name or IP to query"
+  },
+  "record_type": {
+    "type": "string",
+    "enum": [
+      "A",
+      "AAAA",
+      "MX",
+      "TXT",
+      "NS",
+      "SOA",
+      "CNAME",
+      "PTR",
+      "ANY",
+      "AXFR"
+    ],
+    "description": "DNS record type",
+    "default": "A"
+  },
+  "server": {
+    "type": "string",
+    "description": "DNS server to query (e.g. @8.8.8.8)",
+    "default": ""
+  },
+  "port": {
+    "type": "integer",
+    "description": "DNS server port",
+    "default": 53
+  },
+  "timeout": {
+    "type": "integer",
+    "description": "Query timeout in seconds",
+    "default": 5
+  },
+  "extra_args": {
+    "type": "array",
+    "items": {
+      "type": "string"
+    },
+    "default": []
+  }
+}
+REQUIRED INPUTS: ["target"]
+--------------------------------------------------
+TOOL SPECIFICATION: exiftool.extract.v1
+NAME: ExifTool Metadata Extractor (Version 1.0.0)
+CATEGORY: recon | TIER: 1 | NOISE: low
+BINARY: exiftool
+DESCRIPTION: Extracts EXIF, IPTC, XMP and other metadata from image, document, and media files. Uses -json for structured output.
+CAPABILITIES: metadata_extraction, exif_parsing, gps_location_extraction, document_metadata
+SYNOPSIS:
+NAME
+    exiftool - ExifTool Metadata Extractor (Version 1.0.0)
+
+SYNOPSIS
+    exiftool --file_path=<string> [--tags=<array>] [--recursive=<boolean>] [--extra_args=<array>]
+
+DESCRIPTION
+    Extracts EXIF, IPTC, XMP and other metadata from image, document, and media files. Uses -json for structured output.
+    Category: RECON | Security Tier: 1 | Noise Rating: LOW
+    Capabilities: metadata_extraction, exif_parsing, gps_location_extraction, document_metadata
+
+OPTIONS & PARAMETERS
+    --file_path <string> [REQUIRED]
+        Path to file(s) inside Kali VM to analyze (glob supported)
+    --tags <array> [OPTIONAL] (default: [])
+        Specific tags to extract (empty = all)
+    --recursive <boolean> [OPTIONAL] (default: False)
+        Recursively process directories
+    --extra_args <array> [OPTIONAL] (default: [])
+        No description provided.
+HELP TEXT:
+Usage: exiftool [OPTIONS]
+
+Extracts EXIF, IPTC, XMP and other metadata from image, document, and media files. Uses -json for structured output.
+
+Options:
+  --file_path            Path to file(s) inside Kali VM to analyze (glob supported)
+  --tags                 Specific tags to extract (empty = all) [default: []]
+  --recursive            Recursively process directories [default: False]
+  --extra_args            [default: []]
+INPUT PROPERTIES: {
+  "file_path": {
+    "type": "string",
+    "description": "Path to file(s) inside Kali VM to analyze (glob supported)"
+  },
+  "tags": {
+    "type": "array",
+    "items": {
+      "type": "string"
+    },
+    "description": "Specific tags to extract (empty = all)",
+    "default": []
+  },
+  "recursive": {
+    "type": "boolean",
+    "description": "Recursively process directories",
+    "default": false
+  },
+  "extra_args": {
+    "type": "array",
+    "items": {
+      "type": "string"
+    },
+    "default": []
+  }
+}
+REQUIRED INPUTS: ["file_path"]
+--------------------------------------------------
+TOOL SPECIFICATION: ffuf.fuzz.v1
+NAME: FFUF Web Fuzzer (Version 1.0.0)
+CATEGORY: recon | TIER: 2 | NOISE: medium
+BINARY: ffuf
+DESCRIPTION: Fast web fuzzer for URL, header, POST data, and virtual host discovery. Outputs structured JSON results via -of json.
+CAPABILITIES: web_fuzzing, directory_enumeration, parameter_fuzzing, vhost_fuzzing
+SYNOPSIS:
+NAME
+    ffuf - FFUF Web Fuzzer (Version 1.0.0)
+
+SYNOPSIS
+    ffuf --url=<string> [--wordlist=<string>] [--method=<string>] [--headers=<object>] [--data=<string>] [--filter_status=<string>] [OPTIONS...]
+
+DESCRIPTION
+    Fast web fuzzer for URL, header, POST data, and virtual host discovery. Outputs structured JSON results via -of json.
+    Category: RECON | Security Tier: 2 | Noise Rating: MEDIUM
+    Capabilities: web_fuzzing, directory_enumeration, parameter_fuzzing, vhost_fuzzing
+
+OPTIONS & PARAMETERS
+    --url <string> [REQUIRED]
+        Target URL template with FUZZ keyword (e.g. http://192.168.56.1/FUZZ)
+    --wordlist <string> [OPTIONAL] (default: /usr/share/wordlists/dirb/common.txt)
+        Wordlist path inside Kali VM
+    --method <string> [OPTIONAL] (default: GET) [Choices: GET, POST, PUT, HEAD]
+        No description provided.
+    --headers <object> [OPTIONAL] (default: {})
+        Custom headers as key-value pairs
+    --data <string> [OPTIONAL] (default: )
+        POST data (use FUZZ keyword for fuzzing)
+    --filter_status <string> [OPTIONAL] (default: 404)
+        Comma-separated HTTP status codes to filter OUT
+    --match_status <string> [OPTIONAL] (default: )
+        Comma-separated status codes to match
+    --threads <integer> [OPTIONAL] (default: 40)
+        No description provided.
+    --timeout_s <integer> [OPTIONAL] (default: 10)
+        No description provided.
+    --extra_args <array> [OPTIONAL] (default: [])
+        No description provided.
+HELP TEXT:
+Usage: ffuf [OPTIONS]
+
+Fast web fuzzer for URL, header, POST data, and virtual host discovery. Outputs structured JSON results via -of json.
+
+Options:
+  --url                  Target URL template with FUZZ keyword (e.g. http://192.168.56.1/FUZZ)
+  --wordlist             Wordlist path inside Kali VM [default: /usr/share/wordlists/dirb/common.txt]
+  --method                [default: GET]
+  --headers              Custom headers as key-value pairs [default: {}]
+  --data                 POST data (use FUZZ keyword for fuzzing) [default: ]
+  --filter_status        Comma-separated HTTP status codes to filter OUT [default: 404]
+  --match_status         Comma-separated status codes to match [default: ]
+  --threads               [default: 40]
+  --timeout_s             [default: 10]
+  --extra_args            [default: []]
+INPUT PROPERTIES: {
+  "url": {
+    "type": "string",
+    "description": "Target URL template with FUZZ keyword (e.g. http://192.168.56.1/FUZZ)"
+  },
+  "wordlist": {
+    "type": "string",
+    "default": "/usr/share/wordlists/dirb/common.txt",
+    "description": "Wordlist path inside Kali VM"
+  },
+  "method": {
+    "type": "string",
+    "enum": [
+      "GET",
+      "POST",
+      "PUT",
+      "HEAD"
+    ],
+    "default": "GET"
+  },
+  "headers": {
+    "type": "object",
+    "description": "Custom headers as key-value pairs",
+    "default": {}
+  },
+  "data": {
+    "type": "string",
+    "description": "POST data (use FUZZ keyword for fuzzing)",
+    "default": ""
+  },
+  "filter_status": {
+    "type": "string",
+    "description": "Comma-separated HTTP status codes to filter OUT",
+    "default": "404"
+  },
+  "match_status": {
+    "type": "string",
+    "description": "Comma-separated status codes to match",
+    "default": ""
+  },
+  "threads": {
+    "type": "integer",
+    "default": 40
+  },
+  "timeout_s": {
+    "type": "integer",
+    "default": 10
+  },
+  "extra_args": {
+    "type": "array",
+    "items": {
+      "type": "string"
+    },
+    "default": []
+  }
+}
+REQUIRED INPUTS: ["url"]
+--------------------------------------------------
+TOOL SPECIFICATION: gobuster.dir.v1
+NAME: Gobuster Directory/File Enumerator (Version 1.0.0)
+CATEGORY: recon | TIER: 2 | NOISE: medium
+BINARY: gobuster
+DESCRIPTION: Fast URI brute-force tool for web directory and file discovery. Uses wordlists and outputs hits to stdout with optional CSV/JSON.
+CAPABILITIES: directory_enumeration, file_enumeration, vhost_enumeration, dns_enumeration
+SYNOPSIS:
+NAME
+    gobuster - Gobuster Directory/File Enumerator (Version 1.0.0)
+
+SYNOPSIS
+    gobuster --url=<string> [--wordlist=<string>] [--mode=<string>] [--extensions=<string>] [--threads=<integer>] [--status_codes=<string>] [OPTIONS...]
+
+DESCRIPTION
+    Fast URI brute-force tool for web directory and file discovery. Uses wordlists and outputs hits to stdout with optional CSV/JSON.
+    Category: RECON | Security Tier: 2 | Noise Rating: MEDIUM
+    Capabilities: directory_enumeration, file_enumeration, vhost_enumeration, dns_enumeration
+
+OPTIONS & PARAMETERS
+    --url <string> [REQUIRED]
+        Target URL (e.g. http://192.168.56.1)
+    --wordlist <string> [OPTIONAL] (default: /usr/share/wordlists/dirbuster/directory-list-2.3-small.txt)
+        Path to wordlist file inside Kali VM
+    --mode <string> [OPTIONAL] (default: dir) [Choices: dir, file, dns, vhost]
+        Enumeration mode
+    --extensions <string> [OPTIONAL] (default: )
+        File extensions to test (e.g. php,html,txt)
+    --threads <integer> [OPTIONAL] (default: 10)
+        Number of concurrent threads
+    --status_codes <string> [OPTIONAL] (default: 200,204,301,302,307,401,403)
+        HTTP status codes to include (e.g. 200,301,302)
+    --timeout_s <integer> [OPTIONAL] (default: 10)
+        Per-request timeout in seconds
+    --extra_args <array> [OPTIONAL] (default: [])
+        No description provided.
+HELP TEXT:
+Usage: gobuster [OPTIONS]
+
+Fast URI brute-force tool for web directory and file discovery. Uses wordlists and outputs hits to stdout with optional CSV/JSON.
+
+Options:
+  --url                  Target URL (e.g. http://192.168.56.1)
+  --wordlist             Path to wordlist file inside Kali VM [default: /usr/share/wordlists/dirbuster/directory-list-2.3-small.txt]
+  --mode                 Enumeration mode [default: dir]
+  --extensions           File extensions to test (e.g. php,html,txt) [default: ]
+  --threads              Number of concurrent threads [default: 10]
+  --status_codes         HTTP status codes to include (e.g. 200,301,302) [default: 200,204,301,302,307,401,403]
+  --timeout_s            Per-request timeout in seconds [default: 10]
+  --extra_args            [default: []]
+INPUT PROPERTIES: {
+  "url": {
+    "type": "string",
+    "description": "Target URL (e.g. http://192.168.56.1)"
+  },
+  "wordlist": {
+    "type": "string",
+    "description": "Path to wordlist file inside Kali VM",
+    "default": "/usr/share/wordlists/dirbuster/directory-list-2.3-small.txt"
+  },
+  "mode": {
+    "type": "string",
+    "enum": [
+      "dir",
+      "file",
+      "dns",
+      "vhost"
+    ],
+    "description": "Enumeration mode",
+    "default": "dir"
+  },
+  "extensions": {
+    "type": "string",
+    "description": "File extensions to test (e.g. php,html,txt)",
+    "default": ""
+  },
+  "threads": {
+    "type": "integer",
+    "description": "Number of concurrent threads",
+    "default": 10
+  },
+  "status_codes": {
+    "type": "string",
+    "description": "HTTP status codes to include (e.g. 200,301,302)",
+    "default": "200,204,301,302,307,401,403"
+  },
+  "timeout_s": {
+    "type": "integer",
+    "description": "Per-request timeout in seconds",
+    "default": 10
+  },
+  "extra_args": {
+    "type": "array",
+    "items": {
+      "type": "string"
+    },
+    "default": []
+  }
+}
+REQUIRED INPUTS: ["url"]
+--------------------------------------------------
+TOOL SPECIFICATION: hashid.identify.v1
+NAME: HashID Hash Identifier + Hashcat Dry-Run (Version 1.0.0)
+CATEGORY: utility | TIER: 1 | NOISE: low
+BINARY: hashid
+DESCRIPTION: Identifies hash algorithm type from a hash string using hashid, then optionally runs hashcat --show (dry-run, no cracking) to check if hash is already in potfile.
+CAPABILITIES: hash_identification, hash_type_detection, hashcat_mode_lookup, potfile_check
+SYNOPSIS:
+NAME
+    hashid - HashID Hash Identifier + Hashcat Dry-Run (Version 1.0.0)
+
+SYNOPSIS
+    hashid --hash=<string> [--hashcat_check=<boolean>] [--wordlist=<string>] [--extra_args=<array>]
+
+DESCRIPTION
+    Identifies hash algorithm type from a hash string using hashid, then optionally runs hashcat --show (dry-run, no cracking) to check if hash is already in potfile.
+    Category: UTILITY | Security Tier: 1 | Noise Rating: LOW
+    Capabilities: hash_identification, hash_type_detection, hashcat_mode_lookup, potfile_check
+
+OPTIONS & PARAMETERS
+    --hash <string> [REQUIRED]
+        Hash string to identify (e.g. 5f4dcc3b5aa765d61d8327deb882cf99)
+    --hashcat_check <boolean> [OPTIONAL] (default: False)
+        Run hashcat --show (dry-run potfile check only, no cracking)
+    --wordlist <string> [OPTIONAL] (default: /usr/share/wordlists/rockyou.txt)
+        Wordlist path for hashcat dry-run (only used if hashcat_check=true)
+    --extra_args <array> [OPTIONAL] (default: [])
+        No description provided.
+HELP TEXT:
+Usage: hashid [OPTIONS]
+
+Identifies hash algorithm type from a hash string using hashid, then optionally runs hashcat --show (dry-run, no cracking) to check if hash is already in potfile.
+
+Options:
+  --hash                 Hash string to identify (e.g. 5f4dcc3b5aa765d61d8327deb882cf99)
+  --hashcat_check        Run hashcat --show (dry-run potfile check only, no cracking) [default: False]
+  --wordlist             Wordlist path for hashcat dry-run (only used if hashcat_check=true) [default: /usr/share/wordlists/rockyou.txt]
+  --extra_args            [default: []]
+INPUT PROPERTIES: {
+  "hash": {
+    "type": "string",
+    "description": "Hash string to identify (e.g. 5f4dcc3b5aa765d61d8327deb882cf99)"
+  },
+  "hashcat_check": {
+    "type": "boolean",
+    "description": "Run hashcat --show (dry-run potfile check only, no cracking)",
+    "default": false
+  },
+  "wordlist": {
+    "type": "string",
+    "description": "Wordlist path for hashcat dry-run (only used if hashcat_check=true)",
+    "default": "/usr/share/wordlists/rockyou.txt"
+  },
+  "extra_args": {
+    "type": "array",
+    "items": {
+      "type": "string"
+    },
+    "default": []
+  }
+}
+REQUIRED INPUTS: ["hash"]
+--------------------------------------------------
+TOOL SPECIFICATION: hello_world
+NAME: Hello World Tool (Version 1.0.0)
+CATEGORY: utility | TIER: 1 | NOISE: low
+BINARY: internal://builtin/hello_world
+DESCRIPTION: A minimal verification tool that returns a greeting and verifies service boundary execution.
+CAPABILITIES: greeting, boundary_test, service_verification
+SYNOPSIS:
+NAME
+    internal://builtin/hello_world - Hello World Tool (Version 1.0.0)
+
+SYNOPSIS
+    internal://builtin/hello_world --message=<string> [--target=<string>]
+
+DESCRIPTION
+    A minimal verification tool that returns a greeting and verifies service boundary execution.
+    Category: UTILITY | Security Tier: 1 | Noise Rating: LOW
+    Capabilities: greeting, boundary_test, service_verification
+
+OPTIONS & PARAMETERS
+    --message <string> [REQUIRED] (default: Hello from ToolRegistry!)
+        The greeting message payload
+    --target <string> [OPTIONAL] (default: World)
+        Target recipient name
+HELP TEXT:
+Usage: internal://builtin/hello_world [OPTIONS]
+
+A minimal verification tool that returns a greeting and verifies service boundary execution.
+
+Options:
+  --message              The greeting message payload [default: Hello from ToolRegistry!]
+  --target               Target recipient name [default: World]
+INPUT PROPERTIES: {
+  "message": {
+    "type": "string",
+    "description": "The greeting message payload",
+    "default": "Hello from ToolRegistry!"
+  },
+  "target": {
+    "type": "string",
+    "description": "Target recipient name",
+    "default": "World"
+  }
+}
+REQUIRED INPUTS: ["message"]
+--------------------------------------------------
+TOOL SPECIFICATION: hydra.brute.v1
+NAME: Hydra Password Brute-Forcer (Version 1.0.0)
+CATEGORY: exploitation | TIER: 3 | NOISE: high
+BINARY: hydra
+DESCRIPTION: Fast parallel network login cracker supporting 50+ protocols. Runs with -o for structured output capture.
+CAPABILITIES: password_brute_force, credential_testing, multi_protocol_login, dictionary_attack
+SYNOPSIS:
+NAME
+    hydra - Hydra Password Brute-Forcer (Version 1.0.0)
+
+SYNOPSIS
+    hydra --target=<string> --protocol=<string> [--port=<integer>] [--username=<string>] [--username_list=<string>] [--password=<string>] [OPTIONS...]
+
+DESCRIPTION
+    Fast parallel network login cracker supporting 50+ protocols. Runs with -o for structured output capture.
+    Category: EXPLOITATION | Security Tier: 3 | Noise Rating: HIGH
+    Capabilities: password_brute_force, credential_testing, multi_protocol_login, dictionary_attack
+
+OPTIONS & PARAMETERS
+    --target <string> [REQUIRED]
+        Target hostname or IP
+    --protocol <string> [REQUIRED] [Choices: ssh, ftp, http-get, http-post-form, smb, rdp, telnet, smtp, pop3, imap]
+        Protocol to attack
+    --port <integer> [OPTIONAL] (default: 0)
+        Target port (defaults to protocol default)
+    --username <string> [OPTIONAL] (default: )
+        Single username to test
+    --username_list <string> [OPTIONAL] (default: )
+        Path to username wordlist file
+    --password <string> [OPTIONAL] (default: )
+        Single password to test
+    --password_list <string> [OPTIONAL] (default: /usr/share/wordlists/rockyou.txt)
+        Path to password wordlist file
+    --tasks <integer> [OPTIONAL] (default: 4)
+        Number of parallel tasks
+    --form_params <string> [OPTIONAL] (default: )
+        HTTP form parameters for http-post-form (e.g. /login:user=^USER^&pass=^PASS^:Invalid)
+    --stop_on_success <boolean> [OPTIONAL] (default: True)
+        Stop after first valid credential found
+    --extra_args <array> [OPTIONAL] (default: [])
+        No description provided.
+HELP TEXT:
+Usage: hydra [OPTIONS]
+
+Fast parallel network login cracker supporting 50+ protocols. Runs with -o for structured output capture.
+
+Options:
+  --target               Target hostname or IP
+  --protocol             Protocol to attack
+  --port                 Target port (defaults to protocol default) [default: 0]
+  --username             Single username to test [default: ]
+  --username_list        Path to username wordlist file [default: ]
+  --password             Single password to test [default: ]
+  --password_list        Path to password wordlist file [default: /usr/share/wordlists/rockyou.txt]
+  --tasks                Number of parallel tasks [default: 4]
+  --form_params          HTTP form parameters for http-post-form (e.g. /login:user=^USER^&pass=^PASS^:Invalid) [default: ]
+  --stop_on_success      Stop after first valid credential found [default: True]
+  --extra_args            [default: []]
+INPUT PROPERTIES: {
+  "target": {
+    "type": "string",
+    "description": "Target hostname or IP"
+  },
+  "protocol": {
+    "type": "string",
+    "enum": [
+      "ssh",
+      "ftp",
+      "http-get",
+      "http-post-form",
+      "smb",
+      "rdp",
+      "telnet",
+      "smtp",
+      "pop3",
+      "imap"
+    ],
+    "description": "Protocol to attack"
+  },
+  "port": {
+    "type": "integer",
+    "description": "Target port (defaults to protocol default)",
+    "default": 0
+  },
+  "username": {
+    "type": "string",
+    "description": "Single username to test",
+    "default": ""
+  },
+  "username_list": {
+    "type": "string",
+    "description": "Path to username wordlist file",
+    "default": ""
+  },
+  "password": {
+    "type": "string",
+    "description": "Single password to test",
+    "default": ""
+  },
+  "password_list": {
+    "type": "string",
+    "description": "Path to password wordlist file",
+    "default": "/usr/share/wordlists/rockyou.txt"
+  },
+  "tasks": {
+    "type": "integer",
+    "description": "Number of parallel tasks",
+    "default": 4
+  },
+  "form_params": {
+    "type": "string",
+    "description": "HTTP form parameters for http-post-form (e.g. /login:user=^USER^&pass=^PASS^:Invalid)",
+    "default": ""
+  },
+  "stop_on_success": {
+    "type": "boolean",
+    "description": "Stop after first valid credential found",
+    "default": true
+  },
+  "extra_args": {
+    "type": "array",
+    "items": {
+      "type": "string"
+    },
+    "default": []
+  }
+}
+REQUIRED INPUTS: ["target", "protocol"]
+--------------------------------------------------
+TOOL SPECIFICATION: kali.exec.v1
+NAME: Kali Linux VM Sandbox Execution Adapter (Version 1.0.0)
+CATEGORY: sandbox_execution | TIER: 3 | NOISE: high
+BINARY: /bin/bash
+DESCRIPTION: Executes a typed command inside the isolated Kali Linux VM via the guest worker agent with process supervision, live stream capture, and VM snapshot isolation.
+CAPABILITIES: vm_snapshot_isolation, guest_worker_execution, network_recon, kali_security_tools
+SYNOPSIS:
+NAME
+    /bin/bash - Kali Linux VM Sandbox Execution Adapter (Version 1.0.0)
+
+SYNOPSIS
+    /bin/bash --command=<string> [--args=<array>] [--cwd=<string>] [--timeout_ms=<integer>] [--snapshot_before=<boolean>]
+
+DESCRIPTION
+    Executes a typed command inside the isolated Kali Linux VM via the guest worker agent with process supervision, live stream capture, and VM snapshot isolation.
+    Category: SANDBOX_EXECUTION | Security Tier: 3 | Noise Rating: HIGH
+    Capabilities: vm_snapshot_isolation, guest_worker_execution, network_recon, kali_security_tools
+
+OPTIONS & PARAMETERS
+    --command <string> [REQUIRED]
+        The executable command name or binary inside Kali Linux (e.g. nmap, uname, whoami, ip, python3, bash)
+    --args <array> [OPTIONAL] (default: [])
+        List of string arguments to pass to the executable
+    --cwd <string> [OPTIONAL] (default: /home/kali)
+        Working directory inside Kali Linux (defaults to /home/kali or /root)
+    --timeout_ms <integer> [OPTIONAL] (default: 30000)
+        Hard timeout in milliseconds before process is forcibly killed by worker agent
+    --snapshot_before <boolean> [OPTIONAL] (default: True)
+        Whether to take a VM snapshot immediately before executing this task
+HELP TEXT:
+Usage: /bin/bash [OPTIONS]
+
+Executes a typed command inside the isolated Kali Linux VM via the guest worker agent with process supervision, live stream capture, and VM snapshot isolation.
+
+Options:
+  --command              The executable command name or binary inside Kali Linux (e.g. nmap, uname, whoami, ip, python3, bash)
+  --args                 List of string arguments to pass to the executable [default: []]
+  --cwd                  Working directory inside Kali Linux (defaults to /home/kali or /root) [default: /home/kali]
+  --timeout_ms           Hard timeout in milliseconds before process is forcibly killed by worker agent [default: 30000]
+  --snapshot_before      Whether to take a VM snapshot immediately before executing this task [default: True]
+INPUT PROPERTIES: {
+  "command": {
+    "type": "string",
+    "description": "The executable command name or binary inside Kali Linux (e.g. nmap, uname, whoami, ip, python3, bash)"
+  },
+  "args": {
+    "type": "array",
+    "items": {
+      "type": "string"
+    },
+    "description": "List of string arguments to pass to the executable",
+    "default": []
+  },
+  "cwd": {
+    "type": "string",
+    "description": "Working directory inside Kali Linux (defaults to /home/kali or /root)",
+    "default": "/home/kali"
+  },
+  "timeout_ms": {
+    "type": "integer",
+    "description": "Hard timeout in milliseconds before process is forcibly killed by worker agent",
+    "default": 30000
+  },
+  "snapshot_before": {
+    "type": "boolean",
+    "description": "Whether to take a VM snapshot immediately before executing this task",
+    "default": true
+  }
+}
+REQUIRED INPUTS: ["command"]
+--------------------------------------------------
+TOOL SPECIFICATION: metasploit.rpc.v1
+NAME: Metasploit Framework JSON-RPC Connector (Version 1.0.0)
+CATEGORY: exploitation | TIER: 3 | NOISE: high
+BINARY: internal://msfrpc
+DESCRIPTION: Connects to Metasploit's msfrpcd JSON-RPC daemon to run auxiliary/scanner modules and retrieve structured JSON results for 2-3 common recon modules.
+CAPABILITIES: vulnerability_scanning, exploit_execution, auxiliary_scanning, msf_rpc_session
+SYNOPSIS:
+NAME
+    internal://msfrpc - Metasploit Framework JSON-RPC Connector (Version 1.0.0)
+
+SYNOPSIS
+    internal://msfrpc --module=<string> --rhosts=<string> [--rport=<integer>] [--threads=<integer>] [--options=<object>] [--rpc_host=<string>] [OPTIONS...]
+
+DESCRIPTION
+    Connects to Metasploit's msfrpcd JSON-RPC daemon to run auxiliary/scanner modules and retrieve structured JSON results for 2-3 common recon modules.
+    Category: EXPLOITATION | Security Tier: 3 | Noise Rating: HIGH
+    Capabilities: vulnerability_scanning, exploit_execution, auxiliary_scanning, msf_rpc_session
+
+OPTIONS & PARAMETERS
+    --module <string> [REQUIRED] [Choices: auxiliary/scanner/portscan/tcp, auxiliary/scanner/http/http_version, auxiliary/scanner/smb/smb_version, auxiliary/scanner/ssh/ssh_version, auxiliary/scanner/discovery/udp_sweep]
+        Metasploit module path (e.g. auxiliary/scanner/portscan/tcp)
+    --rhosts <string> [REQUIRED]
+        Target RHOSTS (IP, CIDR, or range)
+    --rport <integer> [OPTIONAL]
+        Target port
+    --threads <integer> [OPTIONAL] (default: 4)
+        Number of concurrent threads
+    --options <object> [OPTIONAL] (default: {})
+        Additional module options as key-value pairs
+    --rpc_host <string> [OPTIONAL] (default: 127.0.0.1)
+        msfrpcd host
+    --rpc_port <integer> [OPTIONAL] (default: 55553)
+        msfrpcd port
+    --rpc_pass <string> [OPTIONAL] (default: msf)
+        msfrpcd password
+HELP TEXT:
+Usage: internal://msfrpc [OPTIONS]
+
+Connects to Metasploit's msfrpcd JSON-RPC daemon to run auxiliary/scanner modules and retrieve structured JSON results for 2-3 common recon modules.
+
+Options:
+  --module               Metasploit module path (e.g. auxiliary/scanner/portscan/tcp)
+  --rhosts               Target RHOSTS (IP, CIDR, or range)
+  --rport                Target port
+  --threads              Number of concurrent threads [default: 4]
+  --options              Additional module options as key-value pairs [default: {}]
+  --rpc_host             msfrpcd host [default: 127.0.0.1]
+  --rpc_port             msfrpcd port [default: 55553]
+  --rpc_pass             msfrpcd password [default: msf]
+INPUT PROPERTIES: {
+  "module": {
+    "type": "string",
+    "description": "Metasploit module path (e.g. auxiliary/scanner/portscan/tcp)",
+    "enum": [
+      "auxiliary/scanner/portscan/tcp",
+      "auxiliary/scanner/http/http_version",
+      "auxiliary/scanner/smb/smb_version",
+      "auxiliary/scanner/ssh/ssh_version",
+      "auxiliary/scanner/discovery/udp_sweep"
+    ]
+  },
+  "rhosts": {
+    "type": "string",
+    "description": "Target RHOSTS (IP, CIDR, or range)"
+  },
+  "rport": {
+    "type": "integer",
+    "description": "Target port"
+  },
+  "threads": {
+    "type": "integer",
+    "description": "Number of concurrent threads",
+    "default": 4
+  },
+  "options": {
+    "type": "object",
+    "description": "Additional module options as key-value pairs",
+    "default": {}
+  },
+  "rpc_host": {
+    "type": "string",
+    "description": "msfrpcd host",
+    "default": "127.0.0.1"
+  },
+  "rpc_port": {
+    "type": "integer",
+    "description": "msfrpcd port",
+    "default": 55553
+  },
+  "rpc_pass": {
+    "type": "string",
+    "description": "msfrpcd password",
+    "default": "msf"
+  }
+}
+REQUIRED INPUTS: ["module", "rhosts"]
+--------------------------------------------------
+TOOL SPECIFICATION: nikto.scan.v1
+NAME: Nikto Web Server Scanner (Version 1.0.0)
+CATEGORY: recon | TIER: 2 | NOISE: medium
+BINARY: nikto
+DESCRIPTION: Web server vulnerability scanner. Runs Nikto with -Format csv for machine-readable output. Detects outdated software, dangerous files, and configuration issues.
+CAPABILITIES: web_vulnerability_scan, cgi_detection, dangerous_file_detection, server_fingerprinting
+SYNOPSIS:
+NAME
+    nikto - Nikto Web Server Scanner (Version 1.0.0)
+
+SYNOPSIS
+    nikto --host=<string> [--port=<integer>] [--ssl=<boolean>] [--plugins=<string>] [--tuning=<string>] [--timeout=<integer>] [OPTIONS...]
+
+DESCRIPTION
+    Web server vulnerability scanner. Runs Nikto with -Format csv for machine-readable output. Detects outdated software, dangerous files, and configuration issues.
+    Category: RECON | Security Tier: 2 | Noise Rating: MEDIUM
+    Capabilities: web_vulnerability_scan, cgi_detection, dangerous_file_detection, server_fingerprinting
+
+OPTIONS & PARAMETERS
+    --host <string> [REQUIRED]
+        Target hostname or IP
+    --port <integer> [OPTIONAL] (default: 80)
+        Target port
+    --ssl <boolean> [OPTIONAL] (default: False)
+        Use SSL/HTTPS
+    --plugins <string> [OPTIONAL] (default: )
+        Comma-separated plugin list (or "ALL")
+    --tuning <string> [OPTIONAL] (default: )
+        Nikto tuning flags (0-9 letters to enable specific checks)
+    --timeout <integer> [OPTIONAL] (default: 10)
+        Per-request timeout in seconds
+    --extra_args <array> [OPTIONAL] (default: [])
+        No description provided.
+HELP TEXT:
+Usage: nikto [OPTIONS]
+
+Web server vulnerability scanner. Runs Nikto with -Format csv for machine-readable output. Detects outdated software, dangerous files, and configuration issues.
+
+Options:
+  --host                 Target hostname or IP
+  --port                 Target port [default: 80]
+  --ssl                  Use SSL/HTTPS [default: False]
+  --plugins              Comma-separated plugin list (or "ALL") [default: ]
+  --tuning               Nikto tuning flags (0-9 letters to enable specific checks) [default: ]
+  --timeout              Per-request timeout in seconds [default: 10]
+  --extra_args            [default: []]
+INPUT PROPERTIES: {
+  "host": {
+    "type": "string",
+    "description": "Target hostname or IP"
+  },
+  "port": {
+    "type": "integer",
+    "description": "Target port",
+    "default": 80
+  },
+  "ssl": {
+    "type": "boolean",
+    "description": "Use SSL/HTTPS",
+    "default": false
+  },
+  "plugins": {
+    "type": "string",
+    "description": "Comma-separated plugin list (or \"ALL\")",
+    "default": ""
+  },
+  "tuning": {
+    "type": "string",
+    "description": "Nikto tuning flags (0-9 letters to enable specific checks)",
+    "default": ""
+  },
+  "timeout": {
+    "type": "integer",
+    "description": "Per-request timeout in seconds",
+    "default": 10
+  },
+  "extra_args": {
+    "type": "array",
+    "items": {
+      "type": "string"
+    },
+    "default": []
+  }
+}
+REQUIRED INPUTS: ["host"]
+--------------------------------------------------
+TOOL SPECIFICATION: nmap.scan.v1
+NAME: Nmap Network Scanner (Version 1.0.0)
+CATEGORY: recon | TIER: 2 | NOISE: medium
+BINARY: nmap
+DESCRIPTION: Network exploration and security auditing tool. Runs structured scans with XML output parsed into port/service/script observation objects.
+CAPABILITIES: port_scan, service_detection, os_fingerprint, script_scan, network_discovery
+SYNOPSIS:
+NAME
+    nmap - Nmap Network Scanner (Version 1.0.0)
+
+SYNOPSIS
+    nmap --target=<string> [--ports=<string>] [--scan_type=<string>] [--scripts=<string>] [--timing=<integer>] [--extra_args=<array>]
+
+DESCRIPTION
+    Network exploration and security auditing tool. Runs structured scans with XML output parsed into port/service/script observation objects.
+    Category: RECON | Security Tier: 2 | Noise Rating: MEDIUM
+    Capabilities: port_scan, service_detection, os_fingerprint, script_scan, network_discovery
+
+OPTIONS & PARAMETERS
+    --target <string> [REQUIRED]
+        Target host or CIDR range (e.g. 192.168.56.1, 10.0.0.0/24)
+    --ports <string> [OPTIONAL] (default: 1-1024)
+        Port specification (e.g. 22,80,443 or 1-1024 or - for all)
+    --scan_type <string> [OPTIONAL] (default: sV) [Choices: SV, sS, sT, sU, sA, sN, sX]
+        Scan type flag (SV=service, sS=SYN, sT=connect, sU=UDP)
+    --scripts <string> [OPTIONAL] (default: )
+        NSE script or category (e.g. default, vuln, http-headers)
+    --timing <integer> [OPTIONAL] (default: 3)
+        Timing template (0=paranoid to 5=insane)
+    --extra_args <array> [OPTIONAL] (default: [])
+        Additional raw nmap arguments
+HELP TEXT:
+Usage: nmap [OPTIONS]
+
+Network exploration and security auditing tool. Runs structured scans with XML output parsed into port/service/script observation objects.
+
+Options:
+  --target               Target host or CIDR range (e.g. 192.168.56.1, 10.0.0.0/24)
+  --ports                Port specification (e.g. 22,80,443 or 1-1024 or - for all) [default: 1-1024]
+  --scan_type            Scan type flag (SV=service, sS=SYN, sT=connect, sU=UDP) [default: sV]
+  --scripts              NSE script or category (e.g. default, vuln, http-headers) [default: ]
+  --timing               Timing template (0=paranoid to 5=insane) [default: 3]
+  --extra_args           Additional raw nmap arguments [default: []]
+INPUT PROPERTIES: {
+  "target": {
+    "type": "string",
+    "description": "Target host or CIDR range (e.g. 192.168.56.1, 10.0.0.0/24)"
+  },
+  "ports": {
+    "type": "string",
+    "description": "Port specification (e.g. 22,80,443 or 1-1024 or - for all)",
+    "default": "1-1024"
+  },
+  "scan_type": {
+    "type": "string",
+    "enum": [
+      "SV",
+      "sS",
+      "sT",
+      "sU",
+      "sA",
+      "sN",
+      "sX"
+    ],
+    "description": "Scan type flag (SV=service, sS=SYN, sT=connect, sU=UDP)",
+    "default": "sV"
+  },
+  "scripts": {
+    "type": "string",
+    "description": "NSE script or category (e.g. default, vuln, http-headers)",
+    "default": ""
+  },
+  "timing": {
+    "type": "integer",
+    "minimum": 0,
+    "maximum": 5,
+    "description": "Timing template (0=paranoid to 5=insane)",
+    "default": 3
+  },
+  "extra_args": {
+    "type": "array",
+    "items": {
+      "type": "string"
+    },
+    "description": "Additional raw nmap arguments",
+    "default": []
+  }
+}
+REQUIRED INPUTS: ["target"]
+--------------------------------------------------
+TOOL SPECIFICATION: searchsploit.search.v1
+NAME: SearchSploit Exploit Database Search (Version 1.0.0)
+CATEGORY: recon | TIER: 1 | NOISE: low
+BINARY: searchsploit
+DESCRIPTION: Offline Exploit-DB search tool. Searches CVEs and exploits by keyword and returns structured exploit IDs, titles, and file paths. Uses --json for machine-readable output.
+CAPABILITIES: exploit_search, cve_lookup, vulnerability_research, offline_database_query
+SYNOPSIS:
+NAME
+    searchsploit - SearchSploit Exploit Database Search (Version 1.0.0)
+
+SYNOPSIS
+    searchsploit --query=<string> [--exact=<boolean>] [--exclude=<string>] [--type=<string>] [--extra_args=<array>]
+
+DESCRIPTION
+    Offline Exploit-DB search tool. Searches CVEs and exploits by keyword and returns structured exploit IDs, titles, and file paths. Uses --json for machine-readable output.
+    Category: RECON | Security Tier: 1 | Noise Rating: LOW
+    Capabilities: exploit_search, cve_lookup, vulnerability_research, offline_database_query
+
+OPTIONS & PARAMETERS
+    --query <string> [REQUIRED]
+        Search keyword(s) (e.g. "apache 2.4", "ssh", "CVE-2021-44228")
+    --exact <boolean> [OPTIONAL] (default: False)
+        Search for exact string match
+    --exclude <string> [OPTIONAL] (default: )
+        Keyword to exclude from results
+    --type <string> [OPTIONAL] (default: ) [Choices: , exploits, shellcodes, papers]
+        Limit search to specific type
+    --extra_args <array> [OPTIONAL] (default: [])
+        No description provided.
+HELP TEXT:
+Usage: searchsploit [OPTIONS]
+
+Offline Exploit-DB search tool. Searches CVEs and exploits by keyword and returns structured exploit IDs, titles, and file paths. Uses --json for machine-readable output.
+
+Options:
+  --query                Search keyword(s) (e.g. "apache 2.4", "ssh", "CVE-2021-44228")
+  --exact                Search for exact string match [default: False]
+  --exclude              Keyword to exclude from results [default: ]
+  --type                 Limit search to specific type [default: ]
+  --extra_args            [default: []]
+INPUT PROPERTIES: {
+  "query": {
+    "type": "string",
+    "description": "Search keyword(s) (e.g. \"apache 2.4\", \"ssh\", \"CVE-2021-44228\")"
+  },
+  "exact": {
+    "type": "boolean",
+    "description": "Search for exact string match",
+    "default": false
+  },
+  "exclude": {
+    "type": "string",
+    "description": "Keyword to exclude from results",
+    "default": ""
+  },
+  "type": {
+    "type": "string",
+    "enum": [
+      "",
+      "exploits",
+      "shellcodes",
+      "papers"
+    ],
+    "description": "Limit search to specific type",
+    "default": ""
+  },
+  "extra_args": {
+    "type": "array",
+    "items": {
+      "type": "string"
+    },
+    "default": []
+  }
+}
+REQUIRED INPUTS: ["query"]
+--------------------------------------------------
+TOOL SPECIFICATION: shell.run.v1
+NAME: Shell Execution Adapter v1 (Version 1.0.0)
+CATEGORY: execution | TIER: 3 | NOISE: high
+BINARY: python
+DESCRIPTION: Executes a single command string with arguments under process supervisor control with a hard timeout.
+CAPABILITIES: command_execution, process_supervision, sigkill_control, stdout_stderr_capture
+SYNOPSIS:
+NAME
+    python - Shell Execution Adapter v1 (Version 1.0.0)
+
+SYNOPSIS
+    python --command=<string> [--args=<array>] [--timeout_ms=<integer>]
+
+DESCRIPTION
+    Executes a single command string with arguments under process supervisor control with a hard timeout.
+    Category: EXECUTION | Security Tier: 3 | Noise Rating: HIGH
+    Capabilities: command_execution, process_supervision, sigkill_control, stdout_stderr_capture
+
+OPTIONS & PARAMETERS
+    --command <string> [REQUIRED]
+        The executable command name or path (e.g. python, node, echo, ping)
+    --args <array> [OPTIONAL] (default: [])
+        List of string arguments to pass to the executable
+    --timeout_ms <integer> [OPTIONAL] (default: 10000)
+        Hard timeout in milliseconds before process is forcibly killed
+HELP TEXT:
+Usage: python [OPTIONS]
+
+Executes a single command string with arguments under process supervisor control with a hard timeout.
+
+Options:
+  --command              The executable command name or path (e.g. python, node, echo, ping)
+  --args                 List of string arguments to pass to the executable [default: []]
+  --timeout_ms           Hard timeout in milliseconds before process is forcibly killed [default: 10000]
+INPUT PROPERTIES: {
+  "command": {
+    "type": "string",
+    "description": "The executable command name or path (e.g. python, node, echo, ping)"
+  },
+  "args": {
+    "type": "array",
+    "items": {
+      "type": "string"
+    },
+    "description": "List of string arguments to pass to the executable",
+    "default": []
+  },
+  "timeout_ms": {
+    "type": "integer",
+    "description": "Hard timeout in milliseconds before process is forcibly killed",
+    "default": 10000
+  }
+}
+REQUIRED INPUTS: ["command"]
+--------------------------------------------------
+TOOL SPECIFICATION: sqlmap.scan.v1
+NAME: SQLMap SQL Injection Scanner (Version 1.0.0)
+CATEGORY: exploitation | TIER: 3 | NOISE: high
+BINARY: sqlmap
+DESCRIPTION: Automated SQL injection detection and exploitation tool. Runs in batch mode with machine-readable flags. Uses --dump-format=CSV and --output-dir for artifact capture.
+CAPABILITIES: sql_injection_detection, database_fingerprinting, data_extraction, blind_injection, error_based_injection
+SYNOPSIS:
+NAME
+    sqlmap - SQLMap SQL Injection Scanner (Version 1.0.0)
+
+SYNOPSIS
+    sqlmap --url=<string> [--method=<string>] [--data=<string>] [--params=<string>] [--level=<integer>] [--risk=<integer>] [OPTIONS...]
+
+DESCRIPTION
+    Automated SQL injection detection and exploitation tool. Runs in batch mode with machine-readable flags. Uses --dump-format=CSV and --output-dir for artifact capture.
+    Category: EXPLOITATION | Security Tier: 3 | Noise Rating: HIGH
+    Capabilities: sql_injection_detection, database_fingerprinting, data_extraction, blind_injection, error_based_injection
+
+OPTIONS & PARAMETERS
+    --url <string> [REQUIRED]
+        Target URL (e.g. http://192.168.56.1/login.php?id=1)
+    --method <string> [OPTIONAL] (default: GET) [Choices: GET, POST]
+        No description provided.
+    --data <string> [OPTIONAL] (default: )
+        POST data string (for POST requests)
+    --params <string> [OPTIONAL] (default: )
+        Parameter(s) to test (e.g. id, username)
+    --level <integer> [OPTIONAL] (default: 1)
+        Detection level (1=basic to 5=extensive)
+    --risk <integer> [OPTIONAL] (default: 1)
+        Risk level (1=safe, 3=aggressive)
+    --dbms <string> [OPTIONAL] (default: )
+        Force backend DBMS (e.g. mysql, postgresql, mssql)
+    --technique <string> [OPTIONAL] (default: )
+        Injection techniques (BEUSTQ string)
+    --dbs <boolean> [OPTIONAL] (default: False)
+        Enumerate databases
+    --tables <boolean> [OPTIONAL] (default: False)
+        Enumerate tables
+    --extra_args <array> [OPTIONAL] (default: [])
+        No description provided.
+HELP TEXT:
+Usage: sqlmap [OPTIONS]
+
+Automated SQL injection detection and exploitation tool. Runs in batch mode with machine-readable flags. Uses --dump-format=CSV and --output-dir for artifact capture.
+
+Options:
+  --url                  Target URL (e.g. http://192.168.56.1/login.php?id=1)
+  --method                [default: GET]
+  --data                 POST data string (for POST requests) [default: ]
+  --params               Parameter(s) to test (e.g. id, username) [default: ]
+  --level                Detection level (1=basic to 5=extensive) [default: 1]
+  --risk                 Risk level (1=safe, 3=aggressive) [default: 1]
+  --dbms                 Force backend DBMS (e.g. mysql, postgresql, mssql) [default: ]
+  --technique            Injection techniques (BEUSTQ string) [default: ]
+  --dbs                  Enumerate databases [default: False]
+  --tables               Enumerate tables [default: False]
+  --extra_args            [default: []]
+INPUT PROPERTIES: {
+  "url": {
+    "type": "string",
+    "description": "Target URL (e.g. http://192.168.56.1/login.php?id=1)"
+  },
+  "method": {
+    "type": "string",
+    "enum": [
+      "GET",
+      "POST"
+    ],
+    "default": "GET"
+  },
+  "data": {
+    "type": "string",
+    "description": "POST data string (for POST requests)",
+    "default": ""
+  },
+  "params": {
+    "type": "string",
+    "description": "Parameter(s) to test (e.g. id, username)",
+    "default": ""
+  },
+  "level": {
+    "type": "integer",
+    "minimum": 1,
+    "maximum": 5,
+    "description": "Detection level (1=basic to 5=extensive)",
+    "default": 1
+  },
+  "risk": {
+    "type": "integer",
+    "minimum": 1,
+    "maximum": 3,
+    "description": "Risk level (1=safe, 3=aggressive)",
+    "default": 1
+  },
+  "dbms": {
+    "type": "string",
+    "description": "Force backend DBMS (e.g. mysql, postgresql, mssql)",
+    "default": ""
+  },
+  "technique": {
+    "type": "string",
+    "description": "Injection techniques (BEUSTQ string)",
+    "default": ""
+  },
+  "dbs": {
+    "type": "boolean",
+    "description": "Enumerate databases",
+    "default": false
+  },
+  "tables": {
+    "type": "boolean",
+    "description": "Enumerate tables",
+    "default": false
+  },
+  "extra_args": {
+    "type": "array",
+    "items": {
+      "type": "string"
+    },
+    "default": []
+  }
+}
+REQUIRED INPUTS: ["url"]
+--------------------------------------------------
+TOOL SPECIFICATION: system_ping
+NAME: System Ping Tool (Version 1.0.0)
+CATEGORY: diagnostic | TIER: 1 | NOISE: low
+BINARY: internal://builtin/system_ping
+DESCRIPTION: Emits a ping with timestamp, host status, and process health to confirm orchestrator readiness.
+CAPABILITIES: diagnostic, process_health, heartbeat
+SYNOPSIS:
+NAME
+    internal://builtin/system_ping - System Ping Tool (Version 1.0.0)
+
+SYNOPSIS
+    internal://builtin/system_ping [--echo_token=<string>]
+
+DESCRIPTION
+    Emits a ping with timestamp, host status, and process health to confirm orchestrator readiness.
+    Category: DIAGNOSTIC | Security Tier: 1 | Noise Rating: LOW
+    Capabilities: diagnostic, process_health, heartbeat
+
+OPTIONS & PARAMETERS
+    --echo_token <string> [OPTIONAL]
+        Unique echo verification token
+HELP TEXT:
+Usage: internal://builtin/system_ping [OPTIONS]
+
+Emits a ping with timestamp, host status, and process health to confirm orchestrator readiness.
+
+Options:
+  --echo_token           Unique echo verification token
+INPUT PROPERTIES: {
+  "echo_token": {
+    "type": "string",
+    "description": "Unique echo verification token"
+  }
+}
+REQUIRED INPUTS: []
+--------------------------------------------------
+TOOL SPECIFICATION: tcpdump.capture.v1
+NAME: TCPDump Network Packet Capture (Version 1.0.0)
+CATEGORY: recon | TIER: 2 | NOISE: medium
+BINARY: tcpdump
+DESCRIPTION: Short-duration packet capture to a .pcap artifact file. Captures network traffic with BPF filter expressions. Returns packet count statistics.
+CAPABILITIES: packet_capture, traffic_analysis, protocol_inspection, bpf_filter
+SYNOPSIS:
+NAME
+    tcpdump - TCPDump Network Packet Capture (Version 1.0.0)
+
+SYNOPSIS
+    tcpdump --interface=<string> [--filter=<string>] [--count=<integer>] [--duration_s=<integer>] [--output_file=<string>] [--snap_len=<integer>] [OPTIONS...]
+
+DESCRIPTION
+    Short-duration packet capture to a .pcap artifact file. Captures network traffic with BPF filter expressions. Returns packet count statistics.
+    Category: RECON | Security Tier: 2 | Noise Rating: MEDIUM
+    Capabilities: packet_capture, traffic_analysis, protocol_inspection, bpf_filter
+
+OPTIONS & PARAMETERS
+    --interface <string> [REQUIRED] (default: eth0)
+        Network interface to capture on (e.g. eth0, any)
+    --filter <string> [OPTIONAL] (default: )
+        BPF filter expression (e.g. "host 192.168.56.1 and port 80")
+    --count <integer> [OPTIONAL] (default: 100)
+        Number of packets to capture before stopping
+    --duration_s <integer> [OPTIONAL] (default: 10)
+        Max capture duration in seconds (auto-stops)
+    --output_file <string> [OPTIONAL] (default: /tmp/kairo_capture.pcap)
+        Output .pcap file path inside VM
+    --snap_len <integer> [OPTIONAL] (default: 262144)
+        Snapshot length (bytes per packet)
+    --extra_args <array> [OPTIONAL] (default: [])
+        No description provided.
+HELP TEXT:
+Usage: tcpdump [OPTIONS]
+
+Short-duration packet capture to a .pcap artifact file. Captures network traffic with BPF filter expressions. Returns packet count statistics.
+
+Options:
+  --interface            Network interface to capture on (e.g. eth0, any) [default: eth0]
+  --filter               BPF filter expression (e.g. "host 192.168.56.1 and port 80") [default: ]
+  --count                Number of packets to capture before stopping [default: 100]
+  --duration_s           Max capture duration in seconds (auto-stops) [default: 10]
+  --output_file          Output .pcap file path inside VM [default: /tmp/kairo_capture.pcap]
+  --snap_len             Snapshot length (bytes per packet) [default: 262144]
+  --extra_args            [default: []]
+INPUT PROPERTIES: {
+  "interface": {
+    "type": "string",
+    "description": "Network interface to capture on (e.g. eth0, any)",
+    "default": "eth0"
+  },
+  "filter": {
+    "type": "string",
+    "description": "BPF filter expression (e.g. \"host 192.168.56.1 and port 80\")",
+    "default": ""
+  },
+  "count": {
+    "type": "integer",
+    "description": "Number of packets to capture before stopping",
+    "default": 100
+  },
+  "duration_s": {
+    "type": "integer",
+    "description": "Max capture duration in seconds (auto-stops)",
+    "default": 10
+  },
+  "output_file": {
+    "type": "string",
+    "description": "Output .pcap file path inside VM",
+    "default": "/tmp/kairo_capture.pcap"
+  },
+  "snap_len": {
+    "type": "integer",
+    "description": "Snapshot length (bytes per packet)",
+    "default": 262144
+  },
+  "extra_args": {
+    "type": "array",
+    "items": {
+      "type": "string"
+    },
+    "default": []
+  }
+}
+REQUIRED INPUTS: ["interface"]
+--------------------------------------------------
+TOOL SPECIFICATION: whatweb.scan.v1
+NAME: WhatWeb Technology Fingerprinter (Version 1.0.0)
+CATEGORY: recon | TIER: 2 | NOISE: medium
+BINARY: whatweb
+DESCRIPTION: Web technology fingerprinter. Identifies CMS, frameworks, server software, libraries, and versions. Runs with --log-json for structured output.
+CAPABILITIES: technology_fingerprinting, cms_detection, framework_detection, server_software_detection
+SYNOPSIS:
+NAME
+    whatweb - WhatWeb Technology Fingerprinter (Version 1.0.0)
+
+SYNOPSIS
+    whatweb --url=<string> [--aggression=<integer>] [--plugins=<string>] [--proxy=<string>] [--extra_args=<array>]
+
+DESCRIPTION
+    Web technology fingerprinter. Identifies CMS, frameworks, server software, libraries, and versions. Runs with --log-json for structured output.
+    Category: RECON | Security Tier: 2 | Noise Rating: MEDIUM
+    Capabilities: technology_fingerprinting, cms_detection, framework_detection, server_software_detection
+
+OPTIONS & PARAMETERS
+    --url <string> [REQUIRED]
+        Target URL (e.g. http://192.168.56.1)
+    --aggression <integer> [OPTIONAL] (default: 1)
+        Aggression level (1=passive, 4=aggressive)
+    --plugins <string> [OPTIONAL] (default: )
+        Comma-separated plugin names to use
+    --proxy <string> [OPTIONAL] (default: )
+        Proxy URL (e.g. http://127.0.0.1:8080)
+    --extra_args <array> [OPTIONAL] (default: [])
+        No description provided.
+HELP TEXT:
+Usage: whatweb [OPTIONS]
+
+Web technology fingerprinter. Identifies CMS, frameworks, server software, libraries, and versions. Runs with --log-json for structured output.
+
+Options:
+  --url                  Target URL (e.g. http://192.168.56.1)
+  --aggression           Aggression level (1=passive, 4=aggressive) [default: 1]
+  --plugins              Comma-separated plugin names to use [default: ]
+  --proxy                Proxy URL (e.g. http://127.0.0.1:8080) [default: ]
+  --extra_args            [default: []]
+INPUT PROPERTIES: {
+  "url": {
+    "type": "string",
+    "description": "Target URL (e.g. http://192.168.56.1)"
+  },
+  "aggression": {
+    "type": "integer",
+    "minimum": 1,
+    "maximum": 4,
+    "description": "Aggression level (1=passive, 4=aggressive)",
+    "default": 1
+  },
+  "plugins": {
+    "type": "string",
+    "description": "Comma-separated plugin names to use",
+    "default": ""
+  },
+  "proxy": {
+    "type": "string",
+    "description": "Proxy URL (e.g. http://127.0.0.1:8080)",
+    "default": ""
+  },
+  "extra_args": {
+    "type": "array",
+    "items": {
+      "type": "string"
+    },
+    "default": []
+  }
+}
+REQUIRED INPUTS: ["url"]
+--------------------------------------------------
+TOOL SPECIFICATION: whois.lookup.v1
+NAME: WHOIS Domain Lookup (Version 1.0.0)
+CATEGORY: recon | TIER: 1 | NOISE: low
+BINARY: whois
+DESCRIPTION: Queries WHOIS database for domain registration, IP ownership, and registrar information. Parses structured fields from text output.
+CAPABILITIES: domain_registration_lookup, ip_ownership_lookup, registrar_info, dns_registration_dates
+SYNOPSIS:
+NAME
+    whois - WHOIS Domain Lookup (Version 1.0.0)
+
+SYNOPSIS
+    whois --target=<string> [--server=<string>] [--extra_args=<array>]
+
+DESCRIPTION
+    Queries WHOIS database for domain registration, IP ownership, and registrar information. Parses structured fields from text output.
+    Category: RECON | Security Tier: 1 | Noise Rating: LOW
+    Capabilities: domain_registration_lookup, ip_ownership_lookup, registrar_info, dns_registration_dates
+
+OPTIONS & PARAMETERS
+    --target <string> [REQUIRED]
+        Domain name or IP address to look up
+    --server <string> [OPTIONAL] (default: )
+        WHOIS server to query (optional override)
+    --extra_args <array> [OPTIONAL] (default: [])
+        No description provided.
+HELP TEXT:
+Usage: whois [OPTIONS]
+
+Queries WHOIS database for domain registration, IP ownership, and registrar information. Parses structured fields from text output.
+
+Options:
+  --target               Domain name or IP address to look up
+  --server               WHOIS server to query (optional override) [default: ]
+  --extra_args            [default: []]
+INPUT PROPERTIES: {
+  "target": {
+    "type": "string",
+    "description": "Domain name or IP address to look up"
+  },
+  "server": {
+    "type": "string",
+    "description": "WHOIS server to query (optional override)",
+    "default": ""
+  },
+  "extra_args": {
+    "type": "array",
+    "items": {
+      "type": "string"
+    },
+    "default": []
+  }
+}
+REQUIRED INPUTS: ["target"]
+--------------------------------------------------
+TOOL SPECIFICATION: wireshark.gui.v1
+NAME: Wireshark Network Protocol Analyzer GUI Adapter (Version 1.0.0)
+CATEGORY: network_analysis | TIER: 3 | NOISE: high
+BINARY: wireshark
+DESCRIPTION: Supervises and automates Wireshark GUI inside the Kali worker plane with periodic screenshot capture, UI-state extraction, and bounded scripted workflows.
+CAPABILITIES: packet_capture, traffic_dissection, display_filters, pcap_analysis, gui_automation, visual_evidence
+SYNOPSIS:
+NAME
+    wireshark - Wireshark Network Protocol Analyzer GUI Adapter (Version 1.0.0)
+
+SYNOPSIS
+    wireshark [--action=<string>] [--workflow=<string>] [--params=<object>] [--x=<integer>] [--y=<integer>] [--control_id=<string>] [OPTIONS...]
+
+DESCRIPTION
+    Supervises and automates Wireshark GUI inside the Kali worker plane with periodic screenshot capture, UI-state extraction, and bounded scripted workflows.
+    Category: NETWORK_ANALYSIS | Security Tier: 3 | Noise Rating: HIGH
+    Capabilities: packet_capture, traffic_dissection, display_filters, pcap_analysis, gui_automation, visual_evidence
+
+OPTIONS & PARAMETERS
+    --action <string> [OPTIONAL] (default: workflow)
+        Action to perform (launch, workflow, click, type, extract_state, screenshot, stop)
+    --workflow <string> [OPTIONAL] (default: start_capture)
+        Scripted workflow name (select_interface, start_capture, apply_display_filter, inspect_packet, stop_and_save_pcap)
+    --params <object> [OPTIONAL] (default: {})
+        Parameters for the selected scripted workflow
+    --x <integer> [OPTIONAL]
+        X coordinate for bounded mouse click
+    --y <integer> [OPTIONAL]
+        Y coordinate for bounded mouse click
+    --control_id <string> [OPTIONAL]
+        Named UI control identifier to interact with
+    --text <string> [OPTIONAL]
+        Text string to type into target control
+    --caption <string> [OPTIONAL]
+        Optional caption for on-demand visual evidence screenshot
+HELP TEXT:
+Usage: wireshark [OPTIONS]
+
+Supervises and automates Wireshark GUI inside the Kali worker plane with periodic screenshot capture, UI-state extraction, and bounded scripted workflows.
+
+Options:
+  --action               Action to perform (launch, workflow, click, type, extract_state, screenshot, stop) [default: workflow]
+  --workflow             Scripted workflow name (select_interface, start_capture, apply_display_filter, inspect_packet, stop_and_save_pcap) [default: start_capture]
+  --params               Parameters for the selected scripted workflow [default: {}]
+  --x                    X coordinate for bounded mouse click
+  --y                    Y coordinate for bounded mouse click
+  --control_id           Named UI control identifier to interact with
+  --text                 Text string to type into target control
+  --caption              Optional caption for on-demand visual evidence screenshot
+INPUT PROPERTIES: {
+  "action": {
+    "type": "string",
+    "description": "Action to perform (launch, workflow, click, type, extract_state, screenshot, stop)",
+    "default": "workflow"
+  },
+  "workflow": {
+    "type": "string",
+    "description": "Scripted workflow name (select_interface, start_capture, apply_display_filter, inspect_packet, stop_and_save_pcap)",
+    "default": "start_capture"
+  },
+  "params": {
+    "type": "object",
+    "description": "Parameters for the selected scripted workflow",
+    "default": {}
+  },
+  "x": {
+    "type": "integer",
+    "description": "X coordinate for bounded mouse click"
+  },
+  "y": {
+    "type": "integer",
+    "description": "Y coordinate for bounded mouse click"
+  },
+  "control_id": {
+    "type": "string",
+    "description": "Named UI control identifier to interact with"
+  },
+  "text": {
+    "type": "string",
+    "description": "Text string to type into target control"
+  },
+  "caption": {
+    "type": "string",
+    "description": "Optional caption for on-demand visual evidence screenshot"
+  }
+}
+REQUIRED INPUTS: []
+--------------------------------------------------
+TOOL SPECIFICATION: zap.gui.v1
+NAME: OWASP ZAP GUI Adapter (Version 1.0.0)
+CATEGORY: web_security | TIER: 3 | NOISE: high
+BINARY: zaproxy
+DESCRIPTION: Supervises and automates OWASP ZAP GUI inside the Kali worker plane with periodic screenshot capture, UI-state extraction, and bounded scripted workflows.
+CAPABILITIES: web_vulnerability_scan, web_spider, active_scan, alert_inspection, gui_automation, visual_evidence
+SYNOPSIS:
+NAME
+    zaproxy - OWASP ZAP GUI Adapter (Version 1.0.0)
+
+SYNOPSIS
+    zaproxy [--action=<string>] [--workflow=<string>] [--params=<object>] [--x=<integer>] [--y=<integer>] [--control_id=<string>] [OPTIONS...]
+
+DESCRIPTION
+    Supervises and automates OWASP ZAP GUI inside the Kali worker plane with periodic screenshot capture, UI-state extraction, and bounded scripted workflows.
+    Category: WEB_SECURITY | Security Tier: 3 | Noise Rating: HIGH
+    Capabilities: web_vulnerability_scan, web_spider, active_scan, alert_inspection, gui_automation, visual_evidence
+
+OPTIONS & PARAMETERS
+    --action <string> [OPTIONAL] (default: workflow)
+        Action to perform (launch, workflow, click, type, extract_state, screenshot, stop)
+    --workflow <string> [OPTIONAL] (default: quick_start)
+        Scripted workflow name (quick_start, run_spider, inspect_alerts, export_report)
+    --params <object> [OPTIONAL] (default: {})
+        Parameters for the selected scripted workflow
+    --x <integer> [OPTIONAL]
+        X coordinate for bounded mouse click
+    --y <integer> [OPTIONAL]
+        Y coordinate for bounded mouse click
+    --control_id <string> [OPTIONAL]
+        Named UI control identifier to interact with
+    --text <string> [OPTIONAL]
+        Text string to type into target control
+    --caption <string> [OPTIONAL]
+        Optional caption for on-demand visual evidence screenshot
+HELP TEXT:
+Usage: zaproxy [OPTIONS]
+
+Supervises and automates OWASP ZAP GUI inside the Kali worker plane with periodic screenshot capture, UI-state extraction, and bounded scripted workflows.
+
+Options:
+  --action               Action to perform (launch, workflow, click, type, extract_state, screenshot, stop) [default: workflow]
+  --workflow             Scripted workflow name (quick_start, run_spider, inspect_alerts, export_report) [default: quick_start]
+  --params               Parameters for the selected scripted workflow [default: {}]
+  --x                    X coordinate for bounded mouse click
+  --y                    Y coordinate for bounded mouse click
+  --control_id           Named UI control identifier to interact with
+  --text                 Text string to type into target control
+  --caption              Optional caption for on-demand visual evidence screenshot
+INPUT PROPERTIES: {
+  "action": {
+    "type": "string",
+    "description": "Action to perform (launch, workflow, click, type, extract_state, screenshot, stop)",
+    "default": "workflow"
+  },
+  "workflow": {
+    "type": "string",
+    "description": "Scripted workflow name (quick_start, run_spider, inspect_alerts, export_report)",
+    "default": "quick_start"
+  },
+  "params": {
+    "type": "object",
+    "description": "Parameters for the selected scripted workflow",
+    "default": {}
+  },
+  "x": {
+    "type": "integer",
+    "description": "X coordinate for bounded mouse click"
+  },
+  "y": {
+    "type": "integer",
+    "description": "Y coordinate for bounded mouse click"
+  },
+  "control_id": {
+    "type": "string",
+    "description": "Named UI control identifier to interact with"
+  },
+  "text": {
+    "type": "string",
+    "description": "Text string to type into target control"
+  },
+  "caption": {
+    "type": "string",
+    "description": "Optional caption for on-demand visual evidence screenshot"
+  }
+}
+REQUIRED INPUTS: []
+--------------------------------------------------
+
+=== SECTION 2: NETWORK PROTOCOLS & PACKET ANALYSIS ===
+
+Transmission Control Protocol (TCP) Handshake:
+1. SYN (Synchronize): Client sends SYN packet with Initial Sequence Number (ISN) to target port.
+2. SYN-ACK (Synchronize-Acknowledge): Target responds with SYN-ACK if port is open and listening.
+3. ACK (Acknowledge): Client acknowledges SYN-ACK, establishing bidirectional connection.
+If port is closed, target responds with RST-ACK (Reset-Acknowledge).
+Firewalls with drop policies silently discard packets, resulting in TCP socket timeouts.
+
+Berkley Packet Filter (BPF) Syntax:
+- 'host 192.168.1.50': Captures packets sent to or received from specific IPv4 address.
+- 'tcp port 80 or tcp port 443': Captures HTTP and HTTPS protocol streams.
+- 'tcp[tcpflags] & (tcp-syn) != 0 and tcp[tcpflags] & (tcp-ack) == 0': Filters SYN-only scans.
+- 'icmp': Captures ICMP Echo Request (type 8) and Echo Reply (type 0) frames.
+
+Transport Layer Security (TLS 1.3):
+- ClientHello: Advertises cipher suites (e.g. TLS_AES_256_GCM_SHA384) and KeyShare curves (X25519).
+- ServerHello: Selects mutual cipher suite and returns server public key share.
+- EncryptedExtensions & Certificate: Transmitted encrypted under handshake traffic keys.
+            
+=== SECTION 3: WEB APPLICATION SECURITY & VULNERABILITY AUDITING ===
+
+Cross-Site Scripting (XSS):
+- Reflected XSS: User-supplied input in HTTP GET/POST parameters immediately reflected in response body without sanitization.
+- Stored XSS: Injected payloads persisted in database and executed in administrative dashboards or peer browsers.
+- DOM-based XSS: Client-side JavaScript reads from tainted sources (location.search, document.referrer) into unsafe sinks (innerHTML, document.write, eval).
+Remediation: Context-aware HTML entity encoding, Content-Security-Policy (CSP) headers with strict nonces, HttpOnly cookies.
+
+Structured Query Language Injection (SQLi):
+- Error-based SQLi: Syntax quotes causing database driver errors revealing table names.
+- Boolean-based Blind: True/false condition toggling (e.g., ' AND 1=1 vs ' AND 1=2).
+- Time-based Blind: Heavy delay payloads (e.g., pg_sleep(5), WAITFOR DELAY '0:0:5').
+Remediation: Parameterized prepared statements, ORM abstraction layers, least privilege database credentials.
+
+Cookie Security Attributes:
+- HttpOnly: Prevents client-side JavaScript access (document.cookie), mitigating XSS cookie theft.
+- Secure: Restricts cookie transmission strictly to encrypted HTTPS connections.
+- SameSite (Strict/Lax/None): Controls cross-site cookie transmission to mitigate Cross-Site Request Forgery (CSRF).
+            
+=== SECTION 4: GUI PENETRATION TESTING WORKFLOWS ===
+
+Burp Suite Community Edition Architecture:
+- Proxy Intercept: Listens on 127.0.0.1:8080. When enabled, incoming and outgoing HTTP requests pause for manual review, parameter tampering, or drop actions.
+- HTTP History: Comprehensive tabular audit trail of all upstream/downstream traffic including status codes, MIME types, and SSL handshakes.
+- Repeater: Isolated workstation for replaying, mutating, and analyzing individual HTTP requests without re-triggering user flows in browser.
+- Target Site Map: Hierarchical tree view of discovered hosts, subdirectories, files, and parameterized URLs.
+
+Wireshark GUI Analysis Workflow:
+- Interface Selection: Identification of local physical, virtual, or loopback interfaces (eth0, lo, wlan0).
+- Live Capture Supervision: Promiscuous mode frame capture with real-time packet length distribution.
+- Display Filtering: Post-capture expression filtering (e.g., 'http.response.code == 200', 'dns.flags.response == 1').
+- Packet Dissection: Deep inspection of Ethernet, IPv4, TCP, and application layer payload bytes.
+- PCAP Export: Binary capture output (.pcap / .pcapng) registered with cryptographic SHA-256 digests.
+
+Playwright Security Testing Browser:
+- Observable Execution Plane: Full browser automation where DOM snapshots, cookies, console logs, and alert dialogs are captured as first-class events.
+- Dialog Interception: Automated listeners for window.alert, window.confirm, and window.prompt for XSS PoC verification.
+            
+=== SECTION 5: AUTONOMOUS RECOVERY & ERROR REMEDIATION CHAINS ===
+
+Autonomous Recovery Principles:
+1. Rate Limiting Backoff (HTTP 429 / Socket Drop):
+   When scanners encounter rate-limiting or anti-automation defenses, immediately reduce worker threads (e.g. from 50 to 5) and insert delay pacing (-p 0.15).
+2. Tool Substitution:
+   When an active tool stalls due to incompatible protocol implementations or socket timeouts (e.g., gobuster hanging on chunked responses), substitute with an alternative tool family (e.g., ffuf or whatweb).
+3. Parameter Syntax Repair:
+   When automated tools report missing injection markers (e.g., sqlmap failing on GET URLs without query strings), supply explicit POST body data and target injection parameter flags.
+4. Scope Contract Compliance:
+   When an active operation triggers a TOOL_TIER_EXCEEDED error, autonomously downgrade from intrusive active scanning (Tier 3) to authorized passive fingerprinting (Tier 1).
+            

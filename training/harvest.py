@@ -659,6 +659,136 @@ class RecoveryChainHarvester:
                 parent_event_link=None,
                 metadata={"strategy": "RATE_LIMIT_BACKOFF", "counterfactual": True},
             ),
+
+            # 7. Burp Suite Proxy Intercept Stall -> Toggle Intercept Off for Automation
+            RecoveryChain(
+                chain_id="rec_cf_burp_intercept_stall",
+                goal="Audit web application traffic passing through Burp Suite proxy",
+                capability="gui_automation",
+                strategy="WORKFLOW_STATE_MUTATION",
+                bad_attempt={
+                    "tool": "burpsuite.gui.v1",
+                    "args": {"workflow": "inspect_proxy_history", "host": "target.local"},
+                    "exit_code": 1,
+                    "failure_reason": "Proxy history empty: in-flight HTTP requests paused at Proxy Intercept modal.",
+                },
+                recovery_action="Execute 'toggle_proxy' with enable=False to release in-flight queue and allow automated traffic flow.",
+                corrected_attempt={
+                    "tool": "burpsuite.gui.v1",
+                    "args": {"workflow": "toggle_proxy", "enable": False},
+                    "exit_code": 0,
+                },
+                verified_result={
+                    "status": "success",
+                    "result_summary": "Proxy Intercept toggled to OFF; traffic flowing freely, 12 HTTP requests captured in history.",
+                },
+                parent_event_link=None,
+                metadata={"strategy": "WORKFLOW_STATE_MUTATION", "counterfactual": True, "tier": 3},
+            ),
+
+            # 8. Wireshark Raw Socket Permission Denied -> Loopback / Filtered Capture
+            RecoveryChain(
+                chain_id="rec_cf_wireshark_perm_denied",
+                goal="Capture packet trace for authentication protocol handshake",
+                capability="packet_capture_analysis",
+                strategy="INTERFACE_FALLBACK_AND_FILTER",
+                bad_attempt={
+                    "tool": "wireshark.gui.v1",
+                    "args": {"workflow": "start_capture", "interface": "eth0", "promiscuous": True},
+                    "exit_code": 1,
+                    "failure_reason": "Permission denied: Raw socket promiscuous capture requires elevated capabilities on eth0.",
+                },
+                recovery_action="Fallback to local loopback interface 'lo' with non-promiscuous capture and port filter.",
+                corrected_attempt={
+                    "tool": "wireshark.gui.v1",
+                    "args": {"workflow": "start_capture", "interface": "lo", "capture_filter": "tcp port 8080", "promiscuous": False},
+                    "exit_code": 0,
+                },
+                verified_result={
+                    "status": "success",
+                    "result_summary": "Packet capture active on 'lo'; captured 48 frames with cryptographic PCAP provenance.",
+                },
+                parent_event_link=None,
+                metadata={"strategy": "INTERFACE_FALLBACK_AND_FILTER", "counterfactual": True, "tier": 3},
+            ),
+
+            # 9. OWASP ZAP Spider Recursion Trap -> Regex Exclusion Filter
+            RecoveryChain(
+                chain_id="rec_cf_zap_spider_recursion",
+                goal="Spider application attack surface on target web application",
+                capability="web_vulnerability_scan",
+                strategy="CRAWL_SCOPE_CONSTRAINT",
+                bad_attempt={
+                    "tool": "zap.gui.v1",
+                    "args": {"workflow": "run_spider", "target_url": "http://target.local/", "max_depth": 10},
+                    "exit_code": 124,
+                    "failure_reason": "Spider execution timed out: trapped in infinite calendar/pagination loop.",
+                },
+                recovery_action="Constrain spider depth to 3 and add regex exclusion pattern for calendar pagination links.",
+                corrected_attempt={
+                    "tool": "zap.gui.v1",
+                    "args": {"workflow": "run_spider", "target_url": "http://target.local/", "max_depth": 3, "exclude_regex": ".*[?&]page=[0-9]+.*"},
+                    "exit_code": 0,
+                },
+                verified_result={
+                    "status": "success",
+                    "result_summary": "Spider completed cleanly: 42 unique endpoints mapped without recursion stall.",
+                },
+                parent_event_link=None,
+                metadata={"strategy": "CRAWL_SCOPE_CONSTRAINT", "counterfactual": True, "tier": 3},
+            ),
+
+            # 10. Security Browser XSS WAF Block -> Event-Driven DOM Mutation
+            RecoveryChain(
+                chain_id="rec_cf_browser_waf_evasion",
+                goal="Verify DOM XSS vulnerability in target web search field",
+                capability="xss_testing",
+                strategy="PAYLOAD_ENCODING_MUTATION",
+                bad_attempt={
+                    "tool": "browser.security.v1",
+                    "args": {"workflow": "xss_check", "target_url": "http://target.local/search.php", "selector": "#query", "payload": "<script>alert(1)</script>"},
+                    "exit_code": 1,
+                    "failure_reason": "HTTP 403 Forbidden: WAF signature detected '<script>' tag in submission.",
+                },
+                recovery_action="Mutate payload to event-driven image tag with error handler '<img src=x onerror=alert(1)>'.",
+                corrected_attempt={
+                    "tool": "browser.security.v1",
+                    "args": {"workflow": "xss_check", "target_url": "http://target.local/search.php", "selector": "#query", "payload": "<img src=x onerror=alert('kairo-verified')>"},
+                    "exit_code": 0,
+                },
+                verified_result={
+                    "status": "success",
+                    "result_summary": "XSS verified: Dialog alert('kairo-verified') intercepted and reflected in DOM snapshot.",
+                },
+                parent_event_link=None,
+                metadata={"strategy": "PAYLOAD_ENCODING_MUTATION", "counterfactual": True, "tier": 2},
+            ),
+
+            # 11. Android ADB Disconnection -> Server Restart and Component Relaunch
+            RecoveryChain(
+                chain_id="rec_cf_android_adb_restart",
+                goal="Inspect mobile app authentication activity on Android emulator",
+                capability="mobile_security_testing",
+                strategy="DAEMON_RESTART_AND_RETRY",
+                bad_attempt={
+                    "tool": "kali_worker",
+                    "args": {"command": "adb shell am start -n com.target.app/.LoginActivity"},
+                    "exit_code": 1,
+                    "failure_reason": "error: device offline / ADB server communication error.",
+                },
+                recovery_action="Restart ADB server daemon ('adb kill-server && adb start-server') and verify device status.",
+                corrected_attempt={
+                    "tool": "kali_worker",
+                    "args": {"command": "adb kill-server && adb start-server && adb wait-for-device && adb shell am start -n com.target.app/.LoginActivity"},
+                    "exit_code": 0,
+                },
+                verified_result={
+                    "status": "success",
+                    "result_summary": "ADB daemon restored; LoginActivity brought to foreground and UI hierarchy extracted.",
+                },
+                parent_event_link=None,
+                metadata={"strategy": "DAEMON_RESTART_AND_RETRY", "counterfactual": True},
+            ),
         ]
 
         return templates

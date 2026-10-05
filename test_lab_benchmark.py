@@ -28,13 +28,13 @@ class TestLabSpecifications(unittest.TestCase):
         self.assertEqual(LAB_SPEC_VERSION, "2026.1")
         self.assertTrue(len(ENVIRONMENT_NAME) > 0)
 
-    def test_exactly_ten_tasks(self):
-        self.assertEqual(len(LAB_TASKS), 10, "Lab environment must contain exactly 10 tasks.")
+    def test_task_count_at_least_fifty_mvp(self):
+        self.assertGreaterEqual(len(LAB_TASKS), 50, "Formal benchmark suite must contain at least 50 tasks (MVP target: 50-100).")
 
     def test_unique_task_ids(self):
         task_ids = [t.task_id for t in LAB_TASKS]
         self.assertEqual(len(task_ids), len(set(task_ids)), "All task IDs must be unique.")
-        for idx in range(1, 11):
+        for idx in range(1, 51):
             expected_id = f"LAB-TASK-{idx:02d}"
             self.assertIn(expected_id, task_ids)
 
@@ -56,7 +56,7 @@ class TestLabSpecifications(unittest.TestCase):
         self.assertEqual(t1.task_id, "LAB-TASK-01")
 
         all_tasks = list_tasks()
-        self.assertEqual(len(all_tasks), 10)
+        self.assertGreaterEqual(len(all_tasks), 50)
 
     def test_task_ten_is_failure_aware_recovery_challenge(self):
         t10 = get_task_by_id("LAB-TASK-10")
@@ -111,7 +111,7 @@ class TestBenchmarkRunner(unittest.TestCase):
             use_live_targets=False,
         )
 
-        report = runner.run_all(verbose=False)
+        report = runner.run_all(verbose=False, task_limit=10)
 
         # Verify Report structure
         self.assertIsInstance(report, dict)

@@ -3,6 +3,7 @@ AdapterRegistry: auto-discover and register all tool adapters by tool_id.
 """
 from __future__ import annotations
 import importlib
+import inspect
 import logging
 from typing import Dict, Optional, Type
 from orchestrator.adapters.base import ToolAdapter
@@ -25,6 +26,10 @@ _ADAPTER_MODULES = [
     "orchestrator.adapters.tcpdump_adapter",
     "orchestrator.adapters.exiftool_adapter",
     "orchestrator.adapters.hashid_adapter",
+    "orchestrator.adapters.burpsuite_adapter",
+    "orchestrator.adapters.wireshark_adapter",
+    "orchestrator.adapters.zap_adapter",
+    "orchestrator.adapters.browser_adapter",
 ]
 
 
@@ -45,7 +50,8 @@ class AdapterRegistry:
                             isinstance(obj, type)
                             and issubclass(obj, ToolAdapter)
                             and obj is not ToolAdapter
-                            and obj.tool_id
+                            and not inspect.isabstract(obj)
+                            and getattr(obj, "tool_id", "")
                         ):
                             self._adapters[obj.tool_id] = obj
                             logger.debug(f"[AdapterRegistry] Registered adapter: {obj.tool_id}")

@@ -1,27 +1,59 @@
-# Model Configuration File (models.yaml)
-# Defines active and fallback models, runtimes, quantization, and context limits
-
-active_model: "Qwen3-Coder-30B-A3B-Instruct"
-
+active_model: kairo-dpo-aligned
 models:
-  - model_id: "Qwen3-Coder-30B-A3B-Instruct"
-    runtime: "llama.cpp"
-    quantization: "Q4_K_M"
-    context_length: 32768
-    role: "primary"
-    path: "models/Qwen3-Coder-30B-A3B-Instruct-Q4_K_M.gguf"
-    repo: "unsloth/Qwen3-Coder-30B-A3B-Instruct-GGUF"
-    download_url: "https://huggingface.co/unsloth/Qwen3-Coder-30B-A3B-Instruct-GGUF/resolve/main/Qwen3-Coder-30B-A3B-Instruct-Q4_K_M.gguf"
-    gpu_layers: 24
-    description: "Mixture-of-Experts 30B model with 3.3B activated parameters optimized for agentic coding"
-
-  - model_id: "Qwen2.5-0.5B-Instruct"
-    runtime: "llama.cpp"
-    quantization: "Q4_K_M"
-    context_length: 4096
-    role: "fallback"
-    path: "models/qwen2.5-0.5b-instruct-q4_k_m.gguf"
-    repo: "Qwen/Qwen2.5-0.5B-Instruct-GGUF"
-    download_url: "https://huggingface.co/Qwen/Qwen2.5-0.5B-Instruct-GGUF/resolve/main/qwen2.5-0.5b-instruct-q4_k_m.gguf"
-    gpu_layers: 99
-    description: "Ultra-low latency fallback verification model"
+- model_id: Qwen3-Coder-30B-A3B-Instruct
+  runtime: llama.cpp
+  quantization: Q4_K_M
+  context_length: 32768
+  role: primary
+  path: models/Qwen3-Coder-30B-A3B-Instruct-Q4_K_M.gguf
+  repo: unsloth/Qwen3-Coder-30B-A3B-Instruct-GGUF
+  download_url: https://huggingface.co/unsloth/Qwen3-Coder-30B-A3B-Instruct-GGUF/resolve/main/Qwen3-Coder-30B-A3B-Instruct-Q4_K_M.gguf
+  gpu_layers: 24
+  description: Mixture-of-Experts 30B model with 3.3B activated parameters optimized
+    for agentic coding
+- model_id: Qwen2.5-0.5B-Instruct
+  runtime: llama.cpp
+  quantization: Q4_K_M
+  context_length: 4096
+  role: fallback
+  path: models/qwen2.5-0.5b-instruct-q4_k_m.gguf
+  repo: Qwen/Qwen2.5-0.5B-Instruct-GGUF
+  download_url: https://huggingface.co/Qwen/Qwen2.5-0.5B-Instruct-GGUF/resolve/main/qwen2.5-0.5b-instruct-q4_k_m.gguf
+  gpu_layers: 99
+  description: Ultra-low latency fallback verification model
+- model_id: kairo-custom-model
+  runtime: transformers
+  quantization: FP32
+  context_length: 8192
+  role: primary-custom
+  path: training/checkpoints/trl_sft/final_model
+  repo: kairo/kairo-base-490m-sft
+  description: Custom-trained 490M parameter decoder-only Transformer (RMSNorm+RoPE+GQA+SwiGLU)
+    for tool-selection and schema-validated tool-calling
+- model_id: kairo-scale-1.2b
+  runtime: transformers
+  quantization: FP32
+  context_length: 8192
+  role: primary-custom-scaled
+  path: training/checkpoints/pretrain/kairo-1.2b_pretrained.pt
+  repo: kairo/kairo-1.2b-domain-sft
+  description: Scaled 1.05B-1.31B parameter decoder-only Transformer (RMSNorm+RoPE+GQA+SwiGLU)
+    pretrained on expanded Kali domain corpus and aligned on task-graph preference
+    pairs
+- model_id: kairo-sft-baseline
+  runtime: transformers
+  quantization: FP32
+  context_length: 8192
+  role: sft-baseline
+  path: training/checkpoints/trl_sft/final_model
+  repo: kairo/kairo-sft-baseline
+  description: Pre-DPO SFT baseline model before preference tuning
+- model_id: kairo-dpo-aligned
+  runtime: transformers
+  quantization: FP32
+  context_length: 8192
+  role: dpo-aligned
+  path: training/checkpoints/dpo/kairo-dpo-final
+  repo: kairo/kairo-dpo-aligned
+  description: Post-DPO preference-tuned model aligned on task-graph preference pairs
+    via TRL DPOTrainer

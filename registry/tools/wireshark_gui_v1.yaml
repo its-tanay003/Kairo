@@ -1,0 +1,125 @@
+id: wireshark.gui.v1
+name: Wireshark Network Protocol Analyzer GUI Adapter
+version: 1.0.0
+description: Supervises and automates Wireshark GUI inside the Kali worker plane with periodic screenshot capture, UI-state extraction, and bounded scripted workflows.
+category: network_analysis
+binary: wireshark
+capabilities:
+  - packet_capture
+  - traffic_dissection
+  - display_filters
+  - pcap_analysis
+  - gui_automation
+  - visual_evidence
+
+inputs:
+  type: object
+  properties:
+    action:
+      type: string
+      description: Action to perform (launch, workflow, click, type, extract_state, screenshot, stop)
+      default: "workflow"
+    workflow:
+      type: string
+      description: Scripted workflow name (select_interface, start_capture, apply_display_filter, inspect_packet, stop_and_save_pcap)
+      default: "start_capture"
+    params:
+      type: object
+      description: Parameters for the selected scripted workflow
+      default: {}
+    x:
+      type: integer
+      description: X coordinate for bounded mouse click
+    y:
+      type: integer
+      description: Y coordinate for bounded mouse click
+    control_id:
+      type: string
+      description: Named UI control identifier to interact with
+    text:
+      type: string
+      description: Text string to type into target control
+    caption:
+      type: string
+      description: Optional caption for on-demand visual evidence screenshot
+  required: []
+
+outputs:
+  type: object
+  properties:
+    status:
+      type: string
+      description: Execution outcome status
+    ui_state:
+      type: object
+      description: Extracted UI state including window title, active panel/subpanel, and interactable controls
+    workflow:
+      type: string
+      description: Name of executed workflow
+    pcap_file:
+      type: string
+      description: Saved PCAP artifact path if capture was stopped
+    pcap_sha256:
+      type: string
+      description: SHA-256 hash of saved PCAP capture file
+    screenshots:
+      type: array
+      items:
+        type: object
+      description: Captured Visual Evidence screenshots with SHA-256 provenance hashes
+    duration_ms:
+      type: number
+      description: Total execution duration in milliseconds
+
+side_effects:
+  - promiscuous_network_capture
+  - pcap_artifact_generation
+  - disk_write_artifacts
+
+privilege: root
+gui: true
+
+parser:
+  type: gui_state_json
+  format: wireshark_ui_state_protocol
+
+prerequisites:
+  - wireshark_package
+  - dumpcap_capabilities
+  - kali_worker_x11_or_virtual_framebuffer
+
+docs:
+  summary: Automates Wireshark GUI for live packet capture, display filtering, protocol decode inspection, and PCAP artifact preservation.
+  usage: Pass workflow name (select_interface, start_capture, apply_display_filter, inspect_packet, stop_and_save_pcap) with parameters.
+  examples:
+    - action: workflow
+      workflow: start_capture
+      params:
+        interface: eth0
+    - action: workflow
+      workflow: apply_display_filter
+      params:
+        filter: "http or dns"
+    - action: workflow
+      workflow: stop_and_save_pcap
+
+success_signals:
+  exit_codes:
+    - 0
+
+failure_signals:
+  exit_codes:
+    - 1
+    - 127
+  timeout: true
+
+rollback:
+  supported: true
+  strategy: process_kill_and_scope_revert
+  action: orchestrator.adapters.wireshark_adapter.stop()
+
+version_compatibility:
+  min_agent_version: 1.0.0
+  wireshark_version: "4.x"
+
+timeout_ms: 60000

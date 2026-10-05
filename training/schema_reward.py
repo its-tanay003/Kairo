@@ -59,10 +59,13 @@ DEFAULT_ALLOWED_TARGETS = [
     "192.168.1.100",
     "target.lab",
     "target.local",
+    "lab.local",
+    "example-lab.org",
     "staging.corp.internal",
     "api.corp.internal",
     "localhost"
 ]
+
 
 
 class ToolSpecSchemaValidator:

@@ -1,4 +1,5 @@
 import http from "http";
+import net from "net";
 import { WebSocketServer, WebSocket } from "ws";
 import { randomUUID } from "crypto";
 
@@ -125,6 +126,75 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
+  if (url.pathname === "/execution-plane" || url.pathname === "/kali/status") {
+    try {
+      const response = await fetch(`${ORCHESTRATOR_URL}/execution-plane`);
+      const data = await response.json();
+      res.writeHead(200, { "Content-Type": "application/json" });
+      res.end(JSON.stringify(data));
+    } catch (err: any) {
+      res.writeHead(502, { "Content-Type": "application/json" });
+      res.end(JSON.stringify({ error: "Failed to connect to orchestrator execution-plane", details: err.message }));
+    }
+    return;
+  }
+
+  // Auth routes: /auth/token, /auth/verify, /auth/sessions
+  if (url.pathname.startsWith("/auth/")) {
+    try {
+      if (req.method === "POST") {
+        const body = await parseJsonBody(req);
+        const response = await fetch(`${ORCHESTRATOR_URL}${url.pathname}`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(body),
+        });
+        const data = await response.json();
+        res.writeHead(response.status, { "Content-Type": "application/json" });
+        res.end(JSON.stringify(data));
+        return;
+      } else {
+        const response = await fetch(`${ORCHESTRATOR_URL}${url.pathname}${url.search}`);
+        const data = await response.json();
+        res.writeHead(response.status, { "Content-Type": "application/json" });
+        res.end(JSON.stringify(data));
+        return;
+      }
+    } catch (err: any) {
+      res.writeHead(502, { "Content-Type": "application/json" });
+      res.end(JSON.stringify({ error: `Auth proxy error: ${err.message}` }));
+      return;
+    }
+  }
+
+  // Workspace routes: /workspaces, /workspaces/provision, /workspaces/:id, /workspaces/:id/terminate
+  if (url.pathname.startsWith("/workspaces")) {
+    try {
+      if (req.method === "POST") {
+        const body = await parseJsonBody(req);
+        const response = await fetch(`${ORCHESTRATOR_URL}${url.pathname}`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(body),
+        });
+        const data = await response.json();
+        res.writeHead(response.status, { "Content-Type": "application/json" });
+        res.end(JSON.stringify(data));
+        return;
+      } else {
+        const response = await fetch(`${ORCHESTRATOR_URL}${url.pathname}${url.search}`);
+        const data = await response.json();
+        res.writeHead(response.status, { "Content-Type": "application/json" });
+        res.end(JSON.stringify(data));
+        return;
+      }
+    } catch (err: any) {
+      res.writeHead(502, { "Content-Type": "application/json" });
+      res.end(JSON.stringify({ error: `Workspaces proxy error: ${err.message}` }));
+      return;
+    }
+  }
+
   if (url.pathname === "/events") {
     try {
       const response = await fetch(`${ORCHESTRATOR_URL}/events`);
@@ -192,6 +262,83 @@ const server = http.createServer(async (req, res) => {
     } catch (err: any) {
       res.writeHead(502, { "Content-Type": "application/json" });
       res.end(JSON.stringify({ error: `Process Proxy error: ${err.message}` }));
+      return;
+    }
+  }
+
+  // Screen / VNC routes: /screen/status, /screen/snapshot.png
+  if (url.pathname.startsWith("/screen/")) {
+    try {
+      const response = await fetch(`${ORCHESTRATOR_URL}${url.pathname}${url.search}`);
+      const contentType = response.headers.get("content-type") || "application/json";
+      res.writeHead(response.status, { "Content-Type": contentType });
+      if (contentType.includes("image")) {
+        const buffer = Buffer.from(await response.arrayBuffer());
+        res.end(buffer);
+      } else {
+        const data = await response.json();
+        res.end(JSON.stringify(data));
+      }
+      return;
+    } catch (err: any) {
+      res.writeHead(502, { "Content-Type": "application/json" });
+      res.end(JSON.stringify({ error: `Screen Proxy error: ${err.message}` }));
+      return;
+    }
+  }
+
+  // Security Browser routes: /browser/state, /browser/history, /browser/execute, /browser/screenshot, /browser/stop
+  if (url.pathname.startsWith("/browser")) {
+    try {
+      if (req.method === "GET") {
+        const response = await fetch(`${ORCHESTRATOR_URL}${url.pathname}${url.search}`);
+        const data = await response.json();
+        res.writeHead(response.status, { "Content-Type": "application/json" });
+        res.end(JSON.stringify(data));
+        return;
+      } else if (req.method === "POST") {
+        const body = await parseJsonBody(req);
+        const response = await fetch(`${ORCHESTRATOR_URL}${url.pathname}${url.search}`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(body),
+        });
+        const data = await response.json();
+        res.writeHead(response.status, { "Content-Type": "application/json" });
+        res.end(JSON.stringify(data));
+        return;
+      }
+    } catch (err: any) {
+      res.writeHead(502, { "Content-Type": "application/json" });
+      res.end(JSON.stringify({ error: `Browser Proxy error: ${err.message}` }));
+      return;
+    }
+  }
+
+  // Tier 3 GUI routes: /gui/adapters, /gui/execute, /gui/state/:id, /gui/screenshot/:id, /gui/stop/:id
+  if (url.pathname.startsWith("/gui")) {
+    try {
+      if (req.method === "GET") {
+        const response = await fetch(`${ORCHESTRATOR_URL}${url.pathname}${url.search}`);
+        const data = await response.json();
+        res.writeHead(response.status, { "Content-Type": "application/json" });
+        res.end(JSON.stringify(data));
+        return;
+      } else if (req.method === "POST") {
+        const body = await parseJsonBody(req);
+        const response = await fetch(`${ORCHESTRATOR_URL}${url.pathname}${url.search}`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(body),
+        });
+        const data = await response.json();
+        res.writeHead(response.status, { "Content-Type": "application/json" });
+        res.end(JSON.stringify(data));
+        return;
+      }
+    } catch (err: any) {
+      res.writeHead(502, { "Content-Type": "application/json" });
+      res.end(JSON.stringify({ error: `GUI Proxy error: ${err.message}` }));
       return;
     }
   }
@@ -328,15 +475,76 @@ function parseJsonBody(req: http.IncomingMessage): Promise<any> {
 }
 
 // WebSocket Server attached to the HTTP server
-const wss = new WebSocketServer({ server });
+const wss = new WebSocketServer({ noServer: true });
+
+server.on("upgrade", (req, socket, head) => {
+  const url = new URL(req.url || "/", `http://${req.headers.host}`);
+  if (url.pathname === "/vnc" || url.pathname.startsWith("/vnc/")) {
+    const vncPort = parseInt(process.env.VNC_WS_PORT || "6080", 10);
+    const vncSocket = net.createConnection({ port: vncPort, host: "127.0.0.1" }, () => {
+      const rawLines = [`${req.method} ${url.pathname}${url.search} HTTP/1.1`];
+      for (let i = 0; i < req.rawHeaders.length; i += 2) {
+        rawLines.push(`${req.rawHeaders[i]}: ${req.rawHeaders[i + 1]}`);
+      }
+      rawLines.push("\r\n");
+      vncSocket.write(rawLines.join("\r\n"));
+      if (head && head.length > 0) vncSocket.write(head);
+      socket.pipe(vncSocket);
+      vncSocket.pipe(socket);
+    });
+    vncSocket.on("error", (err: any) => {
+      console.warn(`[Gateway] VNC proxy connection error: ${err.message}`);
+      socket.destroy();
+    });
+    socket.on("error", () => {
+      vncSocket.destroy();
+    });
+    return;
+  }
+
+  wss.handleUpgrade(req, socket, head, (ws) => {
+    wss.emit("connection", ws, req);
+  });
+});
 
 interface ClientSession {
   ws: WebSocket;
   sessionId: string;
   connectedAt: string;
+  token?: string;
+  clientType: "linux-desktop" | "windows-desktop" | "browser-desktop" | "browser-mobile" | "tauri-desktop" | "cli" | "unknown";
+  authenticated: boolean;
+  user?: any;
+  workspaceId?: string;
+  dataPlane: "local-only" | "connected";
 }
 
 const sessions = new Map<WebSocket, ClientSession>();
+
+/**
+ * Broadcasts a message to all connected clients, optionally filtering by workspace.
+ */
+function broadcastToAll(message: string | object, excludeWs?: WebSocket) {
+  const msgStr = typeof message === "string" ? message : JSON.stringify(message);
+  for (const s of sessions.values()) {
+    if (s.ws.readyState === WebSocket.OPEN) {
+      if (excludeWs && s.ws === excludeWs) continue;
+      s.ws.send(msgStr);
+    }
+  }
+}
+
+function broadcastToWorkspace(workspaceId: string | undefined, message: string | object, excludeWs?: WebSocket) {
+  const msgStr = typeof message === "string" ? message : JSON.stringify(message);
+  for (const s of sessions.values()) {
+    if (s.ws.readyState === WebSocket.OPEN) {
+      if (excludeWs && s.ws === excludeWs) continue;
+      if (!workspaceId || !s.workspaceId || s.workspaceId === workspaceId) {
+        s.ws.send(msgStr);
+      }
+    }
+  }
+}
 
 /**
  * Periodically polls new output chunks and process tree updates from orchestrator
@@ -403,29 +611,113 @@ function startStreamBroadcaster(taskId: string, targetWs?: WebSocket) {
   }, 100);
 }
 
-wss.on("connection", (ws: WebSocket, req) => {
+wss.on("connection", async (ws: WebSocket, req) => {
   const url = new URL(req.url || "/", `http://${req.headers.host}`);
   const reqSessionId = url.searchParams.get("sessionId");
   const sessionId = reqSessionId || `sess_${randomUUID().slice(0, 8)}`;
+  const reqWorkspaceId = url.searchParams.get("workspaceId") || url.searchParams.get("workspace_id") || undefined;
+
+  // Detect Client Type (query param, user-agent, or headers)
+  const userAgent = (req.headers["user-agent"] || "").toLowerCase();
+  const queryClientType = url.searchParams.get("clientType") || url.searchParams.get("client_type");
+  let clientType: ClientSession["clientType"] = "browser-desktop";
+
+  if (queryClientType && ["linux-desktop", "windows-desktop", "browser-desktop", "browser-mobile", "tauri-desktop", "cli"].includes(queryClientType)) {
+    clientType = queryClientType as any;
+  } else if (userAgent.includes("tauri")) {
+    clientType = "tauri-desktop";
+  } else if (userAgent.includes("linux") && !userAgent.includes("android")) {
+    clientType = "linux-desktop";
+  } else if (userAgent.includes("windows")) {
+    clientType = "windows-desktop";
+  } else if (
+    userAgent.includes("mobile") ||
+    userAgent.includes("android") ||
+    userAgent.includes("iphone") ||
+    userAgent.includes("ipad") ||
+    userAgent.includes("ipod")
+  ) {
+    clientType = "browser-mobile";
+  }
+
+  // Detect Data Plane (local loopback vs remote instance)
+  const hostHeader = (req.headers["host"] || "").toLowerCase();
+  const isLocal =
+    hostHeader.startsWith("localhost") ||
+    hostHeader.startsWith("127.0.0.1") ||
+    hostHeader.endsWith(".local");
+  const dataPlane = isLocal ? "local-only" : "connected";
+
+  // Check initial token if supplied in query or Authorization header
+  const queryToken = url.searchParams.get("token") || "";
+  const authHeader = (req.headers["authorization"] || "").replace(/^Bearer\s+/i, "");
+  const initialToken = queryToken || authHeader;
+  let authenticated = true;
+  let user: any = { user_id: "local_operator", role: "admin", client_type: clientType };
+
+  if (initialToken) {
+    try {
+      const authResp = await fetch(`${ORCHESTRATOR_URL}/auth/verify`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ token: initialToken }),
+      });
+      const authData = (await authResp.json()) as any;
+      if (authData.valid) {
+        authenticated = true;
+        user = authData.user;
+      } else {
+        authenticated = false;
+        user = null;
+      }
+    } catch {
+      // In local dev without orchestrator auth enforcement, default authenticated
+      authenticated = true;
+    }
+  }
 
   const session: ClientSession = {
     ws,
     sessionId,
     connectedAt: new Date().toISOString(),
+    token: initialToken || undefined,
+    clientType,
+    authenticated,
+    user,
+    workspaceId: reqWorkspaceId,
+    dataPlane,
   };
 
   sessions.set(ws, session);
-  console.log(`[Gateway] Client connected (Session: ${sessionId}, Active: ${sessions.size})`);
+  console.log(`[Gateway] Client connected (Session: ${sessionId}, Type: ${clientType}, Workspace: ${reqWorkspaceId || "none"}, DataPlane: ${dataPlane}, Auth: ${authenticated}, Active: ${sessions.size})`);
 
-  // Send initial session handshake
+  // Send initial session handshake with auth, workspace & data plane metadata
   ws.send(
     JSON.stringify({
       type: "handshake",
       sessionId,
-      message: `Connected to Gateway WebSocket server. Orchestrator target: ${ORCHESTRATOR_URL}`,
+      clientType,
+      workspaceId: reqWorkspaceId || null,
+      authenticated,
+      user,
+      dataPlane,
+      offlineState: dataPlane, // "local-only" or "connected"
+      message: `Connected to Session Gateway. Orchestrator target: ${ORCHESTRATOR_URL}`,
       timestamp: new Date().toISOString(),
     })
   );
+
+  // If connected to a pre-existing workspace, broadcast peer_joined to other active clients
+  if (reqWorkspaceId) {
+    broadcastToAll({
+      type: "peer_joined",
+      sessionId,
+      clientType,
+      workspaceId: reqWorkspaceId,
+      text: `Client [${clientType}] (${sessionId}) connected to workspace ${reqWorkspaceId}`,
+      timestamp: new Date().toISOString(),
+    }, ws);
+  }
 
   ws.on("message", async (data: Buffer | string) => {
     try {
@@ -441,6 +733,60 @@ wss.on("connection", (ws: WebSocket, req) => {
             timestamp: new Date().toISOString(),
           })
         );
+        return;
+      }
+
+      // Client identification & platform registration
+      if (payload.type === "client_identify") {
+        if (payload.client_type || payload.clientType) {
+          session.clientType = payload.client_type || payload.clientType;
+        }
+        if (payload.workspace_id || payload.workspaceId) {
+          session.workspaceId = payload.workspace_id || payload.workspaceId;
+        }
+        ws.send(
+          JSON.stringify({
+            type: "client_identified",
+            sessionId,
+            clientType: session.clientType,
+            workspaceId: session.workspaceId || null,
+            dataPlane: session.dataPlane,
+            timestamp: new Date().toISOString(),
+          })
+        );
+        return;
+      }
+
+      // Join / Bind to existing project workspace: { type: "join_workspace", workspaceId: "...", projectId: "..." }
+      if (payload.type === "join_workspace" || payload.type === "workspace_join") {
+        const wid = payload.workspaceId || payload.workspace_id;
+        try {
+          const resp = await fetch(`${ORCHESTRATOR_URL}/workspaces/${wid}`);
+          const data = (await resp.json()) as any;
+          if (data.workspace) {
+            session.workspaceId = data.workspace.workspace_id;
+            ws.send(
+              JSON.stringify({
+                type: "workspace_joined",
+                sessionId,
+                workspace: data.workspace,
+                timestamp: new Date().toISOString(),
+              })
+            );
+            broadcastToAll({
+              type: "peer_joined",
+              sessionId,
+              clientType: session.clientType,
+              workspaceId: wid,
+              text: `Client [${session.clientType}] (${sessionId}) joined project workspace ${data.workspace.project_name} (${wid})`,
+              timestamp: new Date().toISOString(),
+            }, ws);
+          } else {
+            ws.send(JSON.stringify({ type: "error", error: `Workspace '${wid}' not found` }));
+          }
+        } catch (err: any) {
+          ws.send(JSON.stringify({ type: "error", error: `Failed to join workspace ${wid}: ${err.message}` }));
+        }
         return;
       }
 
@@ -598,7 +944,10 @@ wss.on("connection", (ws: WebSocket, req) => {
         const taskId = payload.taskId || `task_kali_${randomUUID().slice(0, 8)}`;
         const command = payload.command || "uname";
         const args = payload.args || ["-a"];
-        const cwd = payload.cwd || "/home/kali";
+        const defaultCwd = (payload.workspace_id || session.workspaceId)
+          ? `/tmp/kairo_workspaces/${payload.workspace_id || session.workspaceId}/artifacts`
+          : "/home/kali";
+        const cwd = payload.cwd || defaultCwd;
         const timeoutMs = payload.timeout_ms || 30000;
         const snapshotBefore = Boolean(payload.snapshot_before);
 
@@ -641,18 +990,25 @@ wss.on("connection", (ws: WebSocket, req) => {
           console.warn("[Gateway] Scope check warning in kali_exec:", e.message);
         }
 
-        ws.send(
-          JSON.stringify({
-            type: "status",
-            status: "executing_kali_command",
-            sessionId,
-            taskId,
-            text: `Executing '${command} ${args.join(" ")}' in Kali VM...`,
-          })
-        );
+        broadcastToAll({
+          type: "user_message_broadcast",
+          senderSessionId: sessionId,
+          clientType: session.clientType,
+          taskId,
+          text: `[Kali Exec] ${command} ${args.join(" ")}`,
+          timestamp: new Date().toISOString(),
+        });
+
+        broadcastToAll({
+          type: "status",
+          status: "executing_kali_command",
+          sessionId,
+          taskId,
+          text: `Executing '${command} ${args.join(" ")}' in Kali VM...`,
+        });
 
         // Start stream broadcaster immediately
-        startStreamBroadcaster(taskId, ws);
+        startStreamBroadcaster(taskId);
 
         try {
           const resp = await fetch(`${ORCHESTRATOR_URL}/vm/execute`, {
@@ -673,19 +1029,17 @@ wss.on("connection", (ws: WebSocket, req) => {
             }),
           });
           const result = (await resp.json()) as any;
-          ws.send(
-            JSON.stringify({
-              type: "agent_response",
-              sessionId,
-              reply: `Kali VM execution of '${command}' completed (exit ${result.exit_code})`,
-              toolExecuted: { id: "kali.exec.v1", name: "Kali VM Exec", version: "1.0.0" },
-              execution: result,
-              durationMs: result.duration_ms,
-              timestamp: new Date().toISOString(),
-            })
-          );
+          broadcastToAll({
+            type: "agent_response",
+            sessionId,
+            reply: `Kali VM execution of '${command}' completed (exit ${result.exit_code})`,
+            toolExecuted: { id: "kali.exec.v1", name: "Kali VM Exec", version: "1.0.0" },
+            execution: result,
+            durationMs: result.duration_ms,
+            timestamp: new Date().toISOString(),
+          });
         } catch (err: any) {
-          ws.send(JSON.stringify({ type: "error", error: `Kali exec failed: ${err.message}` }));
+          broadcastToAll({ type: "error", error: `Kali exec failed: ${err.message}` });
         }
         return;
       }
@@ -785,19 +1139,26 @@ wss.on("connection", (ws: WebSocket, req) => {
           console.warn("[Gateway] Scope validation warning for tool_call:", e.message);
         }
 
-        ws.send(
-          JSON.stringify({
-            type: "status",
-            status: "executing_validated_tool",
-            sessionId: customSessionId,
-            taskId,
-            tool: toolId,
-            text: `Gateway validated ${toolId} scope & schema. Executing via orchestrator...`,
-          })
-        );
+        broadcastToAll({
+          type: "user_message_broadcast",
+          senderSessionId: customSessionId,
+          clientType: session.clientType,
+          taskId,
+          text: `[Tool Call] ${toolId} ${JSON.stringify(toolArgs)}`,
+          timestamp: new Date().toISOString(),
+        });
 
-        // Start live stream broadcaster for this tool execution
-        startStreamBroadcaster(taskId, ws);
+        broadcastToAll({
+          type: "status",
+          status: "executing_validated_tool",
+          sessionId: customSessionId,
+          taskId,
+          tool: toolId,
+          text: `Gateway validated ${toolId} scope & schema. Executing via orchestrator...`,
+        });
+
+        // Start live stream broadcaster for this tool execution across all sessions
+        startStreamBroadcaster(taskId);
 
         try {
           const resp = await fetch(`${ORCHESTRATOR_URL}/run`, {
@@ -818,30 +1179,26 @@ wss.on("connection", (ws: WebSocket, req) => {
 
           const result = (await resp.json()) as any;
 
-          // Stream back rich tool card payload
-          ws.send(
-            JSON.stringify({
-              type: "agent_response",
-              sessionId: customSessionId,
-              reply: result.reply,
-              toolExecuted: result.tool_executed,
-              execution: result.execution,
-              eventId: result.event_id,
-              event: result.event,
-              durationMs: result.duration_ms,
-              toolSelection: result.tool_selection,
-              timestamp: new Date().toISOString(),
-            })
-          );
+          // Broadcast rich tool card payload to all connected clients
+          broadcastToAll({
+            type: "agent_response",
+            sessionId: customSessionId,
+            reply: result.reply,
+            toolExecuted: result.tool_executed,
+            execution: result.execution,
+            eventId: result.event_id,
+            event: result.event,
+            durationMs: result.duration_ms,
+            toolSelection: result.tool_selection,
+            timestamp: new Date().toISOString(),
+          });
         } catch (err: any) {
-          ws.send(
-            JSON.stringify({
-              type: "error",
-              sessionId: customSessionId,
-              error: `Tool execution failed: ${err.message}`,
-              timestamp: new Date().toISOString(),
-            })
-          );
+          broadcastToAll({
+            type: "error",
+            sessionId: customSessionId,
+            error: `Tool execution failed: ${err.message}`,
+            timestamp: new Date().toISOString(),
+          });
         }
         return;
       }
@@ -852,15 +1209,22 @@ wss.on("connection", (ws: WebSocket, req) => {
         const customSessionId = payload.sessionId || sessionId;
         const taskId = payload.taskId || `task_${randomUUID().slice(0, 8)}`;
 
-        ws.send(
-          JSON.stringify({
-            type: "status",
-            status: "dispatching_to_orchestrator",
-            sessionId: customSessionId,
-            taskId,
-            text: `Calling agent orchestrator at ${ORCHESTRATOR_URL}...`,
-          })
-        );
+        broadcastToAll({
+          type: "user_message_broadcast",
+          senderSessionId: customSessionId,
+          clientType: session.clientType,
+          taskId,
+          text: content,
+          timestamp: new Date().toISOString(),
+        });
+
+        broadcastToAll({
+          type: "status",
+          status: "dispatching_to_orchestrator",
+          sessionId: customSessionId,
+          taskId,
+          text: `Calling agent orchestrator at ${ORCHESTRATOR_URL}...`,
+        });
 
         try {
           const orchestratorResponse = await fetch(`${ORCHESTRATOR_URL}/run`, {
@@ -880,31 +1244,27 @@ wss.on("connection", (ws: WebSocket, req) => {
 
           const result = (await orchestratorResponse.json()) as any;
 
-          // Stream response & tool card info back to client
-          ws.send(
-            JSON.stringify({
-              type: "agent_response",
-              sessionId: customSessionId,
-              reply: result.reply,
-              toolExecuted: result.tool_executed,
-              execution: result.execution,
-              eventId: result.event_id,
-              event: result.event,
-              durationMs: result.duration_ms,
-              toolSelection: result.tool_selection,
-              timestamp: new Date().toISOString(),
-            })
-          );
+          // Broadcast response & tool card info to all connected clients
+          broadcastToAll({
+            type: "agent_response",
+            sessionId: customSessionId,
+            reply: result.reply,
+            toolExecuted: result.tool_executed,
+            execution: result.execution,
+            eventId: result.event_id,
+            event: result.event,
+            durationMs: result.duration_ms,
+            toolSelection: result.tool_selection,
+            timestamp: new Date().toISOString(),
+          });
         } catch (err: any) {
           console.error(`[Gateway] Error calling orchestrator:`, err.message);
-          ws.send(
-            JSON.stringify({
-              type: "error",
-              sessionId: customSessionId,
-              error: `Gateway failed to reach orchestrator: ${err.message}`,
-              timestamp: new Date().toISOString(),
-            })
-          );
+          broadcastToAll({
+            type: "error",
+            sessionId: customSessionId,
+            error: `Gateway failed to reach orchestrator: ${err.message}`,
+            timestamp: new Date().toISOString(),
+          });
         }
         return;
       }
@@ -982,13 +1342,11 @@ wss.on("connection", (ws: WebSocket, req) => {
             body: JSON.stringify({ name: payload.name, description: payload.description || "" }),
           });
           const data = (await response.json()) as any;
-          ws.send(
-            JSON.stringify({
-              type: "vm_snapshot_result",
-              data,
-              timestamp: new Date().toISOString(),
-            })
-          );
+          broadcastToAll({
+            type: "vm_snapshot_result",
+            data,
+            timestamp: new Date().toISOString(),
+          });
         } catch (err: any) {
           ws.send(
             JSON.stringify({
@@ -1008,13 +1366,11 @@ wss.on("connection", (ws: WebSocket, req) => {
             body: JSON.stringify({ name: payload.name || "kairo_worker_ready" }),
           });
           const data = (await response.json()) as any;
-          ws.send(
-            JSON.stringify({
-              type: "vm_rollback_result",
-              data,
-              timestamp: new Date().toISOString(),
-            })
-          );
+          broadcastToAll({
+            type: "vm_rollback_result",
+            data,
+            timestamp: new Date().toISOString(),
+          });
         } catch (err: any) {
           ws.send(
             JSON.stringify({
@@ -1039,13 +1395,11 @@ wss.on("connection", (ws: WebSocket, req) => {
             }),
           });
           const plan = (await response.json()) as any;
-          ws.send(
-            JSON.stringify({
-              type: "planner_plan_created",
-              plan,
-              timestamp: new Date().toISOString(),
-            })
-          );
+          broadcastToAll({
+            type: "planner_plan_created",
+            plan,
+            timestamp: new Date().toISOString(),
+          });
         } catch (err: any) {
           ws.send(
             JSON.stringify({
@@ -1096,13 +1450,11 @@ wss.on("connection", (ws: WebSocket, req) => {
             }),
           });
           const plan = (await response.json()) as any;
-          ws.send(
-            JSON.stringify({
-              type: "planner_plan_updated",
-              plan,
-              timestamp: new Date().toISOString(),
-            })
-          );
+          broadcastToAll({
+            type: "planner_plan_updated",
+            plan,
+            timestamp: new Date().toISOString(),
+          });
         } catch (err: any) {
           ws.send(
             JSON.stringify({
@@ -1111,6 +1463,167 @@ wss.on("connection", (ws: WebSocket, req) => {
             })
           );
         }
+        return;
+      }
+
+      // Authentication via WebSocket: { type: "auth", token: "..." }
+      if (payload.type === "auth" || payload.type === "authenticate") {
+        const token = payload.token || "";
+        try {
+          const resp = await fetch(`${ORCHESTRATOR_URL}/auth/verify`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ token }),
+          });
+          const data = (await resp.json()) as any;
+          if (data.valid) {
+            session.authenticated = true;
+            session.user = data.user;
+            session.token = token;
+            ws.send(
+              JSON.stringify({
+                type: "auth_success",
+                sessionId,
+                user: data.user,
+                clientType: session.clientType,
+                dataPlane: session.dataPlane,
+                timestamp: new Date().toISOString(),
+              })
+            );
+          } else {
+            session.authenticated = false;
+            ws.send(
+              JSON.stringify({
+                type: "auth_failure",
+                sessionId,
+                error: data.error || "Invalid authentication token",
+                timestamp: new Date().toISOString(),
+              })
+            );
+          }
+        } catch (err: any) {
+          ws.send(JSON.stringify({ type: "error", error: `Auth verification failed: ${err.message}` }));
+        }
+        return;
+      }
+
+      // Provision Disposable Workspace via WebSocket: { type: "provision_workspace", projectName: "...", sessionId: "..." }
+      if (payload.type === "provision_workspace" || payload.type === "workspace_provision") {
+        try {
+          const resp = await fetch(`${ORCHESTRATOR_URL}/workspaces/provision`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              project_name: payload.project_name || payload.projectName || "default-project",
+              session_id: payload.session_id || payload.sessionId || sessionId,
+              owner_id: payload.owner_id || session.user?.user_id || "operator",
+            }),
+          });
+          const data = (await resp.json()) as any;
+          if (data.workspace) {
+            session.workspaceId = data.workspace.workspace_id;
+          }
+          broadcastToAll({
+            type: "workspace_provisioned",
+            sessionId,
+            workspace: data.workspace,
+            timestamp: new Date().toISOString(),
+          });
+        } catch (err: any) {
+          ws.send(JSON.stringify({ type: "error", error: `Failed to provision workspace: ${err.message}` }));
+        }
+        return;
+      }
+
+      // Query Workspaces via WebSocket: { type: "get_workspaces" }
+      if (payload.type === "get_workspaces" || payload.type === "list_workspaces") {
+        try {
+          const resp = await fetch(`${ORCHESTRATOR_URL}/workspaces`);
+          const data = (await resp.json()) as any;
+          ws.send(
+            JSON.stringify({
+              type: "workspaces_list",
+              sessionId,
+              workspaces: data.workspaces || [],
+              timestamp: new Date().toISOString(),
+            })
+          );
+        } catch (err: any) {
+          ws.send(JSON.stringify({ type: "error", error: `Failed to list workspaces: ${err.message}` }));
+        }
+        return;
+      }
+
+      // Query Single Workspace: { type: "get_workspace", workspaceId: "..." }
+      if (payload.type === "get_workspace") {
+        const wid = payload.workspaceId || payload.workspace_id || session.workspaceId;
+        if (!wid) {
+          ws.send(JSON.stringify({ type: "error", error: "Missing workspaceId" }));
+          return;
+        }
+        try {
+          const resp = await fetch(`${ORCHESTRATOR_URL}/workspaces/${wid}`);
+          const data = (await resp.json()) as any;
+          ws.send(
+            JSON.stringify({
+              type: "workspace_details",
+              sessionId,
+              workspace: data.workspace,
+              timestamp: new Date().toISOString(),
+            })
+          );
+        } catch (err: any) {
+          ws.send(JSON.stringify({ type: "error", error: `Failed to fetch workspace ${wid}: ${err.message}` }));
+        }
+        return;
+      }
+
+      // Terminate Workspace: { type: "terminate_workspace", workspaceId: "..." }
+      if (payload.type === "terminate_workspace") {
+        const wid = payload.workspaceId || payload.workspace_id || session.workspaceId;
+        if (!wid) {
+          ws.send(JSON.stringify({ type: "error", error: "Missing workspaceId" }));
+          return;
+        }
+        try {
+          const resp = await fetch(`${ORCHESTRATOR_URL}/workspaces/${wid}/terminate`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              purge_storage: payload.purge_storage !== false && payload.purgeStorage !== false,
+            }),
+          });
+          const data = (await resp.json()) as any;
+          if (session.workspaceId === wid) {
+            session.workspaceId = undefined;
+          }
+          broadcastToAll({
+            type: "workspace_terminated",
+            sessionId,
+            workspaceId: wid,
+            result: data,
+            timestamp: new Date().toISOString(),
+          });
+        } catch (err: any) {
+          ws.send(JSON.stringify({ type: "error", error: `Failed to terminate workspace ${wid}: ${err.message}` }));
+        }
+        return;
+      }
+
+      // Get Current Session & Data Plane State: { type: "get_session_state" }
+      if (payload.type === "get_session_state" || payload.type === "session_state") {
+        ws.send(
+          JSON.stringify({
+            type: "session_state",
+            sessionId,
+            clientType: session.clientType,
+            authenticated: session.authenticated,
+            user: session.user,
+            workspaceId: session.workspaceId || null,
+            dataPlane: session.dataPlane,
+            timestamp: new Date().toISOString(),
+          })
+        );
         return;
       }
 

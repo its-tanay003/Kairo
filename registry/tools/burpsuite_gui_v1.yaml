@@ -1,0 +1,117 @@
+id: burpsuite.gui.v1
+name: Burp Suite Community Edition GUI Adapter
+version: 1.0.0
+description: Supervises and automates Burp Suite Community Edition inside the Kali worker plane with periodic screenshot capture, UI-state extraction, and bounded scripted workflows.
+category: web_security
+binary: burpsuite
+capabilities:
+  - web_proxy
+  - http_interception
+  - packet_repeater
+  - target_mapping
+  - gui_automation
+  - visual_evidence
+
+inputs:
+  type: object
+  properties:
+    action:
+      type: string
+      description: Action to perform (launch, workflow, click, type, extract_state, screenshot, stop)
+      default: "workflow"
+    workflow:
+      type: string
+      description: Scripted workflow name (init_project, toggle_proxy, inspect_proxy_history, send_to_repeater, export_target_sitemap)
+      default: "init_project"
+    params:
+      type: object
+      description: Parameters for the selected scripted workflow
+      default: {}
+    x:
+      type: integer
+      description: X coordinate for bounded mouse click
+    y:
+      type: integer
+      description: Y coordinate for bounded mouse click
+    control_id:
+      type: string
+      description: Named UI control identifier to interact with
+    text:
+      type: string
+      description: Text string to type into target control
+    caption:
+      type: string
+      description: Optional caption for on-demand visual evidence screenshot
+  required: []
+
+outputs:
+  type: object
+  properties:
+    status:
+      type: string
+      description: Execution outcome status
+    ui_state:
+      type: object
+      description: Extracted UI state including window title, active panel/subpanel, and interactable controls
+    workflow:
+      type: string
+      description: Name of executed workflow
+    screenshots:
+      type: array
+      items:
+        type: object
+      description: Captured Visual Evidence screenshots with SHA-256 provenance hashes
+    duration_ms:
+      type: number
+      description: Total execution duration in milliseconds
+
+side_effects:
+  - local_proxy_listener
+  - web_traffic_interception
+  - disk_write_artifacts
+
+privilege: user
+gui: true
+
+parser:
+  type: gui_state_json
+  format: burp_ui_state_protocol
+
+prerequisites:
+  - java_runtime_environment
+  - burpsuite_community_package
+  - kali_worker_x11_or_virtual_framebuffer
+
+docs:
+  summary: Automates Burp Suite Community Edition via bounded scripted workflows, extracting UI state and capturing visual evidence.
+  usage: Pass workflow name (init_project, toggle_proxy, inspect_proxy_history, send_to_repeater, export_target_sitemap) with params.
+  examples:
+    - action: workflow
+      workflow: toggle_proxy
+      params:
+        enable: false
+    - action: workflow
+      workflow: inspect_proxy_history
+      params:
+        host: target.local
+
+success_signals:
+  exit_codes:
+    - 0
+
+failure_signals:
+  exit_codes:
+    - 1
+    - 127
+  timeout: true
+
+rollback:
+  supported: true
+  strategy: process_kill_and_scope_revert
+  action: orchestrator.adapters.burpsuite_adapter.stop()
+
+version_compatibility:
+  min_agent_version: 1.0.0
+  burpsuite_version: "2024.x"
+
+timeout_ms: 60000

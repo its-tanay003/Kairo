@@ -54,11 +54,78 @@ class ModelCenter:
                         "context_length": 4096,
                         "role": "fallback",
                     },
+                    {
+                        "model_id": "kairo-custom-model",
+                        "runtime": "transformers",
+                        "quantization": "FP32",
+                        "context_length": 8192,
+                        "role": "primary-custom",
+                        "path": "training/checkpoints/trl_sft/final_model",
+                    },
                 ],
             }
 
         with open(self.config_path, "r", encoding="utf-8") as f:
             return yaml.safe_load(f) or {}
+
+    def save_config(self, cfg: Optional[Dict[str, Any]] = None) -> None:
+        """Saves current configuration to models.yaml."""
+        to_save = cfg if cfg is not None else self.config
+        with open(self.config_path, "w", encoding="utf-8") as f:
+            yaml.safe_dump(to_save, f, sort_keys=False)
+        self.config = to_save
+
+    def list_models(self) -> List[Dict[str, Any]]:
+        """Returns the full catalog of configured models."""
+        cfg = self.load_config()
+        return cfg.get("models", [])
+
+    def get_model_by_role(self, role: str) -> Optional[Dict[str, Any]]:
+        """Finds configured model by role (e.g. 'primary-custom', 'primary', 'fallback')."""
+        models = self.list_models()
+        return next((m for m in models if m.get("role") == role), None)
+
+    def get_model_by_id(self, model_id: str) -> Optional[Dict[str, Any]]:
+        """Finds configured model by model_id."""
+        models = self.list_models()
+        return next((m for m in models if m.get("model_id") == model_id), None)
+
+    def get_active_model(self) -> Dict[str, Any]:
+        """Returns currently active model configuration."""
+        cfg = self.load_config()
+        active_id = cfg.get("active_model", "Qwen3-Coder-30B-A3B-Instruct")
+        model = self.get_model_by_id(active_id)
+        if not model:
+            models = cfg.get("models", [])
+            model = models[0] if models else {"model_id": active_id, "role": "primary"}
+        return model
+
+    def set_active_model(self, model_id: str) -> Dict[str, Any]:
+        """Sets the active model in memory and persists to models.yaml."""
+        model = self.get_model_by_id(model_id)
+        if not model:
+            raise ValueError(f"Model ID '{model_id}' not found in models catalog.")
+        cfg = self.load_config()
+        cfg["active_model"] = model_id
+        self.save_config(cfg)
+        return model
+
+    def select_model(self, model_id_or_role: str) -> Dict[str, Any]:
+        """
+        Selects model by either model_id or role (e.g., 'primary-custom', 'fallback').
+        """
+        by_role = self.get_model_by_role(model_id_or_role)
+        if by_role:
+            return self.set_active_model(by_role["model_id"])
+
+        by_id = self.get_model_by_id(model_id_or_role)
+        if by_id:
+            return self.set_active_model(by_id["model_id"])
+
+        raise ValueError(
+            f"No model found matching model_id or role: '{model_id_or_role}'"
+        )
+
 
     def get_vram_usage(self) -> Dict[str, Any]:
         """Queries GPU VRAM via nvidia-smi with safe fallback."""

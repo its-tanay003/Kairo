@@ -1,35 +1,35 @@
 {
   "min_reward_threshold": 1.0,
-  "tools_evaluated_count": 18,
+  "tools_evaluated_count": 22,
   "train": {
-    "total_records": 2699,
-    "retained_records": 2244,
-    "discarded_records": 455,
-    "pass_rate_pct": 83.14,
-    "mean_schema_reward": 0.9483,
+    "total_records": 2565,
+    "retained_records": 2196,
+    "discarded_records": 369,
+    "pass_rate_pct": 85.61,
+    "mean_schema_reward": 0.9546,
     "discard_reasons": {
-      "Target '10.0.0.45' violates Scope Contract boundaries": 63,
-      "Target 'app-server.internal' violates Scope Contract boundaries": 40,
-      "Target '192.168.56.101' violates Scope Contract boundaries": 220,
-      "Target 'db-primary.internal' violates Scope Contract boundaries": 28,
-      "Target 'vuln-target.internal' violates Scope Contract boundaries": 47,
-      "Property 'args' expected array/list, got dict": 15,
-      "Target 'metasploit-lab.internal' violates Scope Contract boundaries": 42
+      "Property 'args' expected array/list, got dict": 23,
+      "Target '10.0.0.45' violates Scope Contract boundaries": 56,
+      "Target '192.168.56.101' violates Scope Contract boundaries": 175,
+      "Target 'metasploit-lab.internal' violates Scope Contract boundaries": 28,
+      "Target 'vuln-target.internal' violates Scope Contract boundaries": 28,
+      "Target 'app-server.internal' violates Scope Contract boundaries": 27,
+      "Target 'db-primary.internal' violates Scope Contract boundaries": 26,
+      "Property 'x' expected integer, got NoneType": 6
     }
   },
   "validation": {
-    "total_records": 299,
-    "retained_records": 257,
-    "discarded_records": 42,
-    "pass_rate_pct": 85.95,
-    "mean_schema_reward": 0.9579,
+    "total_records": 284,
+    "retained_records": 249,
+    "discarded_records": 35,
+    "pass_rate_pct": 87.68,
+    "mean_schema_reward": 0.963,
     "discard_reasons": {
-      "Target 'metasploit-lab.internal' violates Scope Contract boundaries": 3,
+      "Target 'metasploit-lab.internal' violates Scope Contract boundaries": 6,
       "Target 'db-primary.internal' violates Scope Contract boundaries": 2,
-      "Target 'vuln-target.internal' violates Scope Contract boundaries": 3,
-      "Target '192.168.56.101' violates Scope Contract boundaries": 25,
-      "Target 'app-server.internal' violates Scope Contract boundaries": 6,
-      "Target '10.0.0.45' violates Scope Contract boundaries": 3
+      "Target 'vuln-target.internal' violates Scope Contract boundaries": 4,
+      "Target '192.168.56.101' violates Scope Contract boundaries": 19,
+      "Target 'app-server.internal' violates Scope Contract boundaries": 4
     }
   }
 }

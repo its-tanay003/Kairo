@@ -195,12 +195,20 @@ def get_connection(db_path: Optional[Path | str] = None) -> sqlite3.Connection:
     return conn
 
 
+_DB_INITIALIZED = set()
+
 def init_db(db_path: Optional[Path | str] = None) -> None:
+    target = Path(db_path) if db_path else DEFAULT_DB_PATH
+    target_key = str(target.resolve())
+    if target_key in _DB_INITIALIZED and target.exists():
+        return
     conn = get_connection(db_path)
     with conn:
         with open(SCHEMA_PATH, "r", encoding="utf-8") as f:
             conn.executescript(f.read())
     conn.close()
+    _DB_INITIALIZED.add(target_key)
+
 
 
 def insert_event(event: Event, db_path: Optional[Path | str] = None) -> int:
@@ -848,6 +856,9 @@ TOOL_TIER_MAPPING: Dict[str, int] = {
     "whatweb.scan.v1": 2,
     "nikto.scan.v1": 2,
     "tcpdump.capture.v1": 2,
+    "browser.security.v1": 2,
+    "playwright.browser.v1": 2,
+    "browser.test.v1": 2,
 
     # Tier 3
     "sqlmap.scan.v1": 3,
@@ -857,6 +868,10 @@ TOOL_TIER_MAPPING: Dict[str, int] = {
     "shell.run.v1": 3,
     "vm_execute": 3,
     "raw_command": 3,
+    "burpsuite.gui.v1": 3,
+    "burp.gui.v1": 3,
+    "wireshark.gui.v1": 3,
+    "zap.gui.v1": 3,
 }
 
 
@@ -1158,6 +1173,8 @@ def seed_default_scope_contract(db_path: Path | str = DEFAULT_DB_PATH) -> Dict[s
         targets=[
             "127.0.0.1",
             "localhost",
+            "target.local",
+            "*.local",
             "192.168.1.0/24",
             "192.168.56.0/24",
             "example.com",
@@ -1306,6 +1323,126 @@ def validate_scope_request(
         "tool_id": tool_id,
         "tool_tier": tier,
     }
+
+
+# ===========================================================================
+# Model Memory Store (Blueprint Memory Model)
+# Tracks model versions, prompt formats, adapters, and benchmark scores
+# ===========================================================================
+
+@dataclass
+class ModelMemoryRecord:
+    model_id: str
+    version: str
+    prompt_format: str
+    adapter: str
+    benchmark_score: float
+    recorded_at: Optional[str] = None
+    metrics: Optional[Dict[str, Any] | str] = None
+    metadata: Optional[Dict[str, Any] | str] = None
+    id: Optional[int] = None
+
+    def to_dict(self) -> Dict[str, Any]:
+        d = asdict(self)
+        if isinstance(d.get("metrics"), str):
+            try:
+                d["metrics"] = json.loads(d["metrics"])
+            except Exception:
+                pass
+        if isinstance(d.get("metadata"), str):
+            try:
+                d["metadata"] = json.loads(d["metadata"])
+            except Exception:
+                pass
+        return d
+
+
+def record_model_memory(
+    model_id: str,
+    version: str,
+    prompt_format: str,
+    adapter: str,
+    benchmark_score: float,
+    metrics: Optional[Dict[str, Any]] = None,
+    metadata: Optional[Dict[str, Any] | str] = None,
+    db_path: Optional[Path | str] = None,
+) -> int:
+    """Logs a model memory record (version, prompt format, adapter, benchmark score) per the blueprint memory model."""
+    init_db(db_path)
+    conn = get_connection(db_path)
+    now_iso = datetime.now(timezone.utc).isoformat()
+    metrics_str = json.dumps(metrics or {})
+    meta_str = json.dumps(metadata) if isinstance(metadata, dict) else metadata
+    query = """
+    INSERT INTO model_memory (
+        model_id, version, prompt_format, adapter, benchmark_score,
+        recorded_at, metrics, metadata
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    """
+    with conn:
+        cursor = conn.cursor()
+        cursor.execute(
+            query,
+            (
+                model_id,
+                version,
+                prompt_format,
+                adapter,
+                float(benchmark_score),
+                now_iso,
+                metrics_str,
+                meta_str,
+            ),
+        )
+        row_id = cursor.lastrowid
+    conn.close()
+    return row_id
+
+
+def get_model_memory_records(
+    model_id: Optional[str] = None,
+    limit: int = 50,
+    db_path: Optional[Path | str] = None,
+) -> List[Dict[str, Any]]:
+    """Retrieves model memory history."""
+    init_db(db_path)
+    conn = get_connection(db_path)
+    with conn:
+        cursor = conn.cursor()
+        if model_id:
+            cursor.execute(
+                "SELECT * FROM model_memory WHERE model_id = ? ORDER BY id DESC LIMIT ?",
+                (model_id, limit),
+            )
+        else:
+            cursor.execute(
+                "SELECT * FROM model_memory ORDER BY id DESC LIMIT ?",
+                (limit,),
+            )
+        rows = [dict(r) for r in cursor.fetchall()]
+        for r in rows:
+            if isinstance(r.get("metrics"), str):
+                try:
+                    r["metrics"] = json.loads(r["metrics"])
+                except Exception:
+                    pass
+            if isinstance(r.get("metadata"), str):
+                try:
+                    r["metadata"] = json.loads(r["metadata"])
+                except Exception:
+                    pass
+    conn.close()
+    return rows
+
+
+def get_latest_model_memory(
+    model_id: Optional[str] = None,
+    db_path: Optional[Path | str] = None,
+) -> Optional[Dict[str, Any]]:
+    """Retrieves latest model memory record."""
+    records = get_model_memory_records(model_id=model_id, limit=1, db_path=db_path)
+    return records[0] if records else None
+
 
 
 

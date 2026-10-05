@@ -76,6 +76,21 @@ CAPABILITY_TOOL_AFFINITY: Dict[str, List[str]] = {
     "os_fingerprint": ["nmap.scan.v1", "whatweb.scan.v1"],
     "command_execution": ["kali.exec.v1", "shell.run.v1"],
     "general_execution": ["kali.exec.v1", "shell.run.v1"],
+    "web_proxy": ["burpsuite.gui.v1", "zap.gui.v1"],
+    "http_interception": ["burpsuite.gui.v1"],
+    "packet_repeater": ["burpsuite.gui.v1"],
+    "target_mapping": ["burpsuite.gui.v1", "zap.gui.v1"],
+    "packet_analysis": ["wireshark.gui.v1", "tcpdump.capture.v1"],
+    "traffic_dissection": ["wireshark.gui.v1"],
+    "pcap_analysis": ["wireshark.gui.v1", "tcpdump.capture.v1"],
+    "web_spider": ["zap.gui.v1", "gobuster.dir.v1"],
+    "gui_security_tools": ["burpsuite.gui.v1", "wireshark.gui.v1", "zap.gui.v1"],
+    "browser_testing": ["browser.security.v1"],
+    "xss_testing": ["browser.security.v1", "ffuf.fuzz.v1"],
+    "auth_flow_testing": ["browser.security.v1", "burpsuite.gui.v1"],
+    "dast_testing": ["browser.security.v1", "zap.gui.v1", "nikto.scan.v1"],
+    "dom_inspection": ["browser.security.v1"],
+    "cookie_security": ["browser.security.v1"],
 }
 
 
@@ -559,54 +574,68 @@ class HybridToolSelector:
             if ip_match:
                 target = ip_match.group(0)
             else:
-                # Domain match
-                domain_match = re.search(r"\b(?:[a-zA-Z0-9-]+\.)+[a-zA-Z]{2,}\b", goal)
-                if domain_match:
-                    target = domain_match.group(0)
+                # URL host extraction
+                url_match = re.search(r"https?://([a-zA-Z0-9.-]+)", goal)
+                if url_match:
+                    target = url_match.group(1)
                 else:
-                    target = "127.0.0.1"
+                    # Domain match (exclude common file extensions)
+                    domain_match = re.search(r"\b(?:[a-zA-Z0-9-]+\.)+(?:com|org|net|io|local|internal|edu|gov|lab)\b", goal)
+                    if domain_match:
+                        target = domain_match.group(0)
+                    else:
+                        target = "127.0.0.1"
 
         tid = tool.id
+        clean_target = target
+        if target.endswith((".php", ".html", ".htm", ".asp", ".aspx", ".jsp", ".txt", ".bak")):
+            clean_target = "127.0.0.1"
+        host_only = clean_target.replace("http://", "").replace("https://", "").split("/")[0].split(":")[0]
+
+
+
         if tid == "nmap.scan.v1":
-            args = {"target": target, "ports": "22,80,443,8080", "scan_type": "sV", "timing": 3}
+            args = {"target": host_only or "127.0.0.1", "ports": "22,80,443,8080", "scan_type": "sV", "timing": 3}
         elif tid in ["gobuster.dir.v1", "ffuf.fuzz.v1"]:
             url = f"http://{target}" if not target.startswith("http") else target
             args = {"url": url, "wordlist": "/usr/share/wordlists/dirb/common.txt"}
         elif tid == "nikto.scan.v1":
-            url = f"http://{target}" if not target.startswith("http") else target
-            args = {"target": url, "format": "json"}
+            args = {"host": host_only or "127.0.0.1", "format": "json"}
         elif tid == "whatweb.scan.v1":
             url = f"http://{target}" if not target.startswith("http") else target
-            args = {"target": url, "aggression": 1}
+            args = {"url": url, "aggression": 1}
         elif tid == "sqlmap.scan.v1":
             url = f"http://{target}/index.php?id=1" if not target.startswith("http") else target
             args = {"url": url, "batch": True, "level": 1}
         elif tid == "hydra.brute.v1":
-            args = {"target": target, "service": "ssh", "username": "admin", "wordlist": "/usr/share/wordlists/rockyou.txt"}
+            args = {"target": host_only or "127.0.0.1", "protocol": "ssh", "username": "admin", "wordlist": "/usr/share/wordlists/rockyou.txt"}
         elif tid == "whois.lookup.v1":
-            args = {"domain": target}
+            args = {"target": target}
         elif tid == "dig.lookup.v1":
-            args = {"domain": target, "record_type": "A"}
+            args = {"target": target, "record_type": "A"}
         elif tid == "searchsploit.search.v1":
             args = {"query": "Apache 2.4", "json_output": True}
         elif tid == "tcpdump.capture.v1":
             args = {"interface": "eth0", "packet_count": 50, "duration_sec": 10}
         elif tid == "exiftool.extract.v1":
-            args = {"filepath": "/tmp/evidence.jpg"}
+            args = {"file_path": target if ("." in target and not target.startswith("http")) else "/tmp/evidence.jpg"}
         elif tid == "hashid.identify.v1":
-            args = {"hash_string": "5f4dcc3b5aa765d61d8327deb882cf99"}
+            args = {"hash": target if len(target) >= 16 else "5f4dcc3b5aa765d61d8327deb882cf99"}
         elif tid == "metasploit.rpc.v1":
-            args = {"module_type": "auxiliary", "module_name": "scanner/portscan/tcp", "options": {"RHOSTS": target}}
+            args = {"module": "exploit/linux/samba/trans2open", "rhosts": host_only or "127.0.0.1"}
         elif tid == "kali.exec.v1":
             args = {"command": "uname", "args": ["-a"]}
         elif tid == "shell.run.v1":
-            args = {"command": f"ping -c 2 {target}"}
+            args = {"command": f"ping -c 2 {host_only or '127.0.0.1'}"}
         elif tid == "system_ping":
-            args = {"target": target, "count": 3}
+            args = {"target": host_only or "127.0.0.1", "count": 3}
+        elif tid == "hello_world":
+            args = {"name": "kairo"}
         else:
             args = {"target": target}
 
         return args
+
 
 
 # Global singleton instance
