@@ -1,0 +1,63 @@
+{
+  "pipeline_version": "1.0.0",
+  "task": "Task 3.1 - Data pipeline v1 (Track B)",
+  "total_examples": 2998,
+  "train_examples": 2699,
+  "val_examples": 299,
+  "validation_failures": 2,
+  "validation_pass_rate_pct": 99.93,
+  "approximate_total_tokens": 1838740,
+  "mean_tokens_per_example": 613.3,
+  "recovery_examples_count": 712,
+  "recovery_percentage": 23.75,
+  "source_distribution": {
+    "toolspec_scenario": 2201,
+    "counterfactual_recovery": 700,
+    "event_store_triple": 97
+  },
+  "tool_distribution": {
+    "gobuster.dir.v1": 408,
+    "ffuf.fuzz.v1": 385,
+    "whatweb.scan.v1": 205,
+    "hydra.brute.v1": 161,
+    "sqlmap.scan.v1": 158,
+    "shell.run.v1": 140,
+    "nmap.scan.v1": 139,
+    "kali.exec.v1": 139,
+    "hashid.identify.v1": 137,
+    "whois.lookup.v1": 136,
+    "system_ping": 135,
+    "tcpdump.capture.v1": 134,
+    "searchsploit.search.v1": 127,
+    "hello_world": 124,
+    "exiftool.extract.v1": 123,
+    "nikto.scan.v1": 121,
+    "metasploit.rpc.v1": 120,
+    "dig.lookup.v1": 106
+  },
+  "tier_distribution": {
+    "1": 888,
+    "2": 1392,
+    "3": 718
+  },
+  "category_distribution": {
+    "diagnostic": 135,
+    "recon": 1884,
+    "exploitation": 439,
+    "utility": 261,
+    "sandbox_execution": 139,
+    "execution": 140
+  },
+  "recovery_strategies_distribution": {
+    "RATE_LIMIT_BACKOFF": 90,
+    "PARAM_MUTATION": 50,
+    "TOOL_SUBSTITUTION_AND_RATE_BACKOFF": 39,
+    "RATE_LIMIT_BACKOFF_OR_TOOL_SUBSTITUTION": 403,
+    "SYNTAX_ARGUMENT_REPAIR": 34,
+    "TIER_DOWNGRADE_STEALTH": 36,
+    "AUTONOMOUS_HEALING": 12,
+    "TOOL_SUBSTITUTION": 48
+  },
+  "registered_tools_count": 18,
+  "covered_tools_count": 18
+}
