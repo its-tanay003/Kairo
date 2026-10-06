@@ -1,0 +1,92 @@
+id: trivy.fs.v1
+name: Trivy Filesystem Vulnerability Scanner
+version: 1.0.0
+binary: trivy
+category: analysis
+description: Fast security scanner for container images, filesystems, Git repos, secrets, and configuration flaws.
+capabilities:
+  - filesystem_vulnerability_scan
+  - secret_detection
+  - misconfiguration_audit
+  - dependency_cve_analysis
+  - structured_observation
+inputs:
+  type: object
+  required:
+    - target
+  properties:
+    target:
+      type: string
+      description: Target directory path to scan
+      default: /home/kali
+    severity:
+      type: string
+      description: Comma-separated severity filter
+      default: HIGH,CRITICAL
+    scanners:
+      type: string
+      description: Scanners to enable (vuln, secret, misconfig)
+      default: vuln,secret
+    format:
+      type: string
+      description: Output format (table or json)
+      enum:
+        - table
+        - json
+      default: json
+    options:
+      type: string
+      description: Additional CLI flags
+      default: ""
+outputs:
+  type: object
+  properties:
+    vulnerabilities:
+      type: array
+      items:
+        type: object
+    secrets:
+      type: array
+      items:
+        type: object
+    total_findings:
+      type: integer
+    findings:
+      type: array
+      items:
+        type: object
+side_effects:
+  - disk_read
+  - temporary_cache_write
+privilege: user
+gui: false
+parser: trivy_fs_v1_parser
+prerequisites:
+  - trivy
+docs:
+  summary: Scans repository filesystems for vulnerable package dependencies and leaked secrets.
+  examples:
+    - description: Scan repository filesystem for high/critical CVEs
+      command: trivy fs --severity HIGH,CRITICAL /home/kali
+success_signals:
+  exit_codes:
+    - 0
+  stdout_contains: []
+failure_signals:
+  exit_codes:
+    - 1
+    - 2
+    - 127
+  stderr_contains:
+    - "FATAL"
+    - "command not found"
+rollback:
+  strategy: none
+  description: Static read-only code analysis; no state mutation.
+version_compatibility:
+  min_agent_version: 1.0.0
+  os:
+    - linux
+    - darwin
+    - windows
+timeout_ms: 60000

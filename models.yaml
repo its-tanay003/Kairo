@@ -1,4 +1,4 @@
-active_model: kairo-dpo-aligned
+active_model: Qwen2.5-0.5B-Instruct
 models:
 - model_id: Qwen3-Coder-30B-A3B-Instruct
   runtime: llama.cpp
@@ -57,3 +57,12 @@ models:
   repo: kairo/kairo-dpo-aligned
   description: Post-DPO preference-tuned model aligned on task-graph preference pairs
     via TRL DPOTrainer
+- model_id: kairo-grpo-aligned
+  runtime: transformers
+  quantization: FP32
+  context_length: 8192
+  role: grpo-aligned
+  path: training/checkpoints/grpo/kairo-grpo-final
+  repo: kairo/kairo-grpo-aligned
+  description: Group Relative Policy Optimization (GRPO) aligned model using verifiable
+    rewards (task-completion and schema-validity) via TRL GRPOTrainer

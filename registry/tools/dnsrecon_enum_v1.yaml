@@ -1,0 +1,93 @@
+id: dnsrecon.enum.v1
+name: DNSRecon Enumerator
+version: 1.0.0
+binary: dnsrecon
+category: recon
+description: Advanced DNS enumeration, zone transfer audit, and record discovery tool.
+capabilities:
+  - dns_enumeration
+  - zone_transfer_audit
+  - subdomain_discovery
+  - structured_observation
+inputs:
+  type: object
+  required:
+    - target
+  properties:
+    target:
+      type: string
+      description: Target domain or host to enumerate
+      default: target.lab
+    scan_type:
+      type: string
+      description: Scan type (std, rvl, brt, srv, axfr)
+      enum:
+        - std
+        - rvl
+        - brt
+        - srv
+        - axfr
+      default: std
+    dictionary:
+      type: string
+      description: Subdomain dictionary file path for brute force
+      default: ""
+    options:
+      type: string
+      description: Additional CLI arguments
+      default: ""
+outputs:
+  type: object
+  properties:
+    dns_records:
+      type: array
+      items:
+        type: object
+    hosts:
+      type: array
+      items:
+        type: string
+    findings:
+      type: array
+      items:
+        type: object
+    records_count:
+      type: integer
+side_effects:
+  - network_traffic
+  - dns_queries
+privilege: user
+gui: false
+parser: dnsrecon_enum_v1_parser
+prerequisites:
+  - dnsrecon
+docs:
+  summary: Performs DNS reconnaissance across domains, nameservers, and mail exchangers.
+  examples:
+    - description: Standard DNS record enumeration
+      command: dnsrecon -d target.lab -t std
+    - description: Zone transfer attempt
+      command: dnsrecon -d target.lab -t axfr
+success_signals:
+  exit_codes:
+    - 0
+  stdout_contains:
+    - "[*]"
+failure_signals:
+  exit_codes:
+    - 1
+    - 2
+    - 127
+  stderr_contains:
+    - error
+    - "can not resolve"
+rollback:
+  strategy: none
+  description: Non-invasive read-only DNS query tool; no state mutation.
+version_compatibility:
+  min_agent_version: 1.0.0
+  os:
+    - linux
+    - darwin
+    - windows
+timeout_ms: 30000

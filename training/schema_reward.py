@@ -112,19 +112,20 @@ class ToolSpecSchemaValidator:
         """
         errors = []
         if isinstance(target, dict):
-            # Format 1: Kairo 5-tuple tool_call
-            if "tool_id" in target:
-                args = target.get("arguments", {})
+            # Format 1: Kairo 5-tuple tool_call or standard tool specification
+            tool_key = "tool_id" if "tool_id" in target else ("tool" if "tool" in target else None)
+            if tool_key:
+                args = target.get("arguments", target.get("parameters", {}))
                 if isinstance(args, str):
                     try:
                         args = json.loads(args)
                     except json.JSONDecodeError as e:
-                        return target["tool_id"], None, False, [f"Arguments string is not valid JSON: {e}"]
-                return target["tool_id"], args, True, []
+                        return target[tool_key], None, False, [f"Arguments string is not valid JSON: {e}"]
+                return target[tool_key], args, True, []
             
             # Format 2: OpenAI tool_call
             if "name" in target:
-                args = target.get("arguments", {})
+                args = target.get("arguments", target.get("parameters", {}))
                 if isinstance(args, str):
                     try:
                         args = json.loads(args)
@@ -136,7 +137,7 @@ class ToolSpecSchemaValidator:
             if "function" in target and isinstance(target["function"], dict):
                 fn = target["function"]
                 name = fn.get("name")
-                args = fn.get("arguments", {})
+                args = fn.get("arguments", fn.get("parameters", {}))
                 if isinstance(args, str):
                     try:
                         args = json.loads(args)
@@ -144,7 +145,7 @@ class ToolSpecSchemaValidator:
                         return name, None, False, [f"Arguments string is not valid JSON: {e}"]
                 return name, args, True, []
 
-            return None, None, False, ["Dictionary does not contain 'tool_id' or 'name'"]
+            return None, None, False, ["Dictionary does not contain 'tool_id', 'tool', or 'name'"]
 
         if isinstance(target, str):
             text = target.strip()
@@ -180,10 +181,10 @@ class ToolSpecSchemaValidator:
                 pass
 
             # Try regex heuristic for tool_id and arguments
-            tool_match = re.search(r'["\']?(?:tool_id|name)["\']?\s*:\s*["\']([^"\']+)["\']', text)
+            tool_match = re.search(r'["\']?(?:tool_id|tool|name)["\']?\s*:\s*["\']([^"\']+)["\']', text)
             if tool_match:
                 tool_id = tool_match.group(1)
-                args_match = re.search(r'["\']?arguments["\']?\s*:\s*(\{.*?\})', text, re.DOTALL)
+                args_match = re.search(r'["\']?(?:arguments|parameters)["\']?\s*:\s*(\{.*?\})', text, re.DOTALL)
                 if args_match:
                     try:
                         args = json.loads(args_match.group(1))

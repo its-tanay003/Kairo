@@ -750,7 +750,45 @@ Using Hugging Face TRL's `DPOTrainer` (`training/dpo.py`), preference tuning was
 1. **Unnecessary Calls**: SFT models frequently over-generate exploratory probing steps (e.g. redundant pings, exploratory directory scans, redundant banner grabs) before arriving at the target exploit. DPO explicitly penalizes multi-step bloated plans in favour of concise, direct-execution DAGs.
 2. **Hallucinated Success**: Pre-DPO models occasionally claim goal completion or vulnerability discovery without concrete observation facts. DPO aligns the model to reject completion claims lacking cryptographic evidence (e.g. SHA-256 hash digests, visual frames, or structured facts), driving hallucinated success down to **0.0%**.
 
-### 5. Automatic Failover Router & Circuit Breaker
+### 5. Group Relative Policy Optimization (GRPO) with Verifiable Rewards (Optional Stretch Pass)
+
+Following the blueprint's training pipeline and the clear gains established in Task 6.2, an optional/stretch **Group Relative Policy Optimization (GRPO)** pass was implemented and executed (`training/grpo.py`) using Hugging Face TRL (`trl.GRPOTrainer` and `trl.GRPOConfig`).
+
+GRPO eliminates the requirement for a separate learned reward model / critic network by generating groups of completions $\{o_1, o_2, \dots, o_G\}$ for each prompt $q$, scoring each completion with verifiable reward functions, and normalizing advantages relative to the group:
+
+$$\hat{A}_i = \frac{R_i - \text{mean}(\{R_1, \dots, R_G\})}{\text{std}(\{R_1, \dots, R_G\}) + \epsilon}$$
+
+#### Verifiable Reward Signals
+
+Instead of subjective neural evaluators, Kairo's GRPO pipeline uses strictly verifiable reward functions (`VerifiableRewardEngine`):
+
+1. **`schema_validity_reward`**:
+   - Programmatically executes `ToolSpecSchemaValidator.validate_tool_call()` against registered ToolSpecs in `registry/tools/`.
+   - Assigns **0.0** for non-parseable syntax, **0.2** for unregistered tool IDs, **0.5–0.7** for missing required parameters / Scope Contract violations, and **1.0** for perfect schema compliance.
+2. **`task_completion_reward`**:
+   - Cross-checks tool emission against benchmark ground-truth metadata:
+     - **Tool Family Match**: $+0.5$
+     - **Target Resolution**: $+0.3$ (correct target IP/domain in arguments payload)
+     - **Parameter Completeness**: $+0.2$ (non-empty structured parameters)
+
+#### Pipeline Architecture & Execution
+
+- **Starting Policy**: `training/checkpoints/dpo/kairo-dpo-final`
+- **Group Rollout Size ($G$)**: 2 candidates per prompt
+- **KL Regularization ($\beta$)**: 0.04
+- **Dataset**: All 120 standardized benchmark tasks (`KairoGRPODataLoader`)
+- **Output Artifacts**: Model weights saved to `training/checkpoints/grpo/kairo-grpo-final/` and metadata in `training/checkpoints/grpo/grpo_training_meta.json`.
+- **Model Registry**: Registered in `models.yaml` as `kairo-grpo-aligned` (`role: grpo-aligned`).
+
+```bash
+# Execute calibrated GRPO training pass with verifiable rewards
+python -m training.grpo --steps 2 --generations 2 --beta 0.04
+
+# Run GRPO and verifiable reward test suite
+python -m pytest test_grpo_training_and_rewards.py -v
+```
+
+### 6. Automatic Failover Router & Circuit Breaker
 
 Per the Reliability table, when the custom model's tool-call output repeatedly fails schema validation:
 
@@ -759,12 +797,29 @@ Per the Reliability table, when the custom model's tool-call output repeatedly f
 - **Event Audit**: Writes an audited `MODEL_FAILOVER` record to SQLite `EventStore` documenting `from_model`, `to_model`, trigger tool, and validation errors.
 - **Auto-Recovery**: Valid schema emission resets the consecutive failure counter to 0.
 
-### 6. Blueprint Memory Model (`model_memory`)
+### 7. Blueprint Memory Model (`model_memory`)
 
 Benchmark scores and model metadata are logged to the `model_memory` table in `events/events.db`:
 
 - Record `#2`: `kairo-custom-model` (v1.0.0-sft, prompt_format: `chatml-toolspec-v1`, adapter: `none`, score: `95.7`).
 - Record `#3`: `Qwen2.5-0.5B-Instruct` (v1.0.0-sft, prompt_format: `chatml-toolspec-v1`, adapter: `none`, score: `95.7`).
+- Record `#4`: `kairo-dpo-aligned` (v1.1.0-dpo, composite score: `92.1`).
+- Record `#5`: `kairo-grpo-aligned` (v1.2.0-grpo, verifiable rewards: `schema_validity` + `task_completion`).
+
+### 8. Blueprint Section 21: Model Research & Gap-Analysis Reports
+
+Comprehensive empirical research papers and blog posts are published in `docs/research/`:
+
+- **Model Comparison & Methodology Report**: [`docs/research/model_comparison_qwen3_vs_custom.md`](docs/research/model_comparison_qwen3_vs_custom.md)
+- **Empirical Gap-Analysis & Deficit Audit**: [`docs/research/gap_analysis_custom_vs_fallback.md`](docs/research/gap_analysis_custom_vs_fallback.md)
+
+- **Methodology Differentiator**: Strict evidence grounding (SHA-256 cryptographic digests), failure-aware self-healing (Critic/Recovery Agent), and Scope Contract enforcement.
+- **Key Empirical Results & Identified Gaps**:
+  - **Latency**: 0.33s/task (8.9× faster than Qwen3-Coder's 2.94s/task).
+  - **Hallucinated Success**: **0.0%** vs. 3.3% on unconstrained generalist LLMs.
+  - **Unnecessary Calls Rate**: **1.7%** (2 calls) vs. **14.2%** (17 calls).
+  - **Evidence Completeness Gap**: **55.0%** (Custom) vs. **78.4%** (30B Fallback, SLA target ≥ 80.0%).
+  - **Hardware Feasibility**: 100% CPU inference (~1.5 GB RAM) vs. 18–24 GB VRAM requirement.
 
 ---
 
@@ -1344,4 +1399,65 @@ All 32 combined GUI and browser adapter tests:
 
 ```bash
 python -m pytest test_gui_adapters.py test_browser_security_adapter.py -v
+```
+
+---
+
+## ToolSpec SDK & Third-Party Extension Framework (`create-toolspec`)
+
+The **Kairo ToolSpec SDK** enables third-party developers, researchers, and red teams to author, package, test, and certify custom security tools for autonomous orchestration by Kairo **without modifying core orchestrator or gateway code**.
+
+### 1. Developer CLI Generator
+
+Scaffold an end-to-end, blueprint-compliant tool package in seconds:
+
+```bash
+# Using Python module
+python -m sdk create-toolspec dnsrecon.enum.v1 --category recon --binary dnsrecon
+
+# Using root CLI wrapper
+python create_toolspec.py dnsrecon.enum.v1 --category recon --binary dnsrecon
+# On Windows
+create-toolspec.bat dnsrecon.enum.v1 --category recon --binary dnsrecon
+```
+
+Each generated package contains:
+
+- `registry/tools/<slug>.yaml`: 16-field declarative ToolSpec schema.
+- `sdk/tools/<slug>/<slug>_adapter.py`: Subclass of `BaseToolAdapter` implementing command line synthesis.
+- `sdk/tools/<slug>/<slug>_parser.py`: Structured parser extracting findings, hosts, and technologies.
+- `sdk/tools/<slug>/test_<slug>_conformance.py`: Unit test verifying the 7 Conformance Gates.
+- `sdk/tools/<slug>/README.md`: Tool-specific documentation.
+
+### 2. The 7-Gate Conformance Engine ("TRUSTED" Certification)
+
+Before any third-party tool can be marked **`STATUS: TRUSTED`** and invoked by Kairo's autonomous engine, it must pass 7 automated conformance gates:
+
+1. **Gate 1 (Blueprint 16-Field JSON Schema)**: Strict validation against `registry/schema/toolspec.schema.json`.
+2. **Gate 2 (Adapter Contract)**: Subclasses `ToolAdapter`, defines consistent `tool_id`, and implements callable `build_args` and `parse`.
+3. **Gate 3 (Argument Compilation)**: Strictly typed `list[str]` CLI argument generation.
+4. **Gate 4 (Parser Determinism & Error Handling)**: Graceful parsing across both success output and error/crash envelopes.
+5. **Gate 5 (Observer Fact Normalization)**: Populates structured `ObservationFact` data (hosts, ports, technologies, CVEs, secrets).
+6. **Gate 6 (Scope Contract Compliance)**: Adheres to authorized host/IP/subnet boundaries via `is_target_in_scope`.
+7. **Gate 7 (Operational Safety Bounds)**: Execution timeout $\le 300,000\text{ms}$ (5m), validated privilege tier (`user`, `root`, `admin`), explicit rollback behavior declared.
+
+Run certification from the command line:
+
+```bash
+python -m sdk verify-toolspec "registry/tools/dnsrecon_enum_v1.yaml"
+```
+
+### 3. Validated Reference Implementations (3 New Tools)
+
+The SDK was validated by adding and certifying 3 completely new tools without any core code changes:
+
+- **`dnsrecon.enum.v1`**: Advanced DNS enumeration, MX/NS/SOA record discovery, and zone transfer auditing.
+- **`wpscan.audit.v1`**: WordPress CMS security scanner, detecting outdated core, vulnerable plugins/themes, and users.
+- **`trivy.fs.v1`**: DevSecOps filesystem and dependency scanner, extracting package CVEs and leaked secrets.
+
+### 4. Running Conformance Tests
+
+```bash
+# Run all SDK and conformance tests
+python -m pytest test_toolspec_sdk.py -v
 ```

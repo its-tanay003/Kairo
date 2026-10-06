@@ -1,0 +1,94 @@
+id: wpscan.audit.v1
+name: WPScan WordPress Security Auditor
+version: 1.0.0
+binary: wpscan
+category: web
+description: Black box WordPress vulnerability scanner for core, plugin, and theme security auditing.
+capabilities:
+  - wordpress_enumeration
+  - plugin_vulnerability_audit
+  - theme_vulnerability_audit
+  - user_enumeration
+  - structured_observation
+inputs:
+  type: object
+  required:
+    - target
+  properties:
+    target:
+      type: string
+      description: Target WordPress URL or domain
+      default: http://127.0.0.1:8080
+    detection_mode:
+      type: string
+      description: Detection mode for plugins/themes
+      enum:
+        - passive
+        - aggressive
+        - mixed
+      default: passive
+    enumerate:
+      type: string
+      description: Enumeration targets (e.g. vp,vt,u)
+      default: vp,u
+    options:
+      type: string
+      description: Additional flags (e.g. --random-user-agent)
+      default: ""
+outputs:
+  type: object
+  properties:
+    wordpress_version:
+      type: string
+    plugins_found:
+      type: array
+      items:
+        type: object
+    vulnerabilities:
+      type: array
+      items:
+        type: object
+    users:
+      type: array
+      items:
+        type: string
+    findings:
+      type: array
+      items:
+        type: object
+side_effects:
+  - http_traffic
+  - web_server_logs
+privilege: user
+gui: false
+parser: wpscan_audit_v1_parser
+prerequisites:
+  - wpscan
+docs:
+  summary: Audits WordPress installations for known CVEs, outdated plugins, and exposed users.
+  examples:
+    - description: Passive audit of vulnerable plugins and users
+      command: wpscan --url http://127.0.0.1:8080 -e vp,u --detection-mode passive
+success_signals:
+  exit_codes:
+    - 0
+  stdout_contains:
+    - WordPress
+failure_signals:
+  exit_codes:
+    - 1
+    - 2
+    - 127
+  stderr_contains:
+    - "Scan Aborted"
+    - "not found"
+rollback:
+  strategy: none
+  description: Non-destructive HTTP audit scanner; no state alteration.
+version_compatibility:
+  min_agent_version: 1.0.0
+  os:
+    - linux
+    - darwin
+    - windows
+timeout_ms: 60000

@@ -1,0 +1,1 @@
+"""Trivy tool package."""
