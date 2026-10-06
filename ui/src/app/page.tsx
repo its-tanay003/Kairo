@@ -9,6 +9,8 @@ import OfflineIndicator from "./components/OfflineIndicator";
 import MobileTerminalView from "./components/MobileTerminalView";
 import ScreenPanel from "./components/ScreenPanel";
 import SecurityBrowserPanel from "./components/SecurityBrowserPanel";
+import LiveSessionView from "./components/LiveSessionView";
+import AuditExplorer from "./components/AuditExplorer";
 
 interface EventRecord {
   id?: number;
@@ -185,7 +187,8 @@ export default function Home() {
   const [inputVal, setInputVal] = useState<string>("");
   const [latestEvent, setLatestEvent] = useState<EventRecord | null>(null);
   const [allEvents, setAllEvents] = useState<EventRecord[]>([]);
-  const [activeTab, setActiveTab] = useState<"terminal_process" | "task_graph" | "model_center" | "vm_sandbox" | "screen" | "browser" | "latest" | "all">("task_graph");
+  const [activeTab, setActiveTab] = useState<"live_session" | "audit_explorer" | "terminal_process" | "task_graph" | "model_center" | "vm_sandbox" | "screen" | "browser" | "latest" | "all">("live_session");
+  const [activeProjectId, setActiveProjectId] = useState<string | null>("proj_alpha_ops");
   const [modelCenter, setModelCenter] = useState<ModelCenterStatus | null>(null);
   const [vmStatus, setVmStatus] = useState<VMStatus | null>(null);
   const [isRollingBack, setIsRollingBack] = useState<boolean>(false);
@@ -1372,7 +1375,11 @@ export default function Home() {
         <aside className={`inspector-pane ${isTerminalMaximized && activeTab === "terminal_process" ? "maximized-overlay" : ""} ${mobileTab !== "activity" ? "mobile-hidden" : ""}`}>
           <div className="inspector-header">
             <h2>
-              {activeTab === "task_graph"
+              {activeTab === "live_session"
+                ? "Live Session View (Multi-User Collaboration & Presence)"
+                : activeTab === "audit_explorer"
+                ? "Audit Explorer (Task 2.3 Scope Contract & Timeline Accountability)"
+                : activeTab === "task_graph"
                 ? "Task Graph (DAG Planner)"
                 : activeTab === "terminal_process"
                 ? "Live Terminal (xterm.js) & Process Tree"
@@ -1387,6 +1394,30 @@ export default function Home() {
                 : "SQLite Event Store Inspector"}
             </h2>
             <div style={{ display: "flex", gap: "6px", flexWrap: "wrap" }}>
+              <button
+                className={`quick-btn ${activeTab === "live_session" ? "" : "secondary"}`}
+                style={{
+                  padding: "3px 8px",
+                  fontSize: "11px",
+                  borderColor: activeTab === "live_session" ? "var(--accent-cyan)" : undefined,
+                  background: activeTab === "live_session" ? "rgba(6, 182, 212, 0.15)" : undefined,
+                }}
+                onClick={() => setActiveTab("live_session")}
+              >
+                👥 Live Session
+              </button>
+              <button
+                className={`quick-btn ${activeTab === "audit_explorer" ? "" : "secondary"}`}
+                style={{
+                  padding: "3px 8px",
+                  fontSize: "11px",
+                  borderColor: activeTab === "audit_explorer" ? "var(--accent-cyan)" : undefined,
+                  background: activeTab === "audit_explorer" ? "rgba(6, 182, 212, 0.15)" : undefined,
+                }}
+                onClick={() => setActiveTab("audit_explorer")}
+              >
+                🔍 Audit Explorer
+              </button>
               <button
                 className={`quick-btn ${activeTab === "task_graph" ? "" : "secondary"}`}
                 style={{
@@ -1467,7 +1498,21 @@ export default function Home() {
           </div>
 
           <div className="inspector-content">
-            {activeTab === "task_graph" ? (
+            {activeTab === "live_session" ? (
+              <div style={{ height: "calc(100vh - 190px)", minHeight: "560px", display: "flex", flexDirection: "column" }}>
+                <LiveSessionView
+                  ws={socket || wsRef.current}
+                  activeProjectId={activeProjectId}
+                  currentUserId="alice_secops"
+                  clientType={clientType}
+                  onProjectChange={(pid) => setActiveProjectId(pid)}
+                />
+              </div>
+            ) : activeTab === "audit_explorer" ? (
+              <div style={{ height: "calc(100vh - 190px)", minHeight: "560px", display: "flex", flexDirection: "column" }}>
+                <AuditExplorer />
+              </div>
+            ) : activeTab === "task_graph" ? (
               <div style={{ height: "calc(100vh - 190px)", minHeight: "560px", display: "flex", flexDirection: "column" }}>
                 <TaskGraphView
                   ws={socket || wsRef.current}

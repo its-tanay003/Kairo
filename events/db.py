@@ -28,6 +28,7 @@ import hmac
 import ipaddress
 import json
 import os
+import re
 import sqlite3
 import uuid
 from dataclasses import asdict, dataclass
@@ -1442,6 +1443,655 @@ def get_latest_model_memory(
     """Retrieves latest model memory record."""
     records = get_model_memory_records(model_id=model_id, limit=1, db_path=db_path)
     return records[0] if records else None
+
+
+# ==============================================================================
+# SHARED PROJECTS & MULTI-USER STATE (Live Session View & Collaboration)
+# ==============================================================================
+
+@dataclass
+class Project:
+    project_id: str
+    name: str
+    description: str
+    owner_id: str
+    status: str  # "active" | "archived" | "completed"
+    active_workspace_id: Optional[str]
+    active_session_id: Optional[str]
+    collaborators: List[Dict[str, Any]]
+    shared_state: Dict[str, Any]
+    created_at: str
+    updated_at: str
+    metadata: Dict[str, Any]
+
+    def to_dict(self) -> Dict[str, Any]:
+        return {
+            "project_id": self.project_id,
+            "name": self.name,
+            "description": self.description,
+            "owner_id": self.owner_id,
+            "status": self.status,
+            "active_workspace_id": self.active_workspace_id,
+            "active_session_id": self.active_session_id,
+            "collaborators": self.collaborators,
+            "collaborator_count": len(self.collaborators),
+            "shared_state": self.shared_state,
+            "created_at": self.created_at,
+            "updated_at": self.updated_at,
+            "metadata": self.metadata,
+        }
+
+
+def _deserialize_project_row(r: sqlite3.Row | Dict[str, Any]) -> Dict[str, Any]:
+    d = dict(r)
+    if isinstance(d.get("collaborators"), str):
+        try:
+            d["collaborators"] = json.loads(d["collaborators"])
+        except Exception:
+            d["collaborators"] = []
+    if isinstance(d.get("shared_state"), str):
+        try:
+            d["shared_state"] = json.loads(d["shared_state"])
+        except Exception:
+            d["shared_state"] = {}
+    if isinstance(d.get("metadata"), str):
+        try:
+            d["metadata"] = json.loads(d["metadata"])
+        except Exception:
+            d["metadata"] = {}
+    d["collaborator_count"] = len(d.get("collaborators", []))
+    return d
+
+
+def create_project(
+    name: str,
+    owner_id: str = "default_user",
+    description: str = "",
+    active_workspace_id: Optional[str] = None,
+    active_session_id: Optional[str] = None,
+    initial_state: Optional[Dict[str, Any]] = None,
+    metadata: Optional[Dict[str, Any]] = None,
+    db_path: Optional[Path | str] = None,
+) -> Dict[str, Any]:
+    """Creates a shared project with initial owner and multi-user shared state."""
+    init_db(db_path)
+    now_iso = datetime.now(timezone.utc).isoformat()
+    project_id = f"proj_{uuid.uuid4().hex[:10]}"
+    
+    initial_collaborators = [
+        {
+            "user_id": owner_id,
+            "role": "owner",
+            "client_type": "browser-desktop",
+            "joined_at": now_iso,
+            "last_active": now_iso,
+        }
+    ]
+
+    shared_state = initial_state or {
+        "active_target": "127.0.0.1",
+        "notes": f"Shared workspace session initialized for {name}.",
+        "tags": ["pentest", "collaborative"],
+        "active_task_graph_id": None,
+    }
+
+    conn = get_connection(db_path)
+    with conn:
+        cursor = conn.cursor()
+        cursor.execute(
+            """
+            INSERT INTO projects (
+                project_id, name, description, owner_id, status,
+                active_workspace_id, active_session_id, collaborators,
+                shared_state, created_at, updated_at, metadata
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                project_id,
+                name.strip(),
+                description.strip(),
+                owner_id.strip(),
+                "active",
+                active_workspace_id,
+                active_session_id or f"sess_{project_id}",
+                json.dumps(initial_collaborators),
+                json.dumps(shared_state),
+                now_iso,
+                now_iso,
+                json.dumps(metadata or {}),
+            ),
+        )
+    conn.close()
+    return get_project(project_id, db_path=db_path)  # type: ignore
+
+
+def get_project(project_id: str, db_path: Optional[Path | str] = None) -> Optional[Dict[str, Any]]:
+    """Retrieves a shared project by project_id."""
+    init_db(db_path)
+    conn = get_connection(db_path)
+    cursor = conn.cursor()
+    cursor.execute("SELECT * FROM projects WHERE project_id = ?", (project_id,))
+    row = cursor.fetchone()
+    conn.close()
+    return _deserialize_project_row(row) if row else None
+
+
+def list_projects(
+    owner_id: Optional[str] = None,
+    status: Optional[str] = None,
+    limit: int = 50,
+    db_path: Optional[Path | str] = None,
+) -> List[Dict[str, Any]]:
+    """Lists shared projects filtered optionally by owner or status."""
+    init_db(db_path)
+    conn = get_connection(db_path)
+    cursor = conn.cursor()
+    query = "SELECT * FROM projects WHERE 1=1"
+    params = []
+    if owner_id:
+        query += " AND (owner_id = ? OR collaborators LIKE ?)"
+        params.extend([owner_id, f'%"{owner_id}"%'])
+    if status:
+        query += " AND status = ?"
+        params.append(status)
+    query += " ORDER BY updated_at DESC LIMIT ?"
+    params.append(limit)
+
+    cursor.execute(query, params)
+    rows = cursor.fetchall()
+    conn.close()
+    return [_deserialize_project_row(r) for r in rows]
+
+
+def update_project(
+    project_id: str,
+    name: Optional[str] = None,
+    description: Optional[str] = None,
+    status: Optional[str] = None,
+    active_workspace_id: Optional[str] = None,
+    active_session_id: Optional[str] = None,
+    db_path: Optional[Path | str] = None,
+) -> Optional[Dict[str, Any]]:
+    """Updates top-level fields of a shared project."""
+    init_db(db_path)
+    now_iso = datetime.now(timezone.utc).isoformat()
+    fields = ["updated_at = ?"]
+    params = [now_iso]
+
+    if name is not None:
+        fields.append("name = ?")
+        params.append(name.strip())
+    if description is not None:
+        fields.append("description = ?")
+        params.append(description.strip())
+    if status is not None:
+        fields.append("status = ?")
+        params.append(status.strip())
+    if active_workspace_id is not None:
+        fields.append("active_workspace_id = ?")
+        params.append(active_workspace_id)
+    if active_session_id is not None:
+        fields.append("active_session_id = ?")
+        params.append(active_session_id)
+
+    params.append(project_id)
+    conn = get_connection(db_path)
+    with conn:
+        cursor = conn.cursor()
+        cursor.execute(f"UPDATE projects SET {', '.join(fields)} WHERE project_id = ?", params)
+    conn.close()
+    return get_project(project_id, db_path=db_path)
+
+
+def update_project_shared_state(
+    project_id: str,
+    state_patch: Dict[str, Any],
+    db_path: Optional[Path | str] = None,
+) -> Optional[Dict[str, Any]]:
+    """Merges a state patch into the project's shared state."""
+    curr = get_project(project_id, db_path=db_path)
+    if not curr:
+        return None
+    new_state = dict(curr.get("shared_state", {}))
+    new_state.update(state_patch)
+    now_iso = datetime.now(timezone.utc).isoformat()
+
+    conn = get_connection(db_path)
+    with conn:
+        cursor = conn.cursor()
+        cursor.execute(
+            "UPDATE projects SET shared_state = ?, updated_at = ? WHERE project_id = ?",
+            (json.dumps(new_state), now_iso, project_id),
+        )
+    conn.close()
+    return get_project(project_id, db_path=db_path)
+
+
+def add_project_collaborator(
+    project_id: str,
+    user_id: str,
+    role: str = "operator",
+    client_type: str = "browser-desktop",
+    db_path: Optional[Path | str] = None,
+) -> Optional[Dict[str, Any]]:
+    """Adds or updates a collaborator in a shared project."""
+    curr = get_project(project_id, db_path=db_path)
+    if not curr:
+        return None
+    collaborators: List[Dict[str, Any]] = list(curr.get("collaborators", []))
+    now_iso = datetime.now(timezone.utc).isoformat()
+
+    updated = False
+    for c in collaborators:
+        if c.get("user_id") == user_id:
+            c["role"] = role
+            c["client_type"] = client_type
+            c["last_active"] = now_iso
+            updated = True
+            break
+    if not updated:
+        collaborators.append({
+            "user_id": user_id,
+            "role": role,
+            "client_type": client_type,
+            "joined_at": now_iso,
+            "last_active": now_iso,
+        })
+
+    conn = get_connection(db_path)
+    with conn:
+        cursor = conn.cursor()
+        cursor.execute(
+            "UPDATE projects SET collaborators = ?, updated_at = ? WHERE project_id = ?",
+            (json.dumps(collaborators), now_iso, project_id),
+        )
+    conn.close()
+    return get_project(project_id, db_path=db_path)
+
+
+def remove_project_collaborator(
+    project_id: str,
+    user_id: str,
+    db_path: Optional[Path | str] = None,
+) -> Optional[Dict[str, Any]]:
+    """Removes a collaborator from a shared project (owner cannot be removed)."""
+    curr = get_project(project_id, db_path=db_path)
+    if not curr:
+        return None
+    if curr.get("owner_id") == user_id:
+        return curr  # Cannot remove project owner
+
+    collaborators = [c for c in curr.get("collaborators", []) if c.get("user_id") != user_id]
+    now_iso = datetime.now(timezone.utc).isoformat()
+
+    conn = get_connection(db_path)
+    with conn:
+        cursor = conn.cursor()
+        cursor.execute(
+            "UPDATE projects SET collaborators = ?, updated_at = ? WHERE project_id = ?",
+            (json.dumps(collaborators), now_iso, project_id),
+        )
+    conn.close()
+    return get_project(project_id, db_path=db_path)
+
+
+def seed_default_shared_project(db_path: Optional[Path | str] = None) -> Dict[str, Any]:
+    """Seeds a canonical shared project if none exists."""
+    existing = list_projects(limit=1, db_path=db_path)
+    if existing:
+        return existing[0]
+
+    return create_project(
+        name="Global Operations Center (Alpha)",
+        owner_id="alice_secops",
+        description="Collaborative red-team assessment & autonomous audit operations space.",
+        initial_state={
+            "active_target": "target.local",
+            "notes": "Target environment initialized for multi-user assessment. All operations bound by Task 2.3 Scope Contract.",
+            "tags": ["web_security", "recon", "authorized_lab"],
+            "live_scratchpad": "# Session Notes\n- Initial recon completed via whatweb and dnsrecon.\n- Next: Review Audit Explorer for scope compliance.\n",
+        },
+        db_path=db_path,
+    )
+
+
+# ==============================================================================
+# AUDIT EXPLORER: SEARCHABLE TIMELINE & SCOPE CONTRACT CORRELATION (Task 2.3)
+# ==============================================================================
+
+def query_audit_timeline(
+    query: Optional[str] = None,
+    actor: Optional[str] = None,
+    tool_id: Optional[str] = None,
+    status: Optional[str] = None,
+    time_range: Optional[str] = None,
+    scope_filter: Optional[str] = None,
+    session_id: Optional[str] = None,
+    limit: int = 200,
+    offset: int = 0,
+    db_path: Optional[Path | str] = None,
+) -> Dict[str, Any]:
+    """
+    Queries a chronological timeline combining every agent/tool execution event
+    with the governing Scope Contract history (Task 2.3) for complete accountability.
+    """
+    init_db(db_path)
+    conn = get_connection(db_path)
+    now = datetime.now(timezone.utc)
+
+    # 1. Fetch Scope Contracts for correlation
+    cursor = conn.cursor()
+    cursor.execute("SELECT * FROM scope_contracts ORDER BY created_at ASC")
+    raw_contracts = [dict(r) for r in cursor.fetchall()]
+    scope_contracts = []
+    for sc in raw_contracts:
+        sc["targets"] = json.loads(sc["targets"]) if isinstance(sc["targets"], str) else sc["targets"]
+        sc["allowed_tool_tiers"] = json.loads(sc["allowed_tool_tiers"]) if isinstance(sc["allowed_tool_tiers"], str) else sc["allowed_tool_tiers"]
+        sc["metadata"] = json.loads(sc["metadata"]) if sc.get("metadata") else {}
+        sc["signature_valid"] = verify_scope_signature(sc)
+        scope_contracts.append(sc)
+
+    def find_governing_contract(event_ts_iso: str) -> Optional[Dict[str, Any]]:
+        if not scope_contracts:
+            return None
+        governing = None
+        for c in scope_contracts:
+            c_created = c.get("created_at", "")
+            if c_created <= event_ts_iso:
+                governing = c
+        return governing or (scope_contracts[0] if scope_contracts else None)
+
+    # 2. Build Event Query with dynamic filters
+    where_clauses = ["1=1"]
+    params: List[Any] = []
+
+    if session_id:
+        where_clauses.append("session_id = ?")
+        params.append(session_id)
+
+    if actor and actor.lower() != "all":
+        where_clauses.append("actor = ?")
+        params.append(actor)
+
+    if tool_id and tool_id.lower() != "all":
+        where_clauses.append("tool_id = ?")
+        params.append(tool_id)
+
+    if status and status.lower() != "all":
+        st = status.lower()
+        if st in ("success", "0"):
+            where_clauses.append("exit_code = 0")
+        elif st in ("failed", "failure", "error"):
+            where_clauses.append("(exit_code != 0 OR stderr_ref IS NOT NULL)")
+        elif st == "timeout":
+            where_clauses.append("result_summary LIKE '%timeout%'")
+
+    if time_range and time_range.lower() != "all":
+        tr = time_range.lower()
+        cutoff = None
+        if tr in ("1h", "last 1 hour", "last_1h"):
+            cutoff = (now - timedelta(hours=1)).isoformat()
+        elif tr in ("24h", "last 24 hours", "last_24h", "1d"):
+            cutoff = (now - timedelta(hours=24)).isoformat()
+        elif tr in ("7d", "last 7 days", "last_7d"):
+            cutoff = (now - timedelta(days=7)).isoformat()
+        if cutoff:
+            where_clauses.append("timestamp >= ?")
+            params.append(cutoff)
+
+    if query and query.strip():
+        q_wild = f"%{query.strip()}%"
+        where_clauses.append(
+            """
+            (tool_id LIKE ? OR actor LIKE ? OR requested_args LIKE ?
+             OR normalized_args LIKE ? OR result_summary LIKE ? OR task_id LIKE ?)
+            """
+        )
+        params.extend([q_wild, q_wild, q_wild, q_wild, q_wild, q_wild])
+
+    sql = f"""
+        SELECT * FROM events
+        WHERE {' AND '.join(where_clauses)}
+        ORDER BY timestamp DESC
+        LIMIT ? OFFSET ?
+    """
+    params.extend([limit, offset])
+
+    cursor.execute(sql, params)
+    raw_events = [dict(r) for r in cursor.fetchall()]
+
+    # 3. Correlate Events with Scope Contract History
+    correlated_events: List[Dict[str, Any]] = []
+    scope_violation_count = 0
+    in_scope_count = 0
+
+    for ev in raw_events:
+        ev_ts = ev.get("timestamp") or now.isoformat()
+        gov_contract = find_governing_contract(ev_ts)
+
+        target_extracted = ""
+        for args_field in (ev.get("normalized_args"), ev.get("requested_args")):
+            if args_field:
+                try:
+                    parsed_args = json.loads(args_field) if isinstance(args_field, str) else args_field
+                    if isinstance(parsed_args, dict):
+                        target_extracted = (
+                            parsed_args.get("target")
+                            or parsed_args.get("host")
+                            or parsed_args.get("domain")
+                            or parsed_args.get("url")
+                            or parsed_args.get("ip")
+                            or ""
+                        )
+                        if not target_extracted:
+                            cmd_args = parsed_args.get("args") or []
+                            if isinstance(cmd_args, list):
+                                for a in cmd_args:
+                                    a_str = str(a).strip()
+                                    if a_str.startswith(("http://", "https://", "ftp://", "ssh://")):
+                                        target_extracted = extract_host_from_target(a_str)
+                                        if target_extracted:
+                                            break
+                                    elif re.search(r'\b\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}\b', a_str):
+                                        m = re.search(r'\b\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}\b', a_str)
+                                        target_extracted = m.group(0)
+                                        if target_extracted:
+                                            break
+                            elif isinstance(cmd_args, str):
+                                target_extracted = extract_host_from_target(cmd_args)
+                        if target_extracted:
+                            target_extracted = extract_host_from_target(target_extracted)
+                            break
+                    elif isinstance(parsed_args, list) and parsed_args:
+                        target_extracted = extract_host_from_target(str(parsed_args[0]))
+                        break
+                except Exception:
+                    pass
+
+        tool = ev.get("tool_id") or ""
+        tool_tier = get_tool_tier(tool)
+
+        scope_status = "unscoped"
+        scope_reason = "No active Scope Contract recorded"
+        gov_contract_id = None
+        signature_valid = False
+        target_ok = True
+        tier_ok = True
+
+        if gov_contract:
+            gov_contract_id = gov_contract.get("contract_id")
+            signature_valid = gov_contract.get("signature_valid", False)
+            allowed_targets = gov_contract.get("targets", [])
+            allowed_tiers = gov_contract.get("allowed_tool_tiers", [1, 2, 3])
+
+            target_ok = is_target_in_scope(target_extracted, allowed_targets) if target_extracted else True
+            tier_ok = tool_tier in allowed_tiers
+
+            if not target_ok:
+                scope_status = "scope_violation"
+                scope_reason = f"Target '{target_extracted}' outside authorized boundaries ({', '.join(allowed_targets[:3])})"
+                scope_violation_count += 1
+            elif not tier_ok:
+                scope_status = "scope_violation"
+                scope_reason = f"Tool tier {tool_tier} exceeds authorized contract tiers ({allowed_tiers}) for tool '{tool}'"
+                scope_violation_count += 1
+            else:
+                scope_status = "in_scope"
+                scope_reason = f"Authorized target '{target_extracted or 'local'}' under Tier {tool_tier}"
+                in_scope_count += 1
+        else:
+            in_scope_count += 1
+
+        if scope_filter:
+            sf = scope_filter.lower()
+            if sf in ("contracts", "scope_contracts"):
+                continue
+            if sf == "in_scope" and scope_status != "in_scope":
+                continue
+            if sf in ("violation", "violations", "scope_violation") and scope_status != "scope_violation":
+                continue
+
+        ev_item = {
+            "timeline_type": "event",
+            "is_scope_contract_milestone": False,
+            "id": ev.get("id"),
+            "session_id": ev.get("session_id"),
+            "task_id": ev.get("task_id"),
+            "timestamp": ev.get("timestamp"),
+            "actor": ev.get("actor"),
+            "tool_id": ev.get("tool_id"),
+            "tool_version": ev.get("tool_version"),
+            "tool_tier": tool_tier,
+            "target": target_extracted,
+            "target_in_scope": target_ok if gov_contract else True,
+            "requested_args": ev.get("requested_args"),
+            "normalized_args": ev.get("normalized_args"),
+            "process_id": ev.get("process_id"),
+            "start_time": ev.get("start_time"),
+            "end_time": ev.get("end_time"),
+            "exit_code": ev.get("exit_code"),
+            "status": "success" if ev.get("exit_code") == 0 else "failed",
+            "result_summary": ev.get("result_summary"),
+            "stdout_ref": ev.get("stdout_ref"),
+            "stderr_ref": ev.get("stderr_ref"),
+            "artifact_refs": ev.get("artifact_refs"),
+            "screenshots": ev.get("screenshots"),
+            "governing_contract_id": gov_contract_id,
+            "scope_contract_id": gov_contract_id,
+            "scope_status": scope_status,
+            "scope_reason": scope_reason,
+            "scope_violation_reason": scope_reason if scope_status == "scope_violation" else "",
+            "signature_valid": signature_valid,
+        }
+        correlated_events.append(ev_item)
+
+    # 4. Integrate Scope Contract milestones into timeline
+    milestones: List[Dict[str, Any]] = []
+    if not scope_filter or scope_filter.lower() in ("all", "contracts", "scope_contracts"):
+        for sc in scope_contracts:
+            if actor and actor.lower() != "all" and sc["authorized_by"].lower() != actor.lower():
+                continue
+            if query and query.strip():
+                q = query.strip().lower()
+                in_targets = any(q in str(t).lower() for t in sc["targets"])
+                in_auth = q in sc["authorized_by"].lower()
+                in_scope_name = q in sc.get("network_scope", "").lower()
+                if not (in_targets or in_auth or in_scope_name):
+                    continue
+            milestones.append({
+                "timeline_type": "scope_contract",
+                "is_scope_contract_milestone": True,
+                "id": f"sc_{sc['contract_id']}",
+                "contract_id": sc["contract_id"],
+                "timestamp": sc["created_at"],
+                "actor": sc["authorized_by"],
+                "network_scope": sc["network_scope"],
+                "time_window": sc["time_window"],
+                "targets": sc["targets"],
+                "allowed_tool_tiers": sc["allowed_tool_tiers"],
+                "authorized_by": sc["authorized_by"],
+                "signature": sc["signature"],
+                "signature_valid": sc["signature_valid"],
+                "is_active": sc["is_active"],
+                "is_expired": sc.get("is_expired", False),
+                "summary": f"Scope Contract Signed & Activated: {', '.join(sc['targets'])} (Tiers: {sc['allowed_tool_tiers']})",
+            })
+
+    combined_timeline = sorted(
+        correlated_events + milestones,
+        key=lambda x: str(x.get("timestamp", "")),
+        reverse=True,
+    )
+
+    cursor.execute("SELECT COUNT(*) as count FROM events")
+    total_db_events = cursor.fetchone()["count"]
+    conn.close()
+
+    total_evaluated = in_scope_count + scope_violation_count
+    compliance_rate = round((in_scope_count / total_evaluated * 100), 1) if total_evaluated > 0 else 100.0
+
+    return {
+        "timeline": combined_timeline,
+        "total_events_matched": len(correlated_events),
+        "total_db_events": total_db_events,
+        "scope_contracts_count": len(scope_contracts),
+        "stats": {
+            "in_scope_actions": in_scope_count,
+            "scope_violations": scope_violation_count,
+            "compliance_rate_pct": compliance_rate,
+            "active_contracts": sum(1 for c in scope_contracts if c.get("is_active")),
+        },
+        "query_params": {
+            "query": query,
+            "actor": actor,
+            "tool_id": tool_id,
+            "status": status,
+            "time_range": time_range,
+            "scope_filter": scope_filter,
+            "limit": limit,
+            "offset": offset,
+        },
+    }
+
+
+def get_audit_stats(
+    time_range: Optional[str] = None,
+    db_path: Optional[Path | str] = None,
+) -> Dict[str, Any]:
+    """Generates high-level statistical summaries for the Audit Explorer overview."""
+    init_db(db_path)
+    conn = get_connection(db_path)
+    cursor = conn.cursor()
+
+    cursor.execute("SELECT COUNT(*) as cnt FROM events")
+    tot_events = cursor.fetchone()["cnt"]
+
+    cursor.execute("SELECT actor, COUNT(*) as cnt FROM events GROUP BY actor ORDER BY cnt DESC")
+    actor_counts = {r["actor"]: r["cnt"] for r in cursor.fetchall()}
+
+    cursor.execute("SELECT tool_id, COUNT(*) as cnt FROM events WHERE tool_id IS NOT NULL GROUP BY tool_id ORDER BY cnt DESC LIMIT 10")
+    tool_counts = {r["tool_id"]: r["cnt"] for r in cursor.fetchall()}
+
+    cursor.execute("SELECT COUNT(*) as cnt FROM events WHERE exit_code = 0")
+    successes = cursor.fetchone()["cnt"]
+    cursor.execute("SELECT COUNT(*) as cnt FROM events WHERE exit_code != 0")
+    failures = cursor.fetchone()["cnt"]
+
+    cursor.execute("SELECT COUNT(*) as cnt FROM scope_contracts")
+    tot_contracts = cursor.fetchone()["cnt"]
+
+    conn.close()
+
+    return {
+        "total_events": tot_events,
+        "actors": actor_counts,
+        "top_tools": tool_counts,
+        "success_rate_pct": round(successes / (tot_events or 1) * 100, 1),
+        "total_scope_contracts": tot_contracts,
+        "successful_executions": successes,
+        "failed_executions": failures,
+    }
+
 
 
 

@@ -1461,3 +1461,42 @@ The SDK was validated by adding and certifying 3 completely new tools without an
 # Run all SDK and conformance tests
 python -m pytest test_toolspec_sdk.py -v
 ```
+
+---
+
+## Shared Projects, Live Session View & Audit Explorer
+
+Kairo provides native real-time collaboration and full auditability across red-team operators, supervisors, and autonomous agents:
+
+### 1. Shared Projects (Multi-User, Synchronized State)
+
+- **Persistent Projects**: Stored in SQLite (`projects` table) with customizable metadata, active target bindings, tags, notes, and a shared scratchpad.
+- **Collaborator Management**: Role-based access (`owner`, `editor`, `viewer`) supporting additions, removals, and active heartbeat presence.
+- **State Synchronization**: Orchestrator REST endpoints (`GET/POST /projects`, `GET/PUT /projects/{id}`, `PUT /projects/{id}/state`) paired with Session Gateway WebSocket relays (`join_project`, `project_state_update`, `collaborator_action`).
+- **Seamless Switching**: Operators can switch projects in real-time without session teardown.
+
+### 2. Live Session View
+
+- **Presence Strip**: Displays online operators with client badges (Web, Desktop, Mobile), roles, and pulsing activity status.
+- **Active Target Binding**: Visual card showing the currently targeted host/IP, tags, and quick-pivot actions.
+- **Collaborative Scratchpad**: Real-time collaborative Markdown editor with debounced auto-sync across all connected peers.
+- **Activity Feed**: Broadcasts agent commands, human operator inputs, and collaborator join/leave notifications with sub-second latency.
+
+### 3. Audit Explorer: Full Event Timeline & Scope Contract History (Task 2.3)
+
+- **Unified Chronological Timeline**: Surfaces every agent, supervisor, and human action recorded in the SQLite `events` store.
+- **Scope Contract Milestones**: Interleaves Task 2.3 Scope Contract signatures directly into the audit stream, with cryptographic HMAC-SHA256 signature verification pills (`✓ Valid Signature`, `⚠️ Invalid/Tampered`).
+- **Automated Scope Violation Detection**: Every tool execution is evaluated in real-time against the governing contract active at that timestamp:
+  - `✓ IN SCOPE`: Verified within CIDR/domain boundaries and permitted tool authorization tiers (Tiers 1–3).
+  - `🚨 SCOPE VIOLATION`: Explicitly flagged if the target is outside authorized CIDR subnets/domains or if the tool tier exceeds authorized limits.
+  - `ℹ️ UNSCOPED`: Execution outside an active contract window.
+- **Rich Filtering & Analytics**:
+  - Filter by search text, actor (`agent`, `supervisor`, `user`), tool ID, execution status (`success`, `failure`, `timeout`), scope compliance status, and time range (`1h`, `24h`, `7d`, `All`).
+  - Real-time KPI summary cards: Total Events, Compliance Rate %, Scope Violations, Active Contracts, and Tool Executions.
+  - One-click timeline export to CSV and JSON formats.
+
+### 4. Running the Collaboration & Audit Test Suite
+
+```bash
+python -m pytest test_shared_projects_and_audit_explorer.py -v
+```

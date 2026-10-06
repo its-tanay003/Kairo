@@ -3,6 +3,7 @@ FastAPI Server for Orchestrator. Exposes endpoints to trigger agent loop, query 
 and activate SIGKILL kill switch for running supervisor processes.
 """
 
+from datetime import datetime, timezone
 from pathlib import Path
 import json
 import os
@@ -45,6 +46,17 @@ from events.db import (
     validate_scope_request,
     get_tool_tier,
     is_target_in_scope,
+    Project,
+    create_project,
+    get_project,
+    list_projects,
+    update_project,
+    update_project_shared_state,
+    add_project_collaborator,
+    remove_project_collaborator,
+    seed_default_shared_project,
+    query_audit_timeline,
+    get_audit_stats,
 )
 from orchestrator.agent import AgentLoop
 from orchestrator.model_center import model_center
@@ -1376,7 +1388,239 @@ def stop_browser():
     return browser_adapter.stop()
 
 
+# ==============================================================================
+# SHARED PROJECTS & MULTI-USER COLLABORATION ENDPOINTS
+# ==============================================================================
+
+class ProjectCreateRequest(BaseModel):
+    name: str
+    owner_id: str = "alice_secops"
+    description: Optional[str] = None
+    active_workspace_id: Optional[str] = None
+    active_session_id: Optional[str] = None
+    initial_state: Optional[Dict[str, Any]] = None
+
+
+class ProjectUpdateRequest(BaseModel):
+    name: Optional[str] = None
+    description: Optional[str] = None
+    status: Optional[str] = None
+    active_workspace_id: Optional[str] = None
+    active_session_id: Optional[str] = None
+    shared_state: Optional[Dict[str, Any]] = None
+
+
+class ProjectStateUpdateRequest(BaseModel):
+    state_updates: Dict[str, Any]
+    user_id: Optional[str] = "collaborator"
+
+
+class CollaboratorRequest(BaseModel):
+    user_id: str
+    role: str = "editor"
+    client_type: Optional[str] = "browser-desktop"
+
+
+class PresenceHeartbeatRequest(BaseModel):
+    user_id: str
+    client_type: str = "browser-desktop"
+    role: str = "editor"
+    active_view: Optional[str] = "dashboard"
+
+
+_project_presence: Dict[str, Dict[str, Dict[str, Any]]] = {}
+
+
+def _prune_and_get_presence(project_id: str) -> List[Dict[str, Any]]:
+    now_ts = time.time()
+    active_map = _project_presence.setdefault(project_id, {})
+    stale_users = [uid for uid, p in active_map.items() if now_ts - p.get("last_seen_ts", 0) > 60]
+    for uid in stale_users:
+        del active_map[uid]
+    return list(active_map.values())
+
+
+@app.get("/projects")
+def get_all_projects(status: Optional[str] = None, limit: int = 50, offset: int = 0):
+    """Lists all shared projects, auto-seeding the canonical shared workspace if empty."""
+    seed_default_shared_project()
+    projects = list_projects(status=status, limit=limit)
+    # Augment each project with live online presence count
+    for p in projects:
+        p["online_count"] = len(_prune_and_get_presence(p["project_id"]))
+    return {"projects": projects, "total": len(projects)}
+
+
+@app.post("/projects")
+def create_new_project(req: ProjectCreateRequest):
+    """Creates a new multi-user shared project."""
+    project = create_project(
+        name=req.name,
+        owner_id=req.owner_id,
+        description=req.description,
+        active_workspace_id=req.active_workspace_id,
+        active_session_id=req.active_session_id,
+        initial_state=req.initial_state,
+    )
+    return {"project": project, "status": "created"}
+
+
+@app.get("/projects/{project_id}")
+def get_project_by_id(project_id: str):
+    """Retrieves project details including current online presence and synchronized shared state."""
+    project = get_project(project_id)
+    if not project:
+        raise HTTPException(status_code=404, detail=f"Project '{project_id}' not found")
+    project["active_presence"] = _prune_and_get_presence(project_id)
+    return {"project": project}
+
+
+@app.put("/projects/{project_id}")
+def update_project_metadata(project_id: str, req: ProjectUpdateRequest):
+    """Updates metadata, status, or workspace bindings for a project."""
+    updated = update_project(
+        project_id=project_id,
+        name=req.name,
+        description=req.description,
+        status=req.status,
+        active_workspace_id=req.active_workspace_id,
+        active_session_id=req.active_session_id,
+    )
+    if not updated:
+        raise HTTPException(status_code=404, detail=f"Project '{project_id}' not found")
+    if req.shared_state:
+        updated = update_project_shared_state(project_id, state_patch=req.shared_state) or updated
+    return {"project": updated}
+
+
+@app.put("/projects/{project_id}/state")
+def sync_project_state(project_id: str, req: ProjectStateUpdateRequest):
+    """Synchronizes shared state (scratchpad, target, notes) across all project collaborators."""
+    updated = update_project_shared_state(
+        project_id=project_id,
+        state_patch=req.state_updates,
+    )
+    if not updated:
+        raise HTTPException(status_code=404, detail=f"Project '{project_id}' not found")
+
+    # Record synchronisation event in SQLite Event Store
+    try:
+        sync_event = Event.create(
+            session_id=updated.get("active_session_id") or "shared_sync",
+            task_id=f"state_sync_{int(time.time()*1000)%10000}",
+            actor=req.user_id or "collaborator",
+            tool_id="system.project_state_sync",
+            tool_version="1.0.0",
+            requested_args=req.state_updates,
+            normalized_args=req.state_updates,
+            process_id=os.getpid(),
+            exit_code=0,
+            result_summary=f"Project {project_id} shared state updated by {req.user_id}: {list(req.state_updates.keys())}",
+        )
+        insert_event(sync_event)
+    except Exception as e:
+        print(f"[Warning] Failed to log state sync event: {e}")
+
+    return {
+        "project": updated,
+        "updated_keys": list(req.state_updates.keys()),
+        "synced_at": datetime.now(timezone.utc).isoformat(),
+    }
+
+
+@app.post("/projects/{project_id}/collaborators")
+def add_collaborator(project_id: str, req: CollaboratorRequest):
+    """Adds a collaborator to a shared project."""
+    updated = add_project_collaborator(
+        project_id=project_id,
+        user_id=req.user_id,
+        role=req.role,
+        client_type=req.client_type,
+    )
+    if not updated:
+        raise HTTPException(status_code=404, detail=f"Project '{project_id}' not found")
+    return {"project": updated, "added_user": req.user_id}
+
+
+@app.delete("/projects/{project_id}/collaborators/{user_id}")
+def remove_collaborator(project_id: str, user_id: str):
+    """Removes a collaborator from a shared project (owner cannot be removed)."""
+    updated = remove_project_collaborator(
+        project_id=project_id,
+        user_id=user_id,
+    )
+    if not updated:
+        raise HTTPException(status_code=404, detail=f"Project '{project_id}' not found")
+    return {"project": updated, "removed_user": user_id}
+
+
+@app.get("/projects/{project_id}/presence")
+def get_project_presence(project_id: str):
+    """Returns active online collaborators for the project."""
+    presence = _prune_and_get_presence(project_id)
+    return {"project_id": project_id, "collaborators_online": presence, "count": len(presence)}
+
+
+@app.post("/projects/{project_id}/presence")
+def heartbeat_project_presence(project_id: str, req: PresenceHeartbeatRequest):
+    """Heartbeat endpoint registering active collaborator presence in a project."""
+    now_ts = time.time()
+    now_iso = datetime.now(timezone.utc).isoformat()
+    active_map = _project_presence.setdefault(project_id, {})
+    active_map[req.user_id] = {
+        "user_id": req.user_id,
+        "client_type": req.client_type,
+        "role": req.role,
+        "active_view": req.active_view,
+        "last_seen_ts": now_ts,
+        "last_seen": now_iso,
+    }
+    presence = _prune_and_get_presence(project_id)
+    return {"project_id": project_id, "collaborators_online": presence, "count": len(presence)}
+
+
+# ==============================================================================
+# AUDIT EXPLORER: SEARCHABLE TIMELINE & ACCOUNTABILITY (Task 2.3)
+# ==============================================================================
+
+@app.get("/audit/timeline")
+def get_audit_timeline(
+    query: Optional[str] = None,
+    actor: Optional[str] = None,
+    tool_id: Optional[str] = None,
+    status: Optional[str] = None,
+    time_range: Optional[str] = None,
+    scope_filter: Optional[str] = None,
+    session_id: Optional[str] = None,
+    limit: int = 200,
+    offset: int = 0,
+):
+    """
+    Searchable audit timeline querying every agent and tool execution event
+    correlated directly with the governing Scope Contract history (Task 2.3).
+    Surfaces HMAC-SHA256 signature verification, tool tiers, and target boundaries.
+    """
+    return query_audit_timeline(
+        query=query,
+        actor=actor,
+        tool_id=tool_id,
+        status=status,
+        time_range=time_range,
+        scope_filter=scope_filter,
+        session_id=session_id,
+        limit=limit,
+        offset=offset,
+    )
+
+
+@app.get("/audit/stats")
+def get_audit_explorer_stats(time_range: Optional[str] = None):
+    """Returns statistical summaries for the Audit Explorer dashboard overview."""
+    return get_audit_stats(time_range=time_range)
+
+
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run("orchestrator.server:app", host="127.0.0.1", port=8000, reload=False)
+
 

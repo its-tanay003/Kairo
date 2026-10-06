@@ -154,3 +154,23 @@ CREATE TABLE IF NOT EXISTS model_memory (
 
 CREATE INDEX IF NOT EXISTS idx_model_memory_model ON model_memory(model_id);
 CREATE INDEX IF NOT EXISTS idx_model_memory_version ON model_memory(version);
+
+-- Shared Projects: Multi-user shared project state, active collaborators, and synchronized sessions
+CREATE TABLE IF NOT EXISTS projects (
+    project_id TEXT PRIMARY KEY,
+    name TEXT NOT NULL,
+    description TEXT,
+    owner_id TEXT NOT NULL,
+    status TEXT NOT NULL DEFAULT 'active', -- 'active' | 'archived' | 'completed'
+    active_workspace_id TEXT,
+    active_session_id TEXT,
+    collaborators TEXT NOT NULL DEFAULT '[]', -- JSON array of collaborator objects
+    shared_state TEXT NOT NULL DEFAULT '{}',   -- JSON object: targets, notes, tags, scratchpad
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL,
+    metadata TEXT
+);
+
+CREATE INDEX IF NOT EXISTS idx_projects_owner ON projects(owner_id);
+CREATE INDEX IF NOT EXISTS idx_projects_status ON projects(status);
+CREATE INDEX IF NOT EXISTS idx_projects_workspace ON projects(active_workspace_id);

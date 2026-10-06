@@ -103,7 +103,7 @@ export default function ScreenPanel({
     try {
       // Dynamic import of @novnc/novnc to ensure safe client-side execution in Next.js & Tauri
       const RFBModule = await import("@novnc/novnc");
-      const RFB = RFBModule.default || RFBModule;
+      const RFB = (RFBModule.default || RFBModule) as unknown as new (...args: unknown[]) => RFBInstance;
 
       // Clear container element
       while (containerRef.current.firstChild) {

@@ -455,6 +455,49 @@ const server = http.createServer(async (req, res) => {
     }
   }
 
+  // Shared Projects routes: /projects, /projects/:id, /projects/:id/state, /projects/:id/collaborators, /projects/:id/presence
+  if (url.pathname.startsWith("/projects")) {
+    try {
+      if (req.method === "GET") {
+        const response = await fetch(`${ORCHESTRATOR_URL}${url.pathname}${url.search}`);
+        const data = await response.json();
+        res.writeHead(response.status, { "Content-Type": "application/json" });
+        res.end(JSON.stringify(data));
+        return;
+      } else if (req.method === "POST" || req.method === "PUT" || req.method === "DELETE") {
+        const body = await parseJsonBody(req);
+        const response = await fetch(`${ORCHESTRATOR_URL}${url.pathname}${url.search}`, {
+          method: req.method,
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(body),
+        });
+        const data = await response.json();
+        res.writeHead(response.status, { "Content-Type": "application/json" });
+        res.end(JSON.stringify(data));
+        return;
+      }
+    } catch (err: any) {
+      res.writeHead(502, { "Content-Type": "application/json" });
+      res.end(JSON.stringify({ error: `Projects Proxy error: ${err.message}` }));
+      return;
+    }
+  }
+
+  // Audit Explorer routes: /audit/timeline, /audit/stats
+  if (url.pathname.startsWith("/audit")) {
+    try {
+      const response = await fetch(`${ORCHESTRATOR_URL}${url.pathname}${url.search}`);
+      const data = await response.json();
+      res.writeHead(response.status, { "Content-Type": "application/json" });
+      res.end(JSON.stringify(data));
+      return;
+    } catch (err: any) {
+      res.writeHead(502, { "Content-Type": "application/json" });
+      res.end(JSON.stringify({ error: `Audit Proxy error: ${err.message}` }));
+      return;
+    }
+  }
+
   res.writeHead(404, { "Content-Type": "application/json" });
   res.end(JSON.stringify({ error: "Not Found" }));
 });
@@ -516,6 +559,7 @@ interface ClientSession {
   authenticated: boolean;
   user?: any;
   workspaceId?: string;
+  projectId?: string;
   dataPlane: "local-only" | "connected";
 }
 
@@ -540,6 +584,19 @@ function broadcastToWorkspace(workspaceId: string | undefined, message: string |
     if (s.ws.readyState === WebSocket.OPEN) {
       if (excludeWs && s.ws === excludeWs) continue;
       if (!workspaceId || !s.workspaceId || s.workspaceId === workspaceId) {
+        s.ws.send(msgStr);
+      }
+    }
+  }
+}
+
+function broadcastToProject(projectId: string | undefined, message: string | object, excludeWs?: WebSocket) {
+  if (!projectId) return;
+  const msgStr = typeof message === "string" ? message : JSON.stringify(message);
+  for (const s of sessions.values()) {
+    if (s.ws.readyState === WebSocket.OPEN) {
+      if (excludeWs && s.ws === excludeWs) continue;
+      if (s.projectId === projectId) {
         s.ws.send(msgStr);
       }
     }
@@ -616,6 +673,7 @@ wss.on("connection", async (ws: WebSocket, req) => {
   const reqSessionId = url.searchParams.get("sessionId");
   const sessionId = reqSessionId || `sess_${randomUUID().slice(0, 8)}`;
   const reqWorkspaceId = url.searchParams.get("workspaceId") || url.searchParams.get("workspace_id") || undefined;
+  const reqProjectId = url.searchParams.get("projectId") || url.searchParams.get("project_id") || undefined;
 
   // Detect Client Type (query param, user-agent, or headers)
   const userAgent = (req.headers["user-agent"] || "").toLowerCase();
@@ -685,19 +743,21 @@ wss.on("connection", async (ws: WebSocket, req) => {
     authenticated,
     user,
     workspaceId: reqWorkspaceId,
+    projectId: reqProjectId,
     dataPlane,
   };
 
   sessions.set(ws, session);
-  console.log(`[Gateway] Client connected (Session: ${sessionId}, Type: ${clientType}, Workspace: ${reqWorkspaceId || "none"}, DataPlane: ${dataPlane}, Auth: ${authenticated}, Active: ${sessions.size})`);
+  console.log(`[Gateway] Client connected (Session: ${sessionId}, Type: ${clientType}, Workspace: ${reqWorkspaceId || "none"}, Project: ${reqProjectId || "none"}, DataPlane: ${dataPlane}, Auth: ${authenticated}, Active: ${sessions.size})`);
 
-  // Send initial session handshake with auth, workspace & data plane metadata
+  // Send initial session handshake with auth, workspace, project & data plane metadata
   ws.send(
     JSON.stringify({
       type: "handshake",
       sessionId,
       clientType,
       workspaceId: reqWorkspaceId || null,
+      projectId: reqProjectId || null,
       authenticated,
       user,
       dataPlane,
@@ -715,6 +775,18 @@ wss.on("connection", async (ws: WebSocket, req) => {
       clientType,
       workspaceId: reqWorkspaceId,
       text: `Client [${clientType}] (${sessionId}) connected to workspace ${reqWorkspaceId}`,
+      timestamp: new Date().toISOString(),
+    }, ws);
+  }
+
+  // If connected to a pre-existing shared project, broadcast project_peer_joined
+  if (reqProjectId) {
+    broadcastToProject(reqProjectId, {
+      type: "project_peer_joined",
+      sessionId,
+      userId: user?.user_id || sessionId,
+      clientType,
+      projectId: reqProjectId,
       timestamp: new Date().toISOString(),
     }, ws);
   }
@@ -786,6 +858,112 @@ wss.on("connection", async (ws: WebSocket, req) => {
           }
         } catch (err: any) {
           ws.send(JSON.stringify({ type: "error", error: `Failed to join workspace ${wid}: ${err.message}` }));
+        }
+        return;
+      }
+
+      // Join / Bind to Shared Project: { type: "join_project", projectId: "...", userId: "...", role: "..." }
+      if (payload.type === "join_project" || payload.type === "project_join") {
+        const pid = payload.projectId || payload.project_id;
+        const uid = payload.userId || payload.user_id || session.user?.user_id || session.sessionId;
+        const role = payload.role || session.user?.role || "editor";
+        try {
+          // Send presence heartbeat to orchestrator
+          const hbResp = await fetch(`${ORCHESTRATOR_URL}/projects/${pid}/presence`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              user_id: uid,
+              client_type: session.clientType,
+              role,
+              active_view: payload.activeView || "live_session",
+            }),
+          });
+          const hbData = (await hbResp.json()) as any;
+
+          // Fetch full project state
+          const projResp = await fetch(`${ORCHESTRATOR_URL}/projects/${pid}`);
+          const projData = (await projResp.json()) as any;
+
+          session.projectId = pid;
+
+          ws.send(
+            JSON.stringify({
+              type: "project_joined",
+              sessionId,
+              projectId: pid,
+              project: projData.project,
+              collaboratorsOnline: hbData.collaborators_online || [],
+              timestamp: new Date().toISOString(),
+            })
+          );
+
+          broadcastToProject(pid, {
+            type: "project_peer_joined",
+            sessionId,
+            userId: uid,
+            clientType: session.clientType,
+            role,
+            projectId: pid,
+            collaboratorsOnline: hbData.collaborators_online || [],
+            timestamp: new Date().toISOString(),
+          }, ws);
+        } catch (err: any) {
+          ws.send(JSON.stringify({ type: "error", error: `Failed to join project ${pid}: ${err.message}` }));
+        }
+        return;
+      }
+
+      // Synchronize shared project state: { type: "project_state_update", projectId: "...", stateUpdates: { ... }, userId: "..." }
+      if (payload.type === "project_state_update" || payload.type === "sync_project_state") {
+        const pid = payload.projectId || payload.project_id || session.projectId;
+        const uid = payload.userId || payload.user_id || session.user?.user_id || session.sessionId;
+        const stateUpdates = payload.stateUpdates || payload.state_updates || {};
+
+        if (!pid) {
+          ws.send(JSON.stringify({ type: "error", error: "Missing projectId for project_state_update" }));
+          return;
+        }
+
+        try {
+          const syncResp = await fetch(`${ORCHESTRATOR_URL}/projects/${pid}/state`, {
+            method: "PUT",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ state_updates: stateUpdates, user_id: uid }),
+          });
+          const syncData = (await syncResp.json()) as any;
+
+          broadcastToProject(pid, {
+            type: "project_state_synced",
+            projectId: pid,
+            updatedBy: uid,
+            clientType: session.clientType,
+            project: syncData.project,
+            updatedKeys: syncData.updated_keys,
+            timestamp: new Date().toISOString(),
+          });
+        } catch (err: any) {
+          ws.send(JSON.stringify({ type: "error", error: `Failed to sync project state: ${err.message}` }));
+        }
+        return;
+      }
+
+      // Real-time collaborator activity / scratchpad update: { type: "collaborator_action", projectId: "...", action: "...", details: ... }
+      if (payload.type === "collaborator_action" || payload.type === "scratchpad_input") {
+        const pid = payload.projectId || payload.project_id || session.projectId;
+        const uid = payload.userId || payload.user_id || session.user?.user_id || session.sessionId;
+        if (pid) {
+          broadcastToProject(pid, {
+            type: "peer_activity",
+            projectId: pid,
+            userId: uid,
+            clientType: session.clientType,
+            action: payload.action || "editing",
+            scratchpad: payload.scratchpad,
+            cursor: payload.cursor,
+            activeView: payload.activeView,
+            timestamp: new Date().toISOString(),
+          }, ws);
         }
         return;
       }
@@ -1651,6 +1829,16 @@ wss.on("connection", async (ws: WebSocket, req) => {
   ws.on("close", () => {
     sessions.delete(ws);
     console.log(`[Gateway] Client disconnected (${sessionId}). Active: ${sessions.size}`);
+    if (session.projectId) {
+      broadcastToProject(session.projectId, {
+        type: "project_peer_left",
+        sessionId,
+        userId: session.user?.user_id || sessionId,
+        clientType: session.clientType,
+        projectId: session.projectId,
+        timestamp: new Date().toISOString(),
+      });
+    }
   });
 
   ws.on("error", (err) => {
