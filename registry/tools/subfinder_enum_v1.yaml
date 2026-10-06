@@ -1,0 +1,71 @@
+id: subfinder.enum.v1
+name: Subfinder Security Tool
+version: 1.0.0
+binary: subfinder
+category: recon
+description: Automated execution and evidence gathering adapter for subfinder.
+capabilities:
+- recon_scan
+- structured_observation
+- evidence_collection
+inputs:
+  type: object
+  required:
+  - target
+  properties:
+    target:
+      type: string
+      description: Target host, IP, or domain
+      default: 127.0.0.1
+    options:
+      type: string
+      description: Optional flags for tool execution
+      default: ''
+    timeout_s:
+      type: integer
+      description: Per-command execution timeout in seconds
+      default: 30
+outputs:
+  type: object
+  properties:
+    findings:
+      type: array
+      items:
+        type: object
+    raw_output:
+      type: string
+side_effects:
+- network_traffic
+- log_generation
+privilege: user
+gui: false
+parser: subfinder_enum_v1_parser
+prerequisites:
+- subfinder
+docs:
+  summary: Runs subfinder against target within authorized Scope Contract.
+  examples:
+  - description: Default local scan
+    command: subfinder 127.0.0.1
+success_signals:
+  exit_codes:
+  - 0
+  stdout_contains: []
+failure_signals:
+  exit_codes:
+  - 1
+  - 2
+  - 127
+  stderr_contains:
+  - error
+  - command not found
+rollback:
+  strategy: none
+  description: Read-only inspection tool; no active persistence state changes.
+version_compatibility:
+  min_agent_version: 1.0.0
+  os:
+  - linux
+  - darwin
+  - windows
+timeout_ms: 30000

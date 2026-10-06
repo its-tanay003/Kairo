@@ -87,17 +87,23 @@ def load_module_from_file(py_path: Path | str):
     return module
 
 
-def auto_discover_sdk_tools(search_dir: Path | str) -> List[str]:
+def auto_discover_sdk_tools(search_dir: Optional[Path | str] = None) -> List[str]:
     """
-    Scans a directory for *_adapter.py files, discovers ToolAdapter subclasses,
+    Scans a directory (and subdirectories) for *_adapter.py files, discovers ToolAdapter subclasses,
     and registers them into the runtime adapter registry.
     """
     discovered: List[str] = []
-    p = Path(search_dir)
+    p = Path(search_dir) if search_dir is not None else ROOT_DIR / "sdk" / "tools"
     if not p.exists():
         return discovered
 
-    for py_file in p.glob("*_adapter.py"):
+    seen_files = set()
+    candidate_files = list(p.glob("*_adapter.py")) + list(p.rglob("*_adapter.py"))
+
+    for py_file in candidate_files:
+        if py_file in seen_files:
+            continue
+        seen_files.add(py_file)
         try:
             mod = load_module_from_file(py_file)
             for attr in dir(mod):
@@ -109,7 +115,8 @@ def auto_discover_sdk_tools(search_dir: Path | str) -> List[str]:
                     and getattr(obj, "tool_id", "")
                 ):
                     register_adapter(obj)
-                    discovered.append(obj.tool_id)
+                    if obj.tool_id not in discovered:
+                        discovered.append(obj.tool_id)
         except Exception as e:
             logger.warning(f"[SDK Bridge] Failed discovering adapter in {py_file.name}: {e}")
 

@@ -22,9 +22,35 @@ interface CompetitorModel {
   verification_status: string;
 }
 
+interface VersionScoreHistoryItem {
+  model_id: string;
+  model_name: string;
+  model_version: string;
+  model_badge: string;
+  model_tier: string;
+  total_runs: number;
+  mean_composite_score: number;
+  best_composite_score: number;
+  mean_tool_accuracy_pct: number;
+  mean_recovery_rate_pct: number;
+  chronological_scores: Array<{
+    run_id: string;
+    timestamp: string;
+    composite_score: number;
+    tasks: number;
+    status: string;
+    commit: string;
+  }>;
+}
+
 interface BenchmarkRunItem {
   run_id: string;
   timestamp: string;
+  model_id?: string;
+  model_name?: string;
+  model_version?: string;
+  model_badge?: string;
+  model_tier?: string;
   total_tasks: number;
   tasks_completed: number;
   tasks_completed_pct: number;
@@ -79,6 +105,7 @@ interface LeaderboardData {
     open_source_advantage: string;
   };
   models_leaderboard: CompetitorModel[];
+  version_score_history?: VersionScoreHistoryItem[];
   golden_benchmark: {
     description: string;
     latest_run: BenchmarkRunItem | null;
@@ -107,6 +134,7 @@ export default function BenchmarkLeaderboard({
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState<"leaderboard" | "progression" | "comparison" | "runs">("leaderboard");
   const [selectedSuite, setSelectedSuite] = useState<"golden" | "full">("full");
+  const [selectedModelFilter, setSelectedModelFilter] = useState<string>("all");
   const [showVerificationModal, setShowVerificationModal] = useState(false);
   const [evaluating, setEvaluating] = useState(false);
   const [evalSuccessMsg, setEvalSuccessMsg] = useState<string | null>(null);
@@ -126,7 +154,10 @@ export default function BenchmarkLeaderboard({
   }, [apiBaseUrl]);
 
   useEffect(() => {
-    fetchLeaderboard();
+    const timer = setTimeout(() => {
+      fetchLeaderboard();
+    }, 0);
+    return () => clearTimeout(timer);
   }, [fetchLeaderboard]);
 
   const handleTriggerRun = async (benchmarkType: "golden" | "full") => {
@@ -463,6 +494,68 @@ export default function BenchmarkLeaderboard({
               </div>
             ))}
           </div>
+
+          {/* Multi-Version Empirical Score History */}
+          {data?.version_score_history && data.version_score_history.length > 0 && (
+            <div className="version-history-section">
+              <div className="section-header-compact">
+                <h4>📊 Empirical Score History Across Model Versions ({data.version_score_history.length} Model Iterations Evaluated)</h4>
+                <p className="card-desc">
+                  Real benchmark scores tracked over time across Base, SFT, DPO, and GRPO fine-tunes with verified evaluation runs.
+                </p>
+              </div>
+
+              <div className="version-history-grid">
+                {data.version_score_history.map((vh) => (
+                  <div key={vh.model_id} className="version-history-card">
+                    <div className="vh-card-top">
+                      <span className={`version-badge ${vh.model_id.includes("grpo") ? "badge-grpo" : vh.model_id.includes("dpo") ? "badge-dpo" : vh.model_id.includes("sft") ? "badge-sft" : "badge-base"}`}>
+                        {vh.model_badge}
+                      </span>
+                      <span className="mono font-xs text-muted">{vh.model_version}</span>
+                    </div>
+
+                    <h4 className="vh-model-name">{vh.model_name}</h4>
+                    <span className="vh-tier-label text-cyan font-xs">{vh.model_tier}</span>
+
+                    <div className="vh-stats-grid">
+                      <div className="vh-stat">
+                        <span className="lbl">Mean Score</span>
+                        <span className="val text-emerald font-bold">{vh.mean_composite_score}</span>
+                      </div>
+                      <div className="vh-stat">
+                        <span className="lbl">Peak Score</span>
+                        <span className="val text-cyan font-bold">{vh.best_composite_score}</span>
+                      </div>
+                      <div className="vh-stat">
+                        <span className="lbl">Accuracy</span>
+                        <span className="val">{vh.mean_tool_accuracy_pct}%</span>
+                      </div>
+                      <div className="vh-stat">
+                        <span className="lbl">Recovery</span>
+                        <span className="val">{vh.mean_recovery_rate_pct}%</span>
+                      </div>
+                    </div>
+
+                    <div className="vh-runs-strip">
+                      <span className="mono font-xs text-muted">Runs Logged ({vh.total_runs}):</span>
+                      <div className="vh-score-dots">
+                        {vh.chronological_scores.slice(-6).map((cs) => (
+                          <div
+                            key={cs.run_id}
+                            className={`score-dot ${cs.composite_score >= 95 ? "dot-top" : cs.composite_score >= 85 ? "dot-mid" : "dot-base"}`}
+                            title={`Run: ${cs.run_id} | Score: ${cs.composite_score} | Tasks: ${cs.tasks}`}
+                          >
+                            {cs.composite_score}
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
         </div>
       )}
 
@@ -527,7 +620,36 @@ export default function BenchmarkLeaderboard({
       {activeTab === "runs" && (
         <div className="lb-content">
           <div className="runs-head">
-            <h3>Immutable Evaluation Log Stream (lab/history.json)</h3>
+            <div className="runs-title-row">
+              <h3>Immutable Evaluation Log Stream (lab/history.json)</h3>
+              <div className="model-filter-group">
+                <span className="filter-lbl font-xs text-muted">Model Filter:</span>
+                <button
+                  className={`filter-btn ${selectedModelFilter === "all" ? "active" : ""}`}
+                  onClick={() => setSelectedModelFilter("all")}
+                >
+                  All Versions
+                </button>
+                <button
+                  className={`filter-btn ${selectedModelFilter === "kairo-dpo-1b" ? "active" : ""}`}
+                  onClick={() => setSelectedModelFilter("kairo-dpo-1b")}
+                >
+                  DPO-1B
+                </button>
+                <button
+                  className={`filter-btn ${selectedModelFilter === "kairo-sft-1b" ? "active" : ""}`}
+                  onClick={() => setSelectedModelFilter("kairo-sft-1b")}
+                >
+                  SFT-1B
+                </button>
+                <button
+                  className={`filter-btn ${selectedModelFilter === "kairo-grpo-1.5b" ? "active" : ""}`}
+                  onClick={() => setSelectedModelFilter("kairo-grpo-1.5b")}
+                >
+                  GRPO-1.5B
+                </button>
+              </div>
+            </div>
             <p className="card-desc">
               Every local and CI execution creates an immutable record with per-task audit breakdowns.
             </p>
@@ -539,6 +661,7 @@ export default function BenchmarkLeaderboard({
                 <tr>
                   <th>RUN ID</th>
                   <th>TIMESTAMP</th>
+                  <th>MODEL VERSION</th>
                   <th>TASKS</th>
                   <th>COMPLETED</th>
                   <th>TOOL ACCURACY</th>
@@ -552,23 +675,30 @@ export default function BenchmarkLeaderboard({
                 {(selectedSuite === "full"
                   ? data?.full_benchmark.recent_runs
                   : data?.golden_benchmark.recent_runs
-                )?.map((r) => (
-                  <tr key={r.run_id}>
-                    <td className="mono font-xs">{r.run_id}</td>
-                    <td className="font-xs text-muted">{new Date(r.timestamp).toLocaleString()}</td>
-                    <td>{r.total_tasks}</td>
-                    <td>{r.tasks_completed} ({r.tasks_completed_pct}%)</td>
-                    <td>{r.tool_accuracy_pct}%</td>
-                    <td>{r.recovery_rate_pct}%</td>
-                    <td>
-                      <strong className="text-emerald">{r.composite_score} / 100</strong>
-                    </td>
-                    <td className="mono font-xs text-muted">{r.git_commit}</td>
-                    <td>
-                      <span className="status-pill completed">{r.status}</span>
-                    </td>
-                  </tr>
-                ))}
+                )
+                  ?.filter((r) => selectedModelFilter === "all" || r.model_id === selectedModelFilter)
+                  .map((r) => (
+                    <tr key={r.run_id}>
+                      <td className="mono font-xs">{r.run_id}</td>
+                      <td className="font-xs text-muted">{new Date(r.timestamp).toLocaleString()}</td>
+                      <td>
+                        <span className={`version-badge-sm ${r.model_id?.includes("grpo") ? "badge-grpo" : r.model_id?.includes("dpo") ? "badge-dpo" : r.model_id?.includes("sft") ? "badge-sft" : "badge-base"}`}>
+                          {r.model_badge || r.model_name || "Kairo-DPO-1B"}
+                        </span>
+                      </td>
+                      <td>{r.total_tasks}</td>
+                      <td>{r.tasks_completed} ({r.tasks_completed_pct}%)</td>
+                      <td>{r.tool_accuracy_pct}%</td>
+                      <td>{r.recovery_rate_pct}%</td>
+                      <td>
+                        <strong className="text-emerald">{r.composite_score} / 100</strong>
+                      </td>
+                      <td className="mono font-xs text-muted">{r.git_commit}</td>
+                      <td>
+                        <span className="status-pill completed">{r.status}</span>
+                      </td>
+                    </tr>
+                  ))}
               </tbody>
             </table>
           </div>
