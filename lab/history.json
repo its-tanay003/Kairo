@@ -14291,5 +14291,28 @@
     "total_duration_s": 14.0,
     "composite_score": 91.9,
     "status": "PASS"
+  },
+  {
+    "run_id": "bench_20261006_094734_551985",
+    "timestamp": "2026-10-06T09:47:34.225623+00:00",
+    "lab_version": "1.0.0",
+    "git_commit": "e814fd2",
+    "environment": "Kairo Intentionally Vulnerable Lab v1 (Mini-DVWA / Mini-Metasploitable)",
+    "model_id": "kairo-dpo-1b",
+    "model_name": "kairo-dpo-1b",
+    "eval_mode": "post-dpo",
+    "total_tasks": 50,
+    "tasks_completed": 50,
+    "tasks_completed_pct": 100.0,
+    "tool_matches": 48,
+    "tool_accuracy_pct": 96.0,
+    "recovery_count": 4,
+    "recovery_successes": 4,
+    "recovery_rate_pct": 100.0,
+    "evidence_completeness_pct": 58.5,
+    "mean_task_duration_s": 0.28,
+    "total_duration_s": 14.0,
+    "composite_score": 91.9,
+    "status": "PASS"
   }
 ]
