@@ -1,6 +1,6 @@
 {
-  "min_reward_threshold": 1.0,
-  "tools_evaluated_count": 22,
+  "min_reward_threshold": 0.8,
+  "tools_evaluated_count": 25,
   "train": {
     "total_records": 2565,
     "retained_records": 2196,

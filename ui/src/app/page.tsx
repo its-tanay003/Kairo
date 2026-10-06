@@ -11,6 +11,8 @@ import ScreenPanel from "./components/ScreenPanel";
 import SecurityBrowserPanel from "./components/SecurityBrowserPanel";
 import LiveSessionView from "./components/LiveSessionView";
 import AuditExplorer from "./components/AuditExplorer";
+import DatasetCurationPanel from "./components/DatasetCurationPanel";
+import BenchmarkLeaderboard from "./components/BenchmarkLeaderboard";
 
 interface EventRecord {
   id?: number;
@@ -187,7 +189,20 @@ export default function Home() {
   const [inputVal, setInputVal] = useState<string>("");
   const [latestEvent, setLatestEvent] = useState<EventRecord | null>(null);
   const [allEvents, setAllEvents] = useState<EventRecord[]>([]);
-  const [activeTab, setActiveTab] = useState<"live_session" | "audit_explorer" | "terminal_process" | "task_graph" | "model_center" | "vm_sandbox" | "screen" | "browser" | "latest" | "all">("live_session");
+  const [activeTab, setActiveTab] = useState<
+    | "live_session"
+    | "audit_explorer"
+    | "dataset_curation"
+    | "benchmark_leaderboard"
+    | "terminal_process"
+    | "task_graph"
+    | "model_center"
+    | "vm_sandbox"
+    | "screen"
+    | "browser"
+    | "latest"
+    | "all"
+  >("live_session");
   const [activeProjectId, setActiveProjectId] = useState<string | null>("proj_alpha_ops");
   const [modelCenter, setModelCenter] = useState<ModelCenterStatus | null>(null);
   const [vmStatus, setVmStatus] = useState<VMStatus | null>(null);
@@ -1379,6 +1394,10 @@ export default function Home() {
                 ? "Live Session View (Multi-User Collaboration & Presence)"
                 : activeTab === "audit_explorer"
                 ? "Audit Explorer (Task 2.3 Scope Contract & Timeline Accountability)"
+                : activeTab === "dataset_curation"
+                ? "Dataset Curation & Training Console (Phase 3 SFT & Phase 6 DPO)"
+                : activeTab === "benchmark_leaderboard"
+                ? "Public Benchmark Leaderboard (Task 2.7 Golden & Task 6.2 Full)"
                 : activeTab === "task_graph"
                 ? "Task Graph (DAG Planner)"
                 : activeTab === "terminal_process"
@@ -1417,6 +1436,33 @@ export default function Home() {
                 onClick={() => setActiveTab("audit_explorer")}
               >
                 🔍 Audit Explorer
+              </button>
+              <button
+                className={`quick-btn ${activeTab === "dataset_curation" ? "" : "secondary"}`}
+                style={{
+                  padding: "3px 8px",
+                  fontSize: "11px",
+                  borderColor: activeTab === "dataset_curation" ? "var(--accent-purple)" : undefined,
+                  background: activeTab === "dataset_curation" ? "rgba(168, 85, 247, 0.15)" : undefined,
+                  color: activeTab === "dataset_curation" ? "#c084fc" : undefined,
+                }}
+                onClick={() => setActiveTab("dataset_curation")}
+              >
+                🧬 Dataset & Training
+              </button>
+              <button
+                className={`quick-btn ${activeTab === "benchmark_leaderboard" ? "" : "secondary"}`}
+                style={{
+                  padding: "3px 8px",
+                  fontSize: "11px",
+                  borderColor: activeTab === "benchmark_leaderboard" ? "var(--accent-emerald)" : undefined,
+                  background: activeTab === "benchmark_leaderboard" ? "rgba(16, 185, 129, 0.18)" : undefined,
+                  color: activeTab === "benchmark_leaderboard" ? "var(--accent-emerald)" : undefined,
+                  fontWeight: 600,
+                }}
+                onClick={() => setActiveTab("benchmark_leaderboard")}
+              >
+                🏆 Public Leaderboard
               </button>
               <button
                 className={`quick-btn ${activeTab === "task_graph" ? "" : "secondary"}`}
@@ -1511,6 +1557,14 @@ export default function Home() {
             ) : activeTab === "audit_explorer" ? (
               <div style={{ height: "calc(100vh - 190px)", minHeight: "560px", display: "flex", flexDirection: "column" }}>
                 <AuditExplorer />
+              </div>
+            ) : activeTab === "dataset_curation" ? (
+              <div style={{ height: "calc(100vh - 190px)", minHeight: "560px", display: "flex", flexDirection: "column", overflowY: "auto" }}>
+                <DatasetCurationPanel />
+              </div>
+            ) : activeTab === "benchmark_leaderboard" ? (
+              <div style={{ height: "calc(100vh - 190px)", minHeight: "560px", display: "flex", flexDirection: "column", overflowY: "auto" }}>
+                <BenchmarkLeaderboard />
               </div>
             ) : activeTab === "task_graph" ? (
               <div style={{ height: "calc(100vh - 190px)", minHeight: "560px", display: "flex", flexDirection: "column" }}>

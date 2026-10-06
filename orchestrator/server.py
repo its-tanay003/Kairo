@@ -77,6 +77,9 @@ from orchestrator.evidence_store import (
 from orchestrator.report_generator import report_generator
 from orchestrator.adapters.registry import adapter_registry
 from orchestrator.adapters.gui_base import BaseGuiAdapter
+from orchestrator.training_manager import training_manager
+from orchestrator.benchmark_manager import benchmark_manager
+
 
 
 app = FastAPI(title="Agent Orchestrator Service", version="1.0.0")
@@ -1617,6 +1620,170 @@ def get_audit_timeline(
 def get_audit_explorer_stats(time_range: Optional[str] = None):
     """Returns statistical summaries for the Audit Explorer dashboard overview."""
     return get_audit_stats(time_range=time_range)
+
+
+# ==============================================================================
+# DATASET CURATION & SFT / DPO TRAINING PIPELINE (Phase 3 & 6)
+# ==============================================================================
+
+class CurateExampleRequest(BaseModel):
+    example_id: str
+    status: str
+    notes: Optional[str] = None
+    operator: Optional[str] = "operator_secops"
+
+
+class CleanDatasetRequest(BaseModel):
+    min_reward: float = 1.0
+
+
+class StartTrainingJobRequest(BaseModel):
+    job_type: str = "sft"  # sft, dpo, grpo
+    preset: str = "kairo-compact-380m"
+    epochs: int = 1
+    learning_rate: float = 5e-5
+    batch_size: int = 2
+    beta: float = 0.1
+    use_cleaned: bool = True
+    max_steps: Optional[int] = None
+
+
+@app.get("/training/dataset/stats")
+def get_training_dataset_stats():
+    """Retrieves high-level dataset statistics, split breakdowns, and curation status."""
+    return training_manager.get_dataset_stats()
+
+
+@app.get("/training/dataset/examples")
+def list_training_examples(
+    dataset_type: str = "sft",
+    tool_id: Optional[str] = None,
+    tier: Optional[int] = None,
+    source_type: Optional[str] = None,
+    query: Optional[str] = None,
+    curation_filter: Optional[str] = None,
+    limit: int = 50,
+    offset: int = 0,
+):
+    """Lists, searches, and filters dataset examples (SFT trajectories or DPO pairs)."""
+    return training_manager.list_examples(
+        dataset_type=dataset_type,
+        tool_id=tool_id,
+        tier=tier,
+        source_type=source_type,
+        query=query,
+        curation_filter=curation_filter,
+        limit=limit,
+        offset=offset,
+    )
+
+
+@app.post("/training/dataset/curate")
+def curate_dataset_example(req: CurateExampleRequest):
+    """Applies curation decision ('approved', 'flagged', 'pruned') to an example."""
+    return training_manager.curate_example(
+        example_id=req.example_id,
+        status=req.status,
+        notes=req.notes,
+        operator=req.operator,
+    )
+
+
+@app.post("/training/dataset/clean")
+def run_schema_cleaning(req: CleanDatasetRequest):
+    """Executes schema-validation filter to prune malformed trajectories."""
+    return training_manager.run_cleaning_filter(min_reward=req.min_reward)
+
+
+@app.get("/training/jobs")
+def list_training_jobs():
+    """Lists running and completed SFT/DPO/GRPO training runs."""
+    return {"jobs": training_manager.get_training_jobs()}
+
+
+@app.post("/training/jobs/start")
+def start_training_job(req: StartTrainingJobRequest):
+    """Launches an asynchronous training run for Phase 3 SFT or Phase 6 DPO/GRPO."""
+    job = training_manager.start_training_job(
+        job_type=req.job_type,
+        preset=req.preset,
+        epochs=req.epochs,
+        learning_rate=req.learning_rate,
+        batch_size=req.batch_size,
+        beta=req.beta,
+        use_cleaned=req.use_cleaned,
+        max_steps=req.max_steps,
+    )
+    return {"job": job, "status": "started"}
+
+
+@app.get("/training/jobs/{job_id}")
+def get_training_job_status(job_id: str):
+    """Retrieves step-by-step progress, loss metrics, and console logs for a training job."""
+    job = training_manager.get_training_job(job_id)
+    if not job:
+        raise HTTPException(status_code=404, detail=f"Training job '{job_id}' not found")
+    return {"job": job}
+
+
+@app.post("/training/jobs/{job_id}/stop")
+def stop_training_job(job_id: str):
+    """Terminates an active training job."""
+    success = training_manager.stop_training_job(job_id)
+    if not success:
+        raise HTTPException(status_code=404, detail=f"Training job '{job_id}' not found or already stopped")
+    return {"job_id": job_id, "status": "stopped"}
+
+
+@app.get("/training/checkpoints")
+def list_training_checkpoints():
+    """Scans and lists available model checkpoints in training/checkpoints/."""
+    return {"checkpoints": training_manager.list_checkpoints()}
+
+
+# ==============================================================================
+# PUBLIC BENCHMARK LEADERBOARD (Task 2.7 Golden & Task 6.2 Full)
+# ==============================================================================
+
+class TriggerBenchmarkRequest(BaseModel):
+    benchmark_type: str = "full"  # "golden" (50 tasks) or "full" (120 tasks)
+    model_id: Optional[str] = "kairo-dpo-1b"
+    eval_mode: str = "post-dpo"
+
+
+@app.get("/benchmark/leaderboard")
+def get_benchmark_leaderboard():
+    """
+    Returns public-facing benchmark leaderboard scores across model versions and time.
+    Provides rigorous head-to-head empirical comparisons against PentAGI, Strix, and CAI.
+    """
+    return benchmark_manager.get_leaderboard_data()
+
+
+@app.get("/benchmark/runs/{run_id}")
+def get_benchmark_run_details(run_id: str):
+    """Retrieves detailed per-task execution trace for a historical benchmark run."""
+    details = benchmark_manager.get_run_details(run_id)
+    if not details:
+        raise HTTPException(status_code=404, detail=f"Benchmark run '{run_id}' not found")
+    return {"run": details}
+
+
+@app.post("/benchmark/run")
+def trigger_benchmark_run(req: TriggerBenchmarkRequest):
+    """Triggers an on-demand evaluation against the Golden or Full benchmark suite."""
+    return benchmark_manager.trigger_benchmark_run(
+        benchmark_type=req.benchmark_type,
+        model_id=req.model_id,
+        eval_mode=req.eval_mode,
+    )
+
+
+@app.get("/benchmark/public-card")
+def get_public_benchmark_card():
+    """Returns cryptographic SHA256 evaluation digest and reproducibility instructions."""
+    return benchmark_manager.get_public_verification_card()
+
 
 
 if __name__ == "__main__":

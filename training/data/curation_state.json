@@ -1,0 +1,14 @@
+{
+  "test_sample_eval_001": {
+    "status": "pruned",
+    "notes": "Pruned due to outdated schema",
+    "operator": "lead_security_evaluator",
+    "curated_at": "2026-10-06T08:54:20.218567+00:00"
+  },
+  "api_test_sample_01": {
+    "status": "approved",
+    "notes": "Verified tool syntax and parameter boundaries",
+    "operator": "automated_test_suite",
+    "curated_at": "2026-10-06T08:55:07.641947+00:00"
+  }
+}
