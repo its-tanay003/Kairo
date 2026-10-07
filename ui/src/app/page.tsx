@@ -158,12 +158,18 @@ export default function Home() {
 
   // Drawer and Dialogs State
   const [isAdvancedOpen, setIsAdvancedOpen] = useState<boolean>(false);
+  const [isAdvancedWide, setIsAdvancedWide] = useState<boolean>(false);
   const [advancedTab, setAdvancedTab] = useState<
     "system" | "events" | "terminal" | "screen" | "graph" | "benchmarks" | "audit" | "devtools"
   >("system");
   const [isMobileSidebarOpen, setIsMobileSidebarOpen] = useState<boolean>(false);
   const [showStatusTooltip, setShowStatusTooltip] = useState<boolean>(false);
   const [showScopePopover, setShowScopePopover] = useState<boolean>(false);
+  const [copiedSession, setCopiedSession] = useState<boolean>(false);
+  const [eventSearch, setEventSearch] = useState<string>("");
+  const [eventFilterMode, setEventFilterMode] = useState<"all" | "success" | "error">("all");
+  const [expandedEventId, setExpandedEventId] = useState<number | null>(null);
+  const [devCustomCmd, setDevCustomCmd] = useState<string>("");
 
   // System & Telemetry Data
   const [modelCenter, setModelCenter] = useState<ModelCenterStatus | null>(null);
@@ -227,6 +233,45 @@ export default function Home() {
     const interval = setInterval(fetchTelemetry, 6000);
     return () => clearInterval(interval);
   }, []);
+
+  // Keyboard Escape listener to close Advanced drawer
+  useEffect(() => {
+    const handleEsc = (e: KeyboardEvent) => {
+      if (e.key === "Escape" && isAdvancedOpen) {
+        setIsAdvancedOpen(false);
+      }
+    };
+    window.addEventListener("keydown", handleEsc);
+    return () => window.removeEventListener("keydown", handleEsc);
+  }, [isAdvancedOpen]);
+
+  // Copy session ID with feedback
+  const handleCopySession = () => {
+    if (typeof navigator !== "undefined" && navigator.clipboard) {
+      navigator.clipboard.writeText(sessionId);
+      setCopiedSession(true);
+      setTimeout(() => setCopiedSession(false), 2000);
+    }
+  };
+
+  // Filtered SQLite events for Event Log tab
+  const filteredEvents = useMemo(() => {
+    return allEvents.filter((ev) => {
+      if (eventFilterMode === "success" && ev.exit_code !== 0 && ev.exit_code !== undefined) {
+        return false;
+      }
+      if (eventFilterMode === "error" && (ev.exit_code === 0 || ev.exit_code === undefined)) {
+        return false;
+      }
+      if (!eventSearch.trim()) return true;
+      const term = eventSearch.toLowerCase();
+      const matchTool = (ev.tool_id || "").toLowerCase().includes(term);
+      const matchActor = (ev.actor || "").toLowerCase().includes(term);
+      const matchArgs = (ev.requested_args || "").toLowerCase().includes(term);
+      const matchSummary = (ev.result_summary || "").toLowerCase().includes(term);
+      return matchTool || matchActor || matchArgs || matchSummary;
+    });
+  }, [allEvents, eventFilterMode, eventSearch]);
 
   // WebSocket lifecycle
   useEffect(() => {
@@ -761,50 +806,131 @@ export default function Home() {
         </main>
       </div>
 
-      {/* 3. ADVANCED DRAWER (480px) */}
+      {/* 3. ADVANCED DRAWER */}
       {isAdvancedOpen && (
         <div key="drawer-backdrop" className="drawer-backdrop" onClick={() => setIsAdvancedOpen(false)}>
-          <div className="drawer-container" onClick={(e) => e.stopPropagation()}>
+          <div
+            className={`drawer-container ${isAdvancedWide ? "wide" : ""}`}
+            onClick={(e) => e.stopPropagation()}
+          >
             <div className="drawer-header">
-              <span className="drawer-title">Advanced</span>
-              <button
-                className="ghost-btn"
-                style={{ padding: "4px 8px" }}
-                onClick={() => setIsAdvancedOpen(false)}
-                aria-label="Close Advanced Drawer"
-              >
-                ✕
-              </button>
+              <div className="drawer-header-left">
+                <span className="drawer-title">Advanced</span>
+                <span className="drawer-subtitle">
+                  {advancedTab.toUpperCase()} · {sessionId.slice(0, 14)}
+                </span>
+              </div>
+              <div className="drawer-header-actions">
+                <button
+                  className="ghost-btn"
+                  style={{ padding: "4px 8px", fontSize: "12px" }}
+                  onClick={() => setIsAdvancedWide(!isAdvancedWide)}
+                  title={isAdvancedWide ? "Standard Width (520px)" : "Expand Console (840px)"}
+                >
+                  {isAdvancedWide ? "🗗 Standard" : "⛶ Expand"}
+                </button>
+                <button
+                  className="ghost-btn"
+                  style={{ padding: "4px 8px" }}
+                  onClick={() => setIsAdvancedOpen(false)}
+                  aria-label="Close Advanced Drawer"
+                >
+                  ✕
+                </button>
+              </div>
             </div>
 
             <div className="drawer-body">
-              {/* Left Nav Rail */}
+              {/* Categorized Left Nav Rail */}
               <nav className="drawer-nav-rail">
-                {[
-                  { id: "system", label: "System" },
-                  { id: "events", label: "Event Log" },
-                  { id: "terminal", label: "Terminal" },
-                  { id: "screen", label: "Screen (VNC)" },
-                  { id: "graph", label: "Task Graph" },
-                  { id: "benchmarks", label: "Benchmarks" },
-                  { id: "audit", label: "Audit" },
-                  { id: "devtools", label: "Dev tools" },
-                ].map((item) => (
-                  <button
-                    key={item.id}
-                    className={`drawer-nav-item ${advancedTab === item.id ? "active" : ""}`}
-                    onClick={() => setAdvancedTab(item.id as typeof advancedTab)}
-                  >
-                    {item.label}
-                  </button>
-                ))}
+                <div className="drawer-nav-group-label">Core</div>
+                <button
+                  className={`drawer-nav-item ${advancedTab === "system" ? "active" : ""}`}
+                  onClick={() => setAdvancedTab("system")}
+                >
+                  <span>System</span>
+                  <span
+                    className={`status-dot ${
+                      modelCenter?.server_status === "running" ? "success" : "error"
+                    }`}
+                  />
+                </button>
+                <button
+                  className={`drawer-nav-item ${advancedTab === "events" ? "active" : ""}`}
+                  onClick={() => setAdvancedTab("events")}
+                >
+                  <span>Event Log</span>
+                  <span className="drawer-nav-badge">{allEvents.length}</span>
+                </button>
+
+                <div className="drawer-nav-group-label">Operations</div>
+                <button
+                  className={`drawer-nav-item ${advancedTab === "terminal" ? "active" : ""}`}
+                  onClick={() => setAdvancedTab("terminal")}
+                >
+                  <span>Terminal</span>
+                  <span className="drawer-nav-badge">CLI</span>
+                </button>
+                <button
+                  className={`drawer-nav-item ${advancedTab === "screen" ? "active" : ""}`}
+                  onClick={() => setAdvancedTab("screen")}
+                >
+                  <span>Screen (VNC)</span>
+                  <span className="drawer-nav-badge">GUI</span>
+                </button>
+                <button
+                  className={`drawer-nav-item ${advancedTab === "graph" ? "active" : ""}`}
+                  onClick={() => setAdvancedTab("graph")}
+                >
+                  <span>Task Graph</span>
+                  <span className="drawer-nav-badge">DAG</span>
+                </button>
+
+                <div className="drawer-nav-group-label">Security</div>
+                <button
+                  className={`drawer-nav-item ${advancedTab === "audit" ? "active" : ""}`}
+                  onClick={() => setAdvancedTab("audit")}
+                >
+                  <span>Audit</span>
+                </button>
+                <button
+                  className={`drawer-nav-item ${advancedTab === "benchmarks" ? "active" : ""}`}
+                  onClick={() => setAdvancedTab("benchmarks")}
+                >
+                  <span>Benchmarks</span>
+                </button>
+
+                <div className="drawer-nav-group-label">Testing</div>
+                <button
+                  className={`drawer-nav-item ${advancedTab === "devtools" ? "active" : ""}`}
+                  onClick={() => setAdvancedTab("devtools")}
+                >
+                  <span>Dev tools</span>
+                  <span style={{ fontSize: "11px" }}>⚠️</span>
+                </button>
               </nav>
 
               {/* Right Content Pane */}
               <div className="drawer-content-pane">
                 {advancedTab === "system" && (
                   <div>
-                    <h3>System & Hardware Telemetry</h3>
+                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "8px" }}>
+                      <h3>System &amp; Hardware Telemetry</h3>
+                    </div>
+
+                    <div className="drawer-quick-actions">
+                      <button className="action-pill-btn" onClick={fetchTelemetry} title="Poll latest orchestrator telemetry">
+                        ↻ Refresh Telemetry
+                      </button>
+                      <button
+                        className={`action-pill-btn ${copiedSession ? "success" : ""}`}
+                        onClick={handleCopySession}
+                        title="Copy session identifier"
+                      >
+                        {copiedSession ? "✓ Copied!" : "📋 Copy Session ID"}
+                      </button>
+                    </div>
+
                     <div className="detail-table">
                       <div className="detail-row">
                         <span className="detail-row-label">Active Model</span>
@@ -812,7 +938,14 @@ export default function Home() {
                       </div>
                       <div className="detail-row">
                         <span className="detail-row-label">Model Server</span>
-                        <span className="detail-row-val">{modelCenter?.server_status || "offline"}</span>
+                        <span className="detail-row-val">
+                          <span
+                            className={`status-dot ${
+                              modelCenter?.server_status === "running" ? "success" : "error"
+                            }`}
+                          />
+                          {modelCenter?.server_status || "offline"}
+                        </span>
                       </div>
                       <div className="detail-row">
                         <span className="detail-row-label">Runtime Engine</span>
@@ -828,19 +961,45 @@ export default function Home() {
                       </div>
                       <div className="detail-row">
                         <span className="detail-row-label">GPU VRAM</span>
-                        <span className="detail-row-val">
-                          {modelCenter?.vram ? `${modelCenter.vram.used_mb}MB / ${modelCenter.vram.total_mb}MB` : "Integrated"}
-                        </span>
+                        <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
+                          {modelCenter?.vram && (
+                            <div className="gauge-container">
+                              <div className="gauge-track">
+                                <div
+                                  className="gauge-fill"
+                                  style={{ width: `${Math.min(modelCenter.vram.utilization_pct || 0, 100)}%` }}
+                                />
+                              </div>
+                            </div>
+                          )}
+                          <span className="detail-row-val">
+                            {modelCenter?.vram
+                              ? `${modelCenter.vram.used_mb}MB / ${modelCenter.vram.total_mb}MB`
+                              : "Integrated / CPU"}
+                          </span>
+                        </div>
                       </div>
                       <div className="detail-row">
                         <span className="detail-row-label">Kali VM Worker</span>
                         <span className="detail-row-val">
-                          {vmStatus?.worker_online ? "Online" : "Offline"} ({vmStatus?.vm_state || "unknown"})
+                          <span
+                            className={`status-dot ${
+                              vmStatus?.worker_online ? "success" : "warning"
+                            }`}
+                          />
+                          {vmStatus?.worker_online ? "Online" : "Offline"} ({vmStatus?.vm_state || "poweroff"})
                         </span>
                       </div>
                       <div className="detail-row">
                         <span className="detail-row-label">Gateway WebSocket</span>
-                        <span className="detail-row-val">{wsStatus}</span>
+                        <span className="detail-row-val">
+                          <span
+                            className={`status-dot ${
+                              wsStatus === "connected" ? "success" : "error"
+                            }`}
+                          />
+                          {wsStatus}
+                        </span>
                       </div>
                     </div>
                   </div>
@@ -848,21 +1007,108 @@ export default function Home() {
 
                 {advancedTab === "events" && (
                   <div>
-                    <h3>SQLite Event Log</h3>
-                    <div className="detail-table">
-                      {allEvents.slice(0, 15).map((ev, i) => (
-                        <div key={ev.id || i} className="detail-row">
-                          <span className="detail-row-label">
-                            {ev.tool_id || ev.actor || "event"}
-                          </span>
-                          <span className="detail-row-val" style={{ fontSize: "11px" }}>
-                            exit {ev.exit_code ?? 0}
-                          </span>
-                        </div>
-                      ))}
-                      {allEvents.length === 0 && (
-                        <div style={{ color: "var(--text-muted)", fontSize: "12px", padding: "8px 0" }}>
-                          No operational events committed yet.
+                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "8px" }}>
+                      <h3>SQLite Operational Event Log</h3>
+                      <span style={{ fontSize: "12px", color: "var(--text-muted)" }}>
+                        {filteredEvents.length} of {allEvents.length} events
+                      </span>
+                    </div>
+
+                    <div className="event-filter-bar">
+                      <input
+                        type="text"
+                        className="event-search-input"
+                        placeholder="Search events by tool, actor, or arguments..."
+                        value={eventSearch}
+                        onChange={(e) => setEventSearch(e.target.value)}
+                      />
+                      <div className="event-filter-pills">
+                        <button
+                          className={`event-filter-pill ${eventFilterMode === "all" ? "active" : ""}`}
+                          onClick={() => setEventFilterMode("all")}
+                        >
+                          All ({allEvents.length})
+                        </button>
+                        <button
+                          className={`event-filter-pill ${eventFilterMode === "success" ? "active" : ""}`}
+                          onClick={() => setEventFilterMode("success")}
+                        >
+                          Success ({allEvents.filter((e) => (e.exit_code ?? 0) === 0).length})
+                        </button>
+                        <button
+                          className={`event-filter-pill ${eventFilterMode === "error" ? "active" : ""}`}
+                          onClick={() => setEventFilterMode("error")}
+                        >
+                          Failures ({allEvents.filter((e) => (e.exit_code ?? 0) !== 0).length})
+                        </button>
+                      </div>
+                    </div>
+
+                    <div style={{ display: "flex", flexDirection: "column", gap: "6px" }}>
+                      {filteredEvents.slice(0, 30).map((ev, i) => {
+                        const evId = ev.id ?? i;
+                        const isExpanded = expandedEventId === evId;
+                        return (
+                          <div key={evId} className="event-card">
+                            <div
+                              className="event-card-header"
+                              onClick={() => setExpandedEventId(isExpanded ? null : evId)}
+                            >
+                              <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                                <span
+                                  className={`status-dot ${
+                                    (ev.exit_code ?? 0) === 0 ? "success" : "error"
+                                  }`}
+                                />
+                                <strong style={{ color: "var(--text-primary)" }}>
+                                  {ev.tool_id || ev.actor || "event"}
+                                </strong>
+                                <span style={{ color: "var(--text-muted)", fontSize: "11px" }}>
+                                  {ev.timestamp ? new Date(ev.timestamp).toLocaleTimeString() : ""}
+                                </span>
+                              </div>
+                              <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                                <span
+                                  style={{
+                                    fontSize: "11px",
+                                    fontFamily: "var(--font-mono)",
+                                    color:
+                                      (ev.exit_code ?? 0) === 0
+                                        ? "var(--status-success)"
+                                        : "var(--status-error)",
+                                  }}
+                                >
+                                  exit {ev.exit_code ?? 0}
+                                </span>
+                                <span style={{ fontSize: "11px", color: "var(--text-muted)" }}>
+                                  {isExpanded ? "▲" : "▼"}
+                                </span>
+                              </div>
+                            </div>
+
+                            {isExpanded && (
+                              <div className="event-card-details">
+                                {ev.task_id && <div><strong>Task ID:</strong> {ev.task_id}</div>}
+                                {ev.requested_args && (
+                                  <div>
+                                    <strong>Args:</strong> {ev.requested_args}
+                                  </div>
+                                )}
+                                {ev.result_summary && (
+                                  <div>
+                                    <strong>Summary:</strong> {ev.result_summary}
+                                  </div>
+                                )}
+                                {ev.stdout_ref && <div><strong>Stdout Ref:</strong> {ev.stdout_ref}</div>}
+                              </div>
+                            )}
+                          </div>
+                        );
+                      })}
+
+                      {filteredEvents.length === 0 && (
+                        <div style={{ color: "var(--text-muted)", fontSize: "12px", padding: "16px 0", textAlign: "center" }}>
+                          No operational events match current filter.
                         </div>
                       )}
                     </div>
@@ -872,7 +1118,7 @@ export default function Home() {
                 {advancedTab === "terminal" && (
                   <div style={{ height: "100%", display: "flex", flexDirection: "column" }}>
                     <h3>Live Kali Terminal Stream</h3>
-                    <div style={{ flex: 1, minHeight: "400px" }}>
+                    <div style={{ flex: 1, minHeight: "450px" }}>
                       <TerminalProcessView
                         ws={wsInstance}
                         activeTaskId={activeTaskId}
@@ -887,7 +1133,7 @@ export default function Home() {
                 {advancedTab === "screen" && (
                   <div style={{ height: "100%", display: "flex", flexDirection: "column" }}>
                     <h3>Kali Desktop Stream (RFB/noVNC)</h3>
-                    <div style={{ flex: 1, minHeight: "400px" }}>
+                    <div style={{ flex: 1, minHeight: "450px" }}>
                       <ScreenPanel
                         ws={wsInstance}
                         activeSessionId={sessionId}
@@ -901,7 +1147,7 @@ export default function Home() {
                 {advancedTab === "graph" && (
                   <div style={{ height: "100%", display: "flex", flexDirection: "column" }}>
                     <h3>Task Graph (DAG Planner)</h3>
-                    <div style={{ flex: 1, minHeight: "400px" }}>
+                    <div style={{ flex: 1, minHeight: "450px" }}>
                       <TaskGraphView ws={wsInstance} activeSessionId={sessionId} />
                     </div>
                   </div>
@@ -909,7 +1155,7 @@ export default function Home() {
 
                 {advancedTab === "benchmarks" && (
                   <div style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
-                    <h3>Leaderboard & Training</h3>
+                    <h3>Leaderboard &amp; Training</h3>
                     <BenchmarkLeaderboard />
                     <DatasetCurationPanel />
                   </div>
@@ -926,57 +1172,98 @@ export default function Home() {
                   <div className="dev-tools-container">
                     <h3>Internal Debug Actions</h3>
                     <p className="dev-notice">
-                      These actions are developer fixtures for validating the VirtualBox worker,
-                      process isolation, and timeout limits.
+                      These actions are developer fixtures for validating sandbox isolation, process timeouts,
+                      and fault-tolerance recovery workflows.
                     </p>
 
-                    <button
-                      className="dev-action-btn"
-                      onClick={() =>
-                        triggerDevAction("tool_call", {
-                          tool: "kali.exec.v1",
-                          args: { command: "uname", args: ["-a"] },
-                        })
-                      }
-                    >
-                      ▶ Execute `kali.exec.v1: uname -a`
-                    </button>
+                    {/* Interactive Sandbox Command Runner */}
+                    <div className="dev-group-card">
+                      <span className="dev-group-title">Interactive Sandbox Runner</span>
+                      <form
+                        className="dev-cmd-form"
+                        onSubmit={(e) => {
+                          e.preventDefault();
+                          if (devCustomCmd.trim()) {
+                            triggerDevAction("tool_call", {
+                              tool: "kali.exec.v1",
+                              args: { command: devCustomCmd.trim() },
+                            });
+                            setDevCustomCmd("");
+                          }
+                        }}
+                      >
+                        <input
+                          type="text"
+                          className="dev-cmd-input"
+                          placeholder="Command to exec (e.g. whoami, id, uptime)..."
+                          value={devCustomCmd}
+                          onChange={(e) => setDevCustomCmd(e.target.value)}
+                        />
+                        <button
+                          type="submit"
+                          className="action-pill-btn"
+                          style={{ padding: "6px 14px", color: "var(--accent)" }}
+                        >
+                          Execute
+                        </button>
+                      </form>
+                    </div>
 
-                    <button
-                      className="dev-action-btn"
-                      onClick={() =>
-                        triggerDevAction("tool_call", {
-                          tool: "shell.run.v1",
-                          args: { command: "date" },
-                        })
-                      }
-                    >
-                      ▶ Execute `shell.run.v1: date`
-                    </button>
-
-                    <button
-                      className="dev-action-btn"
-                      onClick={() =>
-                        triggerDevAction("tool_call", {
-                          tool: "kali.exec.v1",
-                          args: { command: "sleep", args: ["5"] },
-                          timeout_ms: 800,
-                        })
-                      }
-                    >
-                      ▶ Trigger Simulated Timeout (800ms limit)
-                    </button>
-
-                    <button
-                      className="dev-action-btn danger"
-                      onClick={() => {
-                        if (activeTaskId && wsRef.current) {
-                          wsRef.current.send(JSON.stringify({ type: "kill", taskId: activeTaskId }));
+                    {/* Preset Worker Checks */}
+                    <div className="dev-group-card">
+                      <span className="dev-group-title">Environment Validation Checks</span>
+                      <button
+                        className="dev-action-btn"
+                        onClick={() =>
+                          triggerDevAction("tool_call", {
+                            tool: "kali.exec.v1",
+                            args: { command: "uname", args: ["-a"] },
+                          })
                         }
-                      }}
-                    >
-                      ☠️ Emergency SIGKILL Active Task
-                    </button>
+                      >
+                        ▶ Execute `kali.exec.v1: uname -a` (OS Architecture)
+                      </button>
+
+                      <button
+                        className="dev-action-btn"
+                        onClick={() =>
+                          triggerDevAction("tool_call", {
+                            tool: "shell.run.v1",
+                            args: { command: "date" },
+                          })
+                        }
+                      >
+                        ▶ Execute `shell.run.v1: date` (Host Clock Verification)
+                      </button>
+                    </div>
+
+                    {/* Fault Tolerance and Kill Switch */}
+                    <div className="dev-group-card">
+                      <span className="dev-group-title">Fault Tolerance &amp; Process Control</span>
+                      <button
+                        className="dev-action-btn"
+                        onClick={() =>
+                          triggerDevAction("tool_call", {
+                            tool: "kali.exec.v1",
+                            args: { command: "sleep", args: ["5"] },
+                            timeout_ms: 800,
+                          })
+                        }
+                      >
+                        ⏱️ Trigger Simulated Timeout (800ms limit test)
+                      </button>
+
+                      <button
+                        className="dev-action-btn danger"
+                        onClick={() => {
+                          if (activeTaskId && wsRef.current) {
+                            wsRef.current.send(JSON.stringify({ type: "kill", taskId: activeTaskId }));
+                          }
+                        }}
+                      >
+                        ☠️ Emergency SIGKILL Active Task
+                      </button>
+                    </div>
                   </div>
                 )}
               </div>

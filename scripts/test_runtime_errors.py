@@ -30,7 +30,7 @@ with sync_playwright() as p:
     time.sleep(1.0)
 
     print("[*] Closing drawer...")
-    page.locator(".drawer-header button").click()
+    page.locator(".drawer-header button[aria-label='Close Advanced Drawer']").click()
     time.sleep(1.0)
 
     print("[*] Testing Scope popover...")

@@ -19,13 +19,16 @@
    - [7.1 Clean Main Chat Surface](#71-clean-main-chat-surface)
    - [7.2 Plain-Language Status Tooltip](#72-plain-language-status-tooltip)
    - [7.3 Cryptographic Scope Contract Indicator & Popover](#73-cryptographic-scope-contract-indicator--popover)
-   - [7.4 Advanced Drawer: System & Hardware Telemetry](#74-advanced-drawer-system--hardware-telemetry)
-   - [7.5 Advanced Drawer: SQLite Event Log](#75-advanced-drawer-sqlite-event-log)
-   - [7.6 Advanced Drawer: Live Kali Terminal Stream](#76-advanced-drawer-live-kali-terminal-stream)
-   - [7.7 Advanced Drawer: Kali Desktop Screen Stream (noVNC)](#77-advanced-drawer-kali-desktop-screen-stream-novnc)
-   - [7.8 Mobile Viewport: Clean Chat (375px)](#78-mobile-viewport-clean-chat-375px)
-   - [7.9 Mobile Viewport: Full-Screen Sidebar Overlay](#79-mobile-viewport-full-screen-sidebar-overlay)
-   - [7.10 Mobile Viewport: Full-Screen Advanced Drawer](#710-mobile-viewport-full-screen-advanced-drawer)
+   - [7.4 Advanced Drawer: System & Hardware Telemetry (Standard 520px)](#74-advanced-drawer-system--hardware-telemetry-standard-520px)
+   - [7.5 Advanced Drawer: Wide Console Mode (Expanded 840px)](#75-advanced-drawer-wide-console-mode-expanded-840px)
+   - [7.6 Advanced Drawer: SQLite Event Log & Real-Time Search](#76-advanced-drawer-sqlite-event-log--real-time-search)
+   - [7.7 Advanced Drawer: Filtered Event Search Results](#77-advanced-drawer-filtered-event-search-results)
+   - [7.8 Advanced Drawer: Live Kali Terminal Stream (CLI)](#78-advanced-drawer-live-kali-terminal-stream-cli)
+   - [7.9 Advanced Drawer: Kali Desktop Screen Stream (noVNC GUI)](#79-advanced-drawer-kali-desktop-screen-stream-novnc-gui)
+   - [7.10 Advanced Drawer: Dev Tools & Interactive Command Runner](#710-advanced-drawer-dev-tools--interactive-command-runner)
+   - [7.11 Mobile Viewport: Clean Chat (375px)](#711-mobile-viewport-clean-chat-375px)
+   - [7.12 Mobile Viewport: Full-Screen Sidebar Overlay](#712-mobile-viewport-full-screen-sidebar-overlay)
+   - [7.13 Mobile Viewport: Full-Screen Advanced Drawer](#713-mobile-viewport-full-screen-advanced-drawer)
 8. [Responsive Breakpoint Architecture & Mobile Behavior](#8-responsive-breakpoint-architecture--mobile-behavior)
 9. [Accessibility (a11y) & Visual Safety Controls](#9-accessibility-a11y--visual-safety-controls)
 
@@ -181,6 +184,7 @@ Tool execution results appear **directly inline within the chat stream**, replac
 ### Expansion Hierarchy
 
 When the operator clicks `▼ Details`:
+
 1. **Plain-Language Summary**: One clear sentence describing the outcome.
 2. **Why This Tool**: Explainable multi-factor scoring displayed as horizontal percentage bars with plain rationale.
 3. **Command & Telemetry**: Collapsed monospace block containing executed CLI command, arguments, and stdout/stderr.
@@ -193,33 +197,47 @@ When the operator clicks `▼ Details`:
 
 ## 6. The Advanced Drawer (Telemetry & Deep Subsystems)
 
-Triggered by the `⚙ Advanced` button, this **480px wide** drawer slides in smoothly from the right, overlaying the chat area with a dimmed backdrop:
+Triggered by the `⚙ Advanced` button, the Advanced drawer is an engineer-grade slide-in developer console with two flexible viewing modes:
+- **Standard Console (`520px`)**: Default compact drawer overlay for checking quick metrics, events, and running tests.
+- **Wide Console (`840px`)**: Expanded desktop view toggled via the `⛶ Expand` header action, providing optimal widescreen layout for `TerminalProcessView`, `TaskGraphView` (DAG), and `ScreenPanel` (noVNC).
 
 ```text
-+------------------------------------------------------------+
-| Advanced                                               [✕] |
-+---------------+--------------------------------------------+
-| System        |  System & Hardware Telemetry               |
-| Event Log     |  - Active Model: Qwen3-Coder-30B           |
-| Terminal      |  - Model Server: online                    |
-| Screen (VNC)  |  - GPU VRAM: 749MB / 8151MB                |
-| Task Graph    |  - Kali VM Worker: Offline (poweroff)      |
-| Benchmarks    |  - Gateway WebSocket: connected            |
-| Audit         |                                            |
-| Dev tools     |                                            |
-+---------------+--------------------------------------------+
++--------------------------------------------------------------------------------+
+| Advanced                                            [⛶ Expand]  [✕ Close (Esc)] |
+| System telemetry, audit trail & subsystems                                     |
++-------------------+------------------------------------------------------------+
+| CORE              |  System & Hardware Telemetry                               |
+| - System          |  [↻ Refresh Telemetry]   [📋 Copy Session ID]              |
+| - Event Log       |                                                            |
+|                   |  - Active Model: Qwen3-Coder-30B                           |
+| OPERATIONS        |  - Model Server: ● running                                 |
+| - Terminal [CLI]  |  - GPU VRAM: [||||||....] 749MB / 8151MB (9%)              |
+| - Screen [GUI]    |  - Kali VM Worker: ○ Offline (poweroff)                    |
+| - Task Graph [DAG]|  - Gateway WebSocket: ● connected                          |
+|                   |                                                            |
+| SECURITY          |  SQLite Operational Event Log                              |
+| - Audit           |  [🔍 Search events by tool, actor, or arguments...]        |
+| - Benchmarks      |  [All (14)]  [Success (12)]  [Failures (2)]                |
+|                   |                                                            |
+| TESTING           |  Interactive Sandbox Command Runner                        |
+| - Dev tools [⚠️]  |  [ bash command: uname -a                   ] [▶ Execute]  |
++-------------------+------------------------------------------------------------+
 ```
 
-### Drawer Tabs
+### Categorized Navigation Rail
 
-- **System**: Plain labeled rows for model status, engine, quantization, context size, GPU VRAM, Kali VM state, and Gateway WebSocket.
-- **Event Log**: Searchable SQLite execution event stream.
-- **Terminal**: Live interactive xterm.js session to the Kali worker.
-- **Screen (VNC)**: GUI tool desktop stream (Burp Suite, Wireshark, Ghidra).
-- **Task Graph**: Real-time DAG dependency visualizer.
-- **Benchmarks**: Public benchmark leaderboard and dataset curation console.
-- **Audit**: Comprehensive Scope Contract audit trail and cryptographic verifications.
-- **Dev tools**: Internal test fixtures (`kali.exec.v1: uname -a`, `shell.run.v1: date`, 800ms timeout simulation, and emergency `SIGKILL`).
+1. **CORE**:
+   - **System**: Live telemetry, hardware VRAM utilization gauge, active runtime engine, and quick-action pills (`↻ Refresh Telemetry`, `📋 Copy Session ID` with transient copied feedback).
+   - **Event Log**: Real-time SQLite operational log with instant text search, status filtering chips (`All`, `Success`, `Failures`), and expandable event cards with arguments/results.
+2. **OPERATIONS**:
+   - **Terminal (`CLI`)**: Interactive xterm.js process stream connecting directly to the Kali worker shell.
+   - **Screen (`GUI`)**: Live RFB/noVNC desktop stream for graphical tools (Burp Suite, Wireshark, Ghidra).
+   - **Task Graph (`DAG`)**: Real-time Directed Acyclic Graph visualizer for multi-stage autonomous missions.
+3. **SECURITY**:
+   - **Audit**: Cryptographic Scope Contract ledger and compliance checkpoint verification.
+   - **Benchmarks**: Cybersecurity evaluation benchmarks (AgentBench, CyberGym) and dataset curation.
+4. **TESTING**:
+   - **Dev tools (`⚠️`)**: Interactive Sandbox Command Runner with custom bash input, pre-configured validation suites (`kali.exec.v1: uname -a`, `shell.run.v1: date`), timeout test triggers, and emergency `SIGKILL`.
 
 ---
 
@@ -245,43 +263,61 @@ The sole persistent trust control outside Advanced. Clicking the pill displays a
 
 ![01c_scope_contract_popover.png](/docs/assets/screenshots/01c_scope_contract_popover.png)
 
-### 7.4 Advanced Drawer: System & Hardware Telemetry
+### 7.4 Advanced Drawer: System & Hardware Telemetry (Standard 520px)
 
-The 480px slide-in overlay displaying structured hardware and runtime facts in human-readable rows.
+Slide-in drawer with quick-action pills, structured hardware rows, and real-time GPU VRAM utilization gauge.
 
-![02_advanced_system_telemetry.png](/docs/assets/screenshots/02_advanced_system_telemetry.png)
+![advanced_system_520px.png](/docs/assets/screenshots/advanced_system_520px.png)
 
-### 7.5 Advanced Drawer: SQLite Event Log
+### 7.5 Advanced Drawer: Wide Console Mode (Expanded 840px)
 
-Complete audit record of every tool dispatch, execution duration, and exit status.
+Toggled with the `⛶ Expand` button to maximize horizontal canvas width for complex terminal sessions and deep telemetry.
 
-![03_advanced_event_log.png](/docs/assets/screenshots/03_advanced_event_log.png)
+![advanced_system_wide_840px.png](/docs/assets/screenshots/advanced_system_wide_840px.png)
 
-### 7.6 Advanced Drawer: Live Kali Terminal Stream
+### 7.6 Advanced Drawer: SQLite Event Log & Real-Time Search
 
-Direct terminal and process tree stream for operators requiring low-level command visibility.
+Searchable operational audit log featuring status filtering chips (`All`, `Success`, `Failures`) and live text query filtering.
 
-![04_advanced_terminal_stream.png](/docs/assets/screenshots/04_advanced_terminal_stream.png)
+![advanced_events_tab.png](/docs/assets/screenshots/advanced_events_tab.png)
 
-### 7.7 Advanced Drawer: Kali Desktop Screen Stream (noVNC)
+### 7.7 Advanced Drawer: Filtered Event Search Results
 
-Live RFB/noVNC display stream for GUI-based security applications.
+Interactive filtering narrowing events instantly by tool name, parameters, or execution status.
 
-![05_advanced_screen_vnc.png](/docs/assets/screenshots/05_advanced_screen_vnc.png)
+![advanced_events_searched.png](/docs/assets/screenshots/advanced_events_searched.png)
 
-### 7.8 Mobile Viewport: Clean Chat (375px)
+### 7.8 Advanced Drawer: Live Kali Terminal Stream (CLI)
+
+Interactive terminal process view with command execution stream.
+
+![advanced_terminal_tab.png](/docs/assets/screenshots/advanced_terminal_tab.png)
+
+### 7.9 Advanced Drawer: Kali Desktop Screen Stream (noVNC GUI)
+
+Live RFB/noVNC desktop display stream for interactive graphical penetration testing tools.
+
+![advanced_screen_tab.png](/docs/assets/screenshots/advanced_screen_tab.png)
+
+### 7.10 Advanced Drawer: Dev Tools & Interactive Command Runner
+
+Interactive sandbox command runner with custom bash execution, test fixtures, and emergency SIGKILL control.
+
+![advanced_devtools_tab.png](/docs/assets/screenshots/advanced_devtools_tab.png)
+
+### 7.11 Mobile Viewport: Clean Chat (375px)
 
 On mobile screens (e.g., iPhone 375×812), the layout gracefully scales with zero horizontal overflow and full touch ergonomics.
 
 ![10_mobile_chat_375px.png](/docs/assets/screenshots/10_mobile_chat_375px.png)
 
-### 7.9 Mobile Viewport: Full-Screen Sidebar Overlay
+### 7.12 Mobile Viewport: Full-Screen Sidebar Overlay
 
 Triggered via the hamburger button, the sidebar presents a dedicated full-screen drawer with a dismiss button.
 
 ![11_mobile_sidebar_375px.png](/docs/assets/screenshots/11_mobile_sidebar_375px.png)
 
-### 7.10 Mobile Viewport: Full-Screen Advanced Drawer
+### 7.13 Mobile Viewport: Full-Screen Advanced Drawer
 
 The Advanced drawer adapts into a full-screen view with horizontally scrollable tab navigation and touch-optimized controls.
 
