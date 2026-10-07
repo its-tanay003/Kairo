@@ -201,15 +201,17 @@ export default function TerminalProcessView({
   // Initialize xterm.js dynamically (SSR-safe)
   useEffect(() => {
     let isCurrentMounted = true;
+    const containerEl = terminalRef.current;
 
     async function initTerminal() {
-      if (!terminalRef.current || termInstanceRef.current) return;
+      if (!containerEl || termInstanceRef.current) return;
 
       try {
         const { Terminal } = await import("xterm");
         const { FitAddon } = await import("xterm-addon-fit");
 
-        if (!isCurrentMounted || !terminalRef.current) return;
+        if (!isCurrentMounted || !containerEl) return;
+        containerEl.innerHTML = "";
 
         const term = new Terminal({
           theme: {
@@ -246,7 +248,7 @@ export default function TerminalProcessView({
         const fitAddon = new FitAddon();
         term.loadAddon(fitAddon);
 
-        term.open(terminalRef.current);
+        term.open(containerEl);
         fitAddon.fit();
 
         termInstanceRef.current = term;
@@ -277,8 +279,13 @@ export default function TerminalProcessView({
     return () => {
       isCurrentMounted = false;
       if (termInstanceRef.current) {
-        termInstanceRef.current.dispose();
+        try {
+          termInstanceRef.current.dispose();
+        } catch {}
         termInstanceRef.current = null;
+      }
+      if (containerEl) {
+        containerEl.innerHTML = "";
       }
     };
   }, []);
@@ -844,32 +851,32 @@ export default function TerminalProcessView({
         }}
       >
         {/* Terminal Section */}
-        {(viewMode === "terminal" || viewMode === "split") && (
+        <div
+          className="terminal-screen-wrapper"
+          style={{
+            display: viewMode === "terminal" || viewMode === "split" ? "block" : "none",
+            flex: isMax && viewMode === "split" ? "0 0 62%" : viewMode === "split" ? "0 0 52%" : "1 1 100%",
+            height: isMax && viewMode === "split" ? "100%" : viewMode === "split" ? "52%" : "100%",
+            borderRight: isMax && viewMode === "split" ? "1px solid rgba(255, 255, 255, 0.08)" : undefined,
+            borderBottom: !isMax && viewMode === "split" ? "1px solid rgba(255, 255, 255, 0.08)" : undefined,
+          }}
+        >
           <div
-            className="terminal-screen-wrapper"
-            style={{
-              flex: isMax && viewMode === "split" ? "0 0 62%" : viewMode === "split" ? "0 0 52%" : "1 1 100%",
-              height: isMax && viewMode === "split" ? "100%" : viewMode === "split" ? "52%" : "100%",
-              borderRight: isMax && viewMode === "split" ? "1px solid rgba(255, 255, 255, 0.08)" : undefined,
-              borderBottom: !isMax && viewMode === "split" ? "1px solid rgba(255, 255, 255, 0.08)" : undefined,
-            }}
-          >
-            <div
-              ref={terminalRef}
-              style={{ width: "100%", height: "100%", overflow: "hidden", borderRadius: "8px" }}
-            />
-          </div>
-        )}
+            ref={terminalRef}
+            style={{ width: "100%", height: "100%", overflow: "hidden", borderRadius: "8px" }}
+          />
+        </div>
 
         {/* Process Tree & Telemetry Section */}
-        {(viewMode === "tree" || viewMode === "split") && (
-          <div
-            className="process-tree-wrapper"
-            style={{
-              flex: isMax && viewMode === "split" ? "0 0 38%" : viewMode === "split" ? "0 0 48%" : "1 1 100%",
-              height: isMax && viewMode === "split" ? "100%" : viewMode === "split" ? "48%" : "100%",
-            }}
-          >
+        <div
+          className="process-tree-wrapper"
+          style={{
+            display: viewMode === "tree" || viewMode === "split" ? "flex" : "none",
+            flexDirection: "column",
+            flex: isMax && viewMode === "split" ? "0 0 38%" : viewMode === "split" ? "0 0 48%" : "1 1 100%",
+            height: isMax && viewMode === "split" ? "100%" : viewMode === "split" ? "48%" : "100%",
+          }}
+        >
             {/* Tab Navigation: Tree, Caps & Sandbox, Evidence Artifacts */}
             <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", borderBottom: "1px solid rgba(255, 255, 255, 0.08)", paddingBottom: "6px" }}>
               <div style={{ display: "flex", alignItems: "center", gap: "4px" }}>
@@ -1918,9 +1925,8 @@ export default function TerminalProcessView({
               </form>
             </div>
           </div>
-        )}
+        </div>
       </div>
-    </div>
   );
 }
 

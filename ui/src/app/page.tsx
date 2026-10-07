@@ -454,7 +454,7 @@ export default function Home() {
             </button>
 
             {showStatusTooltip && (
-              <div className="status-tooltip">
+              <div key="status-tooltip" className="status-tooltip">
                 <div className="status-tooltip-row">
                   <span>Model</span>
                   <strong>{modelCenter?.model_id || "None loaded"}</strong>
@@ -487,6 +487,7 @@ export default function Home() {
         {/* Mobile Backdrop */}
         {isMobileSidebarOpen && (
           <div
+            key="mobile-backdrop"
             className="mobile-backdrop"
             onClick={() => setIsMobileSidebarOpen(false)}
             aria-label="Close sidebar overlay"
@@ -698,7 +699,7 @@ export default function Home() {
 
               {/* Scope Contract Popover */}
               {showScopePopover && (
-                <div className="scope-popover">
+                <div key="scope-popover" className="scope-popover">
                   <div className="scope-popover-title">
                     <span>Scope Contract</span>
                     <button
@@ -762,7 +763,7 @@ export default function Home() {
 
       {/* 3. ADVANCED DRAWER (480px) */}
       {isAdvancedOpen && (
-        <div className="drawer-backdrop" onClick={() => setIsAdvancedOpen(false)}>
+        <div key="drawer-backdrop" className="drawer-backdrop" onClick={() => setIsAdvancedOpen(false)}>
           <div className="drawer-container" onClick={(e) => e.stopPropagation()}>
             <div className="drawer-header">
               <span className="drawer-title">Advanced</span>

@@ -2,8 +2,8 @@ import type { Metadata } from "next";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "Agent Service Boundary Verification",
-  description: "Next.js UI connecting via WebSocket to Gateway, Orchestrator, and SQLite Event Store",
+  title: "Kairo - Autonomous Cyber-Ops Platform",
+  description: "Minimalist, high-focus cyber defense cockpit and autonomous agent interface.",
 };
 
 export default function RootLayout({
@@ -12,8 +12,8 @@ export default function RootLayout({
   children: React.ReactNode;
 }) {
   return (
-    <html lang="en">
-      <body>{children}</body>
+    <html lang="en" suppressHydrationWarning>
+      <body suppressHydrationWarning>{children}</body>
     </html>
   );
 }

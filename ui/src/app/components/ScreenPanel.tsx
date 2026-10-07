@@ -38,6 +38,7 @@ export default function ScreenPanel({
   onToggleMaximize,
 }: ScreenPanelProps) {
   const containerRef = useRef<HTMLDivElement | null>(null);
+  const rfbContainerRef = useRef<HTMLDivElement | null>(null);
   const rfbRef = useRef<RFBInstance | null>(null);
 
   const [status, setStatus] = useState<"connected" | "connecting" | "disconnected">("disconnected");
@@ -79,9 +80,21 @@ export default function ScreenPanel({
     }
   }, []);
 
+  // Cleanup on unmount
+  useEffect(() => {
+    return () => {
+      if (rfbRef.current) {
+        try {
+          rfbRef.current.disconnect();
+        } catch {}
+        rfbRef.current = null;
+      }
+    };
+  }, []);
+
   // Connect to noVNC / RFB Streamer
   const connectVnc = useCallback(async () => {
-    if (!containerRef.current || typeof window === "undefined") return;
+    if (!rfbContainerRef.current || typeof window === "undefined") return;
 
     // Clean up existing instance if any
     if (rfbRef.current) {
@@ -105,12 +118,12 @@ export default function ScreenPanel({
       const RFBModule = await import("@novnc/novnc");
       const RFB = (RFBModule.default || RFBModule) as unknown as new (...args: unknown[]) => RFBInstance;
 
-      // Clear container element
-      while (containerRef.current.firstChild) {
-        containerRef.current.removeChild(containerRef.current.firstChild);
+      // Safely clear only the dedicated RFB container element without touching React elements
+      if (rfbContainerRef.current) {
+        rfbContainerRef.current.innerHTML = "";
       }
 
-      const rfb = new RFB(containerRef.current, targetUrl, {
+      const rfb = new RFB(rfbContainerRef.current, targetUrl, {
         credentials: { password: "" },
         shared: true,
         wsProtocols: ["binary"],
@@ -164,6 +177,9 @@ export default function ScreenPanel({
         // ignore
       }
       rfbRef.current = null;
+    }
+    if (rfbContainerRef.current) {
+      rfbContainerRef.current.innerHTML = "";
     }
     setStatus("disconnected");
     setStatusDetail("Disconnected by operator.");
@@ -436,6 +452,18 @@ export default function ScreenPanel({
           outline: "none",
         }}
       >
+        {/* Dedicated unmanaged mount point for noVNC canvas */}
+        <div
+          ref={rfbContainerRef}
+          style={{
+            position: "absolute",
+            inset: 0,
+            width: "100%",
+            height: "100%",
+            display: status === "connected" ? "block" : "none",
+          }}
+        />
+
         {status === "disconnected" && (
           <div
             style={{
