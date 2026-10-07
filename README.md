@@ -42,7 +42,9 @@ Kairo is built on a modular monorepo architecture with clean separation between 
 ├── /sdk          # ToolSpec SDK: CLI generator, 7-Gate Conformance Engine & registry bridge
 ├── /training     # SFT, DPO, and GRPO fine-tuning pipelines, datasets & checkpoint storage
 ├── /lab          # Dockerized vulnerability targets (Mini-DVWA, Mini-Metasploitable) & history.json
-└── /vm           # Headless Kali Linux VM worker agent & VirtualBox manager
+├── /vm           # Headless Kali Linux VM worker agent & VirtualBox manager
+├── /scripts      # Utility, worker deployment, and toolspec creation scripts
+└── /tests        # Comprehensive test suites and fixtures (39 suites across all subsystems)
 ```
 
 ### End-to-End Service Boundary Flow
@@ -86,6 +88,8 @@ sequenceDiagram
 | [`/training`](file:///c:/New%20Volume%20(D)/dev/training) | PyTorch, Hugging Face TRL, Datasets | — | SFT trajectories (2.8k), DPO preference pairs (360), GRPO reward models |
 | [`/lab`](file:///c:/New%20Volume%20(D)/dev/lab) | Docker Compose, Python Runner | — | Mini-DVWA, Mini-Metasploitable, 50-task Golden & 120-task Full Benchmark |
 | [`/vm`](file:///c:/New%20Volume%20(D)/dev/vm) | VirtualBox, systemd, FastAPI | `2222`, `9999` | Disposable headless Kali VM worker with automatic snapshot rollback |
+| [`/scripts`](file:///c:/New%20Volume%20(D)/dev/scripts) | Python, Shell, Batch | — | Worker deployment automation, toolspec scaffolding, and maintenance utilities |
+| [`/tests`](file:///c:/New%20Volume%20(D)/dev/tests) | Pytest, TypeScript | — | Full verification matrix covering boundaries, adapters, models, and security gates |
 
 ---
 
@@ -104,16 +108,16 @@ Execute the test suites to verify subsystem readiness:
 
 ```bash
 # 1. Verify Model Center, GBNF grammar constraints & hardware telemetry
-python test_model_center.py
+python tests/test_model_center.py
 
 # 2. Verify monolithic service boundaries & WebSocket handshake
-python test_boundary.py
+python tests/test_boundary.py
 
 # 3. Verify Third-Party ToolSpec SDK & Conformance Engine (subfinder.enum.v1)
-python -m pytest test_third_party_sdk_tool_addition.py -v
+python -m pytest tests/test_third_party_sdk_tool_addition.py -v
 
 # 4. Verify Dataset Curation, Training Runner & Benchmark Leaderboard
-python -m pytest test_dataset_curation_and_benchmark_leaderboard.py -v
+python -m pytest tests/test_dataset_curation_and_benchmark_leaderboard.py -v
 ```
 
 ### Starting Services Manually
@@ -584,10 +588,10 @@ Execute tests across all subsystems:
 # 1. TOOLSPEC SDK & THIRD-PARTY EXTENSIONS
 # ---------------------------------------------------------------------------
 # Third-party SDK tool addition (subfinder.enum.v1) & multi-version score history
-python -m pytest test_third_party_sdk_tool_addition.py -v
+python -m pytest tests/test_third_party_sdk_tool_addition.py -v
 
 # SDK generator, registry bridging, and 7-gate conformance engine
-python -m pytest test_toolspec_sdk.py -v
+python -m pytest tests/test_toolspec_sdk.py -v
 
 # Run CLI verification on third-party tool
 python -m sdk verify-toolspec registry/tools/subfinder_enum_v1.yaml
@@ -596,43 +600,43 @@ python -m sdk verify-toolspec registry/tools/subfinder_enum_v1.yaml
 # 2. DATASET CURATION, TRAINING RUNNER & BENCHMARK LEADERBOARD
 # ---------------------------------------------------------------------------
 # Dataset curation, training jobs, and leaderboard integration
-python -m pytest test_dataset_curation_and_benchmark_leaderboard.py -v
+python -m pytest tests/test_dataset_curation_and_benchmark_leaderboard.py -v
 
 # ---------------------------------------------------------------------------
 # 3. CORE ORCHESTRATOR & AUTONOMOUS COGNITIVE LOOP
 # ---------------------------------------------------------------------------
 # Planner DAG and dynamic graph execution
-python -m pytest test_planner.py -v
+python -m pytest tests/test_planner.py -v
 
 # Hybrid Tool Selector and Tool Memory
-python -m pytest test_tool_selection.py -v
+python -m pytest tests/test_tool_selection.py -v
 
 # Scope Contract HMAC authorization and CIDR containment
-python -m pytest test_scope_contract.py -v
+python -m pytest tests/test_scope_contract.py -v
 
 # Observer, Critic, and Recovery Agent self-healing loop
-python -m pytest test_observer_critic_recovery.py -v
+python -m pytest tests/test_observer_critic_recovery.py -v
 
 # ---------------------------------------------------------------------------
 # 4. ADAPTERS, GUI TOOLS & BROWSER SECURITY
 # ---------------------------------------------------------------------------
 # Core Tier 1 & Tier 2 security tool adapters
-python -m pytest test_tool_adapters.py -v
+python -m pytest tests/test_tool_adapters.py -v
 
 # Playwright-driven security browser (browser.security.v1)
-python -m pytest test_browser_security_adapter.py -v
+python -m pytest tests/test_browser_security_adapter.py -v
 
 # Tier 3 GUI adapters (Burp Suite, Wireshark, ZAP)
-python -m pytest test_gui_adapters.py -v
+python -m pytest tests/test_gui_adapters.py -v
 
 # ---------------------------------------------------------------------------
 # 5. LAB BENCHMARKS & REINFORCEMENT LEARNING
 # ---------------------------------------------------------------------------
 # Golden & Full benchmark suites (50 tasks / 120 tasks)
-python -m pytest test_lab_benchmark.py -v
+python -m pytest tests/test_lab_benchmark.py -v
 
 # GRPO reinforcement learning with verifiable reward signals
-python -m pytest test_grpo_training_and_rewards.py -v
+python -m pytest tests/test_grpo_training_and_rewards.py -v
 ```
 
 ---

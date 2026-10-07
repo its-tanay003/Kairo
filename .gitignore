@@ -50,3 +50,8 @@ evidence_artifacts/
 # Training checkpoints and temporary outputs
 training/checkpoints/
 training/*_output/
+
+# Testing & Workspaces
+.pytest_cache/
+workspaces/
+*.tsbuildinfo

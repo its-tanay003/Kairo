@@ -20,7 +20,10 @@ from orchestrator.kali_connector import (
 )
 from orchestrator.vm_manager import vm_manager
 
-ROOT_DIR = Path(__file__).resolve().parent
+ROOT_DIR = Path(__file__).resolve().parent.parent
+import sys
+if str(ROOT_DIR) not in sys.path:
+    sys.path.insert(0, str(ROOT_DIR))
 
 
 class TestKaliExecutionPlaneDetection(unittest.TestCase):

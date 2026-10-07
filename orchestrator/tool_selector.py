@@ -488,17 +488,20 @@ class HybridToolSelector:
     # Factor 4: Expected Signal (0.10)
     # -------------------------------------------------------------------------
     def _calc_expected_signal(self, tool: ToolSpec) -> Tuple[float, str]:
-        parser_cfg = tool.parser or {}
-        is_structured = parser_cfg.get("structured", False)
-        fmt = parser_cfg.get("format", "text")
-        parser_type = parser_cfg.get("type", "regex")
+        parser_cfg = tool.parser
+        if isinstance(parser_cfg, str) and parser_cfg:
+            return 0.88, f"Tier 2 custom parser ({parser_cfg}) transforms raw stdout into structured schema"
+        elif isinstance(parser_cfg, dict):
+            is_structured = parser_cfg.get("structured", False)
+            fmt = parser_cfg.get("format", "text")
+            parser_type = parser_cfg.get("type", "regex")
 
-        if fmt in ["xml", "json"] and is_structured:
-            return 1.00, f"Tier 1 native structured {fmt.upper()} output parsed into typed observation records"
-        elif is_structured:
-            return 0.88, f"Tier 2 custom parser ({parser_type}) transforms raw stdout into structured schema"
-        else:
-            return 0.55, f"unstructured text stdout stream; regex extraction only"
+            if fmt in ["xml", "json"] and is_structured:
+                return 1.00, f"Tier 1 native structured {fmt.upper()} output parsed into typed observation records"
+            elif is_structured:
+                return 0.88, f"Tier 2 custom parser ({parser_type}) transforms raw stdout into structured schema"
+
+        return 0.55, f"unstructured text stdout stream; regex extraction only"
 
     # -------------------------------------------------------------------------
     # Factor 5: Reliability History (0.10) - Read from Tool Memory Store

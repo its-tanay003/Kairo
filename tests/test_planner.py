@@ -17,7 +17,10 @@ import unittest
 import tempfile
 
 # Add repo root to sys.path
-REPO_ROOT = os.path.dirname(os.path.abspath(__file__))
+REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+import sys
+if str(REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(REPO_ROOT))
 if REPO_ROOT not in sys.path:
     sys.path.insert(0, REPO_ROOT)
 

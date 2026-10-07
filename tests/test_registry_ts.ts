@@ -1,11 +1,11 @@
-import { ToolRegistry, ToolSpecValidationError } from "./registry/loader";
+import { ToolRegistry, ToolSpecValidationError } from "../registry/loader";
 import fs from "fs";
 import path from "path";
 import os from "os";
 
 function runTests() {
   console.log("[TS Registry Test] Testing production tools load...");
-  const registry = new ToolRegistry(path.resolve(__dirname, "registry", "tools"));
+  const registry = new ToolRegistry(path.resolve(__dirname, "..", "registry", "tools"));
   const tools = registry.list();
   console.log(`  Loaded ${tools.length} tools: ${tools.map(t => t.id).join(", ")}`);
   if (tools.length < 4) {

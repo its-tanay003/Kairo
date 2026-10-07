@@ -15,7 +15,10 @@ import urllib.request
 from pathlib import Path
 import websockets
 
-ROOT = Path(__file__).resolve().parent
+ROOT = Path(__file__).resolve().parent.parent
+import sys
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
 DB_PATH = ROOT / "events" / "events.db"
 
 REQUIRED_FIELDS = [

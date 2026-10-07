@@ -20,7 +20,10 @@ import urllib.request
 from pathlib import Path
 import websockets
 
-ROOT = Path(__file__).resolve().parent
+ROOT = Path(__file__).resolve().parent.parent
+import sys
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
 DB_PATH = ROOT / "events" / "events.db"
 
 REQUIRED_FIELDS = [
@@ -47,10 +50,10 @@ REQUIRED_FIELDS = [
 ]
 
 
-def is_service_up(url: str) -> bool:
+def is_service_up(url: str, timeout: float = 5.0) -> bool:
     try:
         req = urllib.request.Request(url, method="GET")
-        with urllib.request.urlopen(req, timeout=1.5) as resp:
+        with urllib.request.urlopen(req, timeout=timeout) as resp:
             return resp.status in (200, 204)
     except Exception:
         return False
@@ -90,7 +93,10 @@ async def run_e2e_test():
             stderr=subprocess.PIPE,
         )
         spawned_procs.append(orch_proc)
-        time.sleep(3)
+        for _ in range(20):
+            if is_service_up("http://127.0.0.1:8000/health"):
+                break
+            time.sleep(0.5)
         assert is_service_up("http://127.0.0.1:8000/health"), "Orchestrator failed to initialize"
         print("      ✓ Orchestrator launched.")
 
@@ -108,7 +114,10 @@ async def run_e2e_test():
             stderr=subprocess.PIPE,
         )
         spawned_procs.append(gw_proc)
-        time.sleep(3)
+        for _ in range(20):
+            if is_service_up("http://127.0.0.1:4000/health"):
+                break
+            time.sleep(0.5)
         assert is_service_up("http://127.0.0.1:4000/health"), "Gateway failed to initialize"
         print("      ✓ Gateway launched.")
 
@@ -131,12 +140,23 @@ async def run_e2e_test():
                 "content": "Please execute hello_world tool for Tanay",
                 "sessionId": "sess_e2e_verify",
             }
+            async def wait_for_response(sock, timeout=30.0):
+                end_time = asyncio.get_event_loop().time() + timeout
+                while asyncio.get_event_loop().time() < end_time:
+                    remaining = max(1.0, end_time - asyncio.get_event_loop().time())
+                    raw = await asyncio.wait_for(sock.recv(), timeout=remaining)
+                    msg = json.loads(raw)
+                    mtype = msg.get("type")
+                    if mtype == "status":
+                        print(f"      -> Gateway status update: {msg.get('status')}")
+                    elif mtype == "agent_response":
+                        return msg
+                    elif mtype == "error":
+                        raise RuntimeError(f"Gateway error: {msg.get('error')}")
+                raise TimeoutError("Timed out waiting for agent_response")
+
             await ws.send(json.dumps(payload_tool))
-
-            status_msg = json.loads(await asyncio.wait_for(ws.recv(), timeout=5.0))
-            print(f"      -> Gateway status update: {status_msg.get('status')}")
-
-            resp_tool = json.loads(await asyncio.wait_for(ws.recv(), timeout=15.0))
+            resp_tool = await wait_for_response(ws, timeout=30.0)
             print(f"      -> Agent reply: '{resp_tool.get('reply')}'")
             print(f"      -> Tool executed: {resp_tool.get('toolExecuted')}")
             print(f"      -> Confirmed Event ID: {resp_tool.get('eventId')}")
@@ -151,11 +171,7 @@ async def run_e2e_test():
                 "sessionId": "sess_e2e_verify",
             }
             await ws.send(json.dumps(payload_chat))
-
-            status_chat = json.loads(await asyncio.wait_for(ws.recv(), timeout=5.0))
-            print(f"      -> Gateway status update: {status_chat.get('status')}")
-
-            resp_chat = json.loads(await asyncio.wait_for(ws.recv(), timeout=15.0))
+            resp_chat = await wait_for_response(ws, timeout=30.0)
             print(f"      -> Conversational reply: '{resp_chat.get('reply')}'")
             print(f"      -> Confirmed Event ID: {resp_chat.get('eventId')}")
             assert resp_chat.get("reply") is not None

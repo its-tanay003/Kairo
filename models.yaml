@@ -1,4 +1,4 @@
-active_model: Qwen2.5-0.5B-Instruct
+active_model: Qwen3-Coder-30B-A3B-Instruct
 models:
 - model_id: Qwen3-Coder-30B-A3B-Instruct
   runtime: llama.cpp

@@ -14,7 +14,10 @@ from lab.extended_tasks import EXTENDED_LAB_TASKS
 from lab.runner import BenchmarkRunner, TaskBenchmarkResult
 from registry.loader import ToolRegistry
 
-ROOT_DIR = Path(__file__).resolve().parent
+ROOT_DIR = Path(__file__).resolve().parent.parent
+import sys
+if str(ROOT_DIR) not in sys.path:
+    sys.path.insert(0, str(ROOT_DIR))
 
 
 class TestDPOPreferenceTuning:

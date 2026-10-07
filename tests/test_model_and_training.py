@@ -92,7 +92,7 @@ def test_parameter_sizing_in_350m_to_700m():
 
 def test_sft_dataset_and_collator():
     """Verify loading from train.jsonl and dynamic batch collation with prompt-loss masking."""
-    train_path = os.path.join(os.path.dirname(__file__), "training", "data", "train.jsonl")
+    train_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), "training", "data", "train.jsonl")
     tok_mgr = KairoTokenizerManager()
     tokenizer = tok_mgr.get_tokenizer()
 
@@ -137,7 +137,7 @@ def test_pytorch_optimization_step():
     model = Qwen2ForCausalLM(cfg)
     optimizer = torch.optim.AdamW(model.parameters(), lr=1e-4)
 
-    train_path = os.path.join(os.path.dirname(__file__), "training", "data", "train.jsonl")
+    train_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), "training", "data", "train.jsonl")
     dataset = KairoSFTDataset(train_path, tokenizer_manager=tok_mgr, max_length=128, max_samples=2)
     collator = KairoDataCollator(pad_token_id=tokenizer.pad_token_id)
     batch = collator([dataset[0], dataset[1]])

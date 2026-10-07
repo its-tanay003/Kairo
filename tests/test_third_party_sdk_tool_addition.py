@@ -54,7 +54,7 @@ def client():
 
 def test_third_party_tool_artifacts_exist():
     """Verify that the third-party tool was authored exclusively in SDK and registry locations."""
-    repo_root = Path(__file__).resolve().parent
+    repo_root = Path(__file__).resolve().parent.parent
 
     yaml_spec = repo_root / "registry" / "tools" / "subfinder_enum_v1.yaml"
     adapter_file = repo_root / "sdk" / "tools" / "subfinder_enum_v1" / "subfinder_enum_v1_adapter.py"
@@ -74,7 +74,7 @@ def test_third_party_tool_artifacts_exist():
 
 def test_third_party_tool_7_gate_conformance_certification():
     """Run the official SDK 7-Gate Conformance Engine on the third-party tool."""
-    yaml_path = Path(__file__).resolve().parent / "registry" / "tools" / "subfinder_enum_v1.yaml"
+    yaml_path = Path(__file__).resolve().parent.parent / "registry" / "tools" / "subfinder_enum_v1.yaml"
 
     report = run_verify(yaml_path=str(yaml_path))
 

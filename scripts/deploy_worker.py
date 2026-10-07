@@ -3,7 +3,12 @@ import json
 import time
 import urllib.request
 
-with open("vm/worker_agent.py", "rb") as f:
+from pathlib import Path
+
+ROOT_DIR = Path(__file__).resolve().parent.parent
+worker_file = ROOT_DIR / "vm" / "worker_agent.py"
+
+with open(worker_file, "rb") as f:
     content_b64 = base64.b64encode(f.read()).decode("utf-8")
 
 write_cmd = f"python3 -c \"import base64; open('/opt/kairo/worker_agent.py', 'wb').write(base64.b64decode('{content_b64}'))\""
