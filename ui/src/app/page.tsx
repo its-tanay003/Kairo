@@ -749,8 +749,8 @@ export default function Home() {
                     <div
                       className="claude-starter-card"
                       onClick={() => {
-                        setAdvancedTab("terminal");
-                        setIsAdvancedOpen(true);
+                        setInputVal("Launch isolated Kali Linux terminal session to inspect network interfaces and services");
+                        textareaRef.current?.focus();
                       }}
                     >
                       <div className="claude-starter-header">
@@ -763,8 +763,8 @@ export default function Home() {
                     <div
                       className="claude-starter-card"
                       onClick={() => {
-                        setAdvancedTab("audit");
-                        setIsAdvancedOpen(true);
+                        setInputVal("Inspect verified vulnerability findings, evidence store, and generate compliance report");
+                        textareaRef.current?.focus();
                       }}
                     >
                       <div className="claude-starter-header">
@@ -1301,10 +1301,10 @@ export default function Home() {
 
                     <div style={{ display: "flex", flexDirection: "column", gap: "6px" }}>
                       {filteredEvents.slice(0, 30).map((ev, i) => {
-                        const evId = ev.id ?? i;
+                        const evId = typeof ev.id === "number" ? ev.id : i;
                         const isExpanded = expandedEventId === evId;
                         return (
-                          <div key={evId} className="event-card">
+                          <div key={`evt_${ev.id ?? "idx"}_${i}`} className="event-card">
                             <div
                               className="event-card-header"
                               onClick={() => setExpandedEventId(isExpanded ? null : evId)}

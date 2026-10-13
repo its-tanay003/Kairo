@@ -1004,12 +1004,12 @@ def is_target_in_scope(target: str, allowed_targets: List[str]) -> bool:
     - IPv4 / IPv6 addresses
     - IPv4 / IPv6 Subnet CIDR containment (e.g. '192.168.1.45' in '192.168.1.0/24')
     """
-    if not target:
-        return True
+    if not target or not allowed_targets:
+        return False
     
     clean_target = extract_host_from_target(target)
     if not clean_target:
-        return True
+        return False
 
     target_ip = None
     try:
