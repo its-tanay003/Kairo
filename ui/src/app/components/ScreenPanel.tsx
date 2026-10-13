@@ -246,69 +246,16 @@ export default function ScreenPanel({
   const sessionLabel = activeSessionId ? `Session: ${activeSessionId}` : ws ? "WS Sync: Active" : "";
 
   return (
-    <div
-      style={{
-        display: "flex",
-        flexDirection: "column",
-        height: "100%",
-        width: "100%",
-        background: "#0a0e14",
-        borderRadius: "8px",
-        overflow: "hidden",
-        border: "1px solid rgba(6, 182, 212, 0.25)",
-      }}
-    >
+    <div className="screen-panel-root">
       {/* Top Toolbar */}
-      <div
-        style={{
-          display: "flex",
-          justifyContent: "space-between",
-          alignItems: "center",
-          padding: "8px 12px",
-          background: "#111827",
-          borderBottom: "1px solid #1f2937",
-          flexWrap: "wrap",
-          gap: "8px",
-        }}
-      >
-        <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
-          <span style={{ fontSize: "14px", fontWeight: "bold", color: "var(--accent-cyan, #06b6d4)" }}>
-            🖥️ SCREEN
-          </span>
-          <span style={{ fontSize: "12px", color: "#9ca3af" }}>
-            {desktopName}
+      <div className="screen-top-bar">
+        <div className="screen-title-group">
+          <span className="screen-title">{desktopName}</span>
+          <span className="screen-plane-tag">
+            {streamInfo?.plane || "WSL2 kali-linux"}
           </span>
           {/* Status Badge */}
-          <span
-            style={{
-              display: "inline-flex",
-              alignItems: "center",
-              gap: "5px",
-              padding: "2px 8px",
-              borderRadius: "9999px",
-              fontSize: "11px",
-              fontWeight: 600,
-              background:
-                status === "connected"
-                  ? "rgba(16, 185, 129, 0.2)"
-                  : status === "connecting"
-                  ? "rgba(245, 158, 11, 0.2)"
-                  : "rgba(239, 68, 68, 0.2)",
-              color:
-                status === "connected"
-                  ? "#10b981"
-                  : status === "connecting"
-                  ? "#f59e0b"
-                  : "#ef4444",
-              border: `1px solid ${
-                status === "connected"
-                  ? "rgba(16, 185, 129, 0.4)"
-                  : status === "connecting"
-                  ? "rgba(245, 158, 11, 0.4)"
-                  : "rgba(239, 68, 68, 0.4)"
-              }`,
-            }}
-          >
+          <span className={`screen-status-badge ${status}`}>
             <span
               style={{
                 width: "6px",
@@ -316,10 +263,10 @@ export default function ScreenPanel({
                 borderRadius: "50%",
                 background:
                   status === "connected"
-                    ? "#10b981"
+                    ? "var(--status-success)"
                     : status === "connecting"
-                    ? "#f59e0b"
-                    : "#ef4444",
+                    ? "var(--status-warning)"
+                    : "var(--text-muted)",
               }}
             />
             {status.toUpperCase()}
@@ -327,16 +274,10 @@ export default function ScreenPanel({
         </div>
 
         {/* Action Controls */}
-        <div style={{ display: "flex", alignItems: "center", gap: "6px", flexWrap: "wrap" }}>
+        <div className="screen-controls">
           {/* Endpoint Mode Toggle */}
           <button
-            className="quick-btn secondary"
-            style={{
-              padding: "3px 8px",
-              fontSize: "11px",
-              background: useGatewayTunnel ? "rgba(6, 182, 212, 0.2)" : undefined,
-              borderColor: useGatewayTunnel ? "var(--accent-cyan, #06b6d4)" : undefined,
-            }}
+            className={`screen-ctrl-btn ${useGatewayTunnel ? "active" : ""}`}
             title="Switch between direct port 6080 and gateway /vnc reverse tunnel"
             onClick={() => {
               setUseGatewayTunnel((prev) => !prev);
@@ -348,8 +289,7 @@ export default function ScreenPanel({
 
           {/* Scale Mode */}
           <button
-            className="quick-btn secondary"
-            style={{ padding: "3px 8px", fontSize: "11px" }}
+            className="screen-ctrl-btn"
             onClick={handleToggleScale}
             title="Toggle between Auto-Fit scale and 1:1 pixel native"
           >
@@ -358,8 +298,7 @@ export default function ScreenPanel({
 
           {/* Send Special Keys */}
           <button
-            className="quick-btn secondary"
-            style={{ padding: "3px 8px", fontSize: "11px", color: "#f87171" }}
+            className="screen-ctrl-btn"
             onClick={() => sendKeyCombo([0xffe3, 0x0063])} // Ctrl+C
             title="Send Ctrl+C (SIGINT) to virtual terminal"
           >
@@ -368,8 +307,7 @@ export default function ScreenPanel({
 
           {/* Fullscreen */}
           <button
-            className="quick-btn secondary"
-            style={{ padding: "3px 8px", fontSize: "11px" }}
+            className="screen-ctrl-btn"
             onClick={handleToggleFullscreen}
             title="Toggle fullscreen display"
           >
@@ -379,16 +317,15 @@ export default function ScreenPanel({
           {/* Connect / Disconnect */}
           {status === "connected" ? (
             <button
-              className="quick-btn secondary"
-              style={{ padding: "3px 10px", fontSize: "11px", borderColor: "#ef4444", color: "#ef4444" }}
+              className="screen-ctrl-btn danger"
               onClick={disconnectVnc}
             >
               Disconnect
             </button>
           ) : (
             <button
-              className="quick-btn"
-              style={{ padding: "3px 10px", fontSize: "11px" }}
+              className="screen-ctrl-btn"
+              style={{ color: "var(--accent)" }}
               onClick={connectVnc}
               disabled={status === "connecting"}
             >
@@ -399,8 +336,7 @@ export default function ScreenPanel({
           {/* Maximize Dock View */}
           {onToggleMaximize && (
             <button
-              className="quick-btn secondary"
-              style={{ padding: "3px 8px", fontSize: "11px" }}
+              className="screen-ctrl-btn"
               onClick={onToggleMaximize}
               title={isMaximized ? "Restore view" : "Maximize dock panel"}
             >
@@ -414,10 +350,10 @@ export default function ScreenPanel({
       {errorMsg && (
         <div
           style={{
-            background: "rgba(239, 68, 68, 0.15)",
-            borderBottom: "1px solid rgba(239, 68, 68, 0.3)",
+            background: "rgba(240, 99, 107, 0.15)",
+            borderBottom: "1px solid rgba(240, 99, 107, 0.3)",
             color: "#fca5a5",
-            padding: "6px 12px",
+            padding: "6px 14px",
             fontSize: "12px",
             display: "flex",
             justifyContent: "space-between",
@@ -426,7 +362,7 @@ export default function ScreenPanel({
         >
           <span>⚠️ {errorMsg}</span>
           <button
-            style={{ background: "none", border: "none", color: "#fff", cursor: "pointer", fontSize: "12px" }}
+            style={{ background: "none", border: "none", color: "var(--text-primary)", cursor: "pointer", fontSize: "12px" }}
             onClick={() => setErrorMsg(null)}
           >
             ✕
@@ -439,18 +375,7 @@ export default function ScreenPanel({
         ref={containerRef}
         id="novnc-canvas-container"
         tabIndex={0}
-        style={{
-          flex: 1,
-          width: "100%",
-          height: "100%",
-          position: "relative",
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "center",
-          background: "#080c12",
-          overflow: "auto",
-          outline: "none",
-        }}
+        className="screen-canvas-frame"
       >
         {/* Dedicated unmanaged mount point for noVNC canvas */}
         <div
@@ -465,28 +390,13 @@ export default function ScreenPanel({
         />
 
         {status === "disconnected" && (
-          <div
-            style={{
-              display: "flex",
-              flexDirection: "column",
-              alignItems: "center",
-              justifyContent: "center",
-              gap: "12px",
-              padding: "24px",
-              textAlign: "center",
-              maxWidth: "460px",
-            }}
-          >
-            <div style={{ fontSize: "42px" }}>🖥️</div>
-            <h3 style={{ margin: 0, color: "#e5e7eb", fontSize: "16px" }}>
-              Kali Worker Desktop Stream Offline
-            </h3>
-            <p style={{ margin: 0, color: "#9ca3af", fontSize: "13px", lineHeight: "1.5" }}>
-              {statusDetail}
-            </p>
-            <div style={{ display: "flex", gap: "8px", marginTop: "6px" }}>
+          <div className="screen-offline-card">
+            <div style={{ fontSize: "36px", opacity: 0.8 }}>🖥️</div>
+            <h4>Kali Desktop Stream Offline</h4>
+            <p>{statusDetail}</p>
+            <div style={{ display: "flex", gap: "8px", marginTop: "4px" }}>
               <button className="quick-btn" onClick={connectVnc}>
-                ⚡ Reconnect noVNC Stream
+                ⚡ Reconnect Stream
               </button>
               <button
                 className="quick-btn secondary"
@@ -498,7 +408,7 @@ export default function ScreenPanel({
                 Try {useGatewayTunnel ? "Direct Port 6080" : "Gateway Tunnel (/vnc)"}
               </button>
             </div>
-            <div style={{ marginTop: "10px", fontSize: "11px", color: "#6b7280" }}>
+            <div style={{ marginTop: "6px", fontSize: "11px", color: "var(--text-muted)", fontFamily: "var(--font-mono)" }}>
               Endpoint: <code>{wsUrl || resolveVncUrl()}</code>
             </div>
           </div>
@@ -511,55 +421,42 @@ export default function ScreenPanel({
               flexDirection: "column",
               alignItems: "center",
               gap: "10px",
-              color: "#38bdf8",
+              color: "var(--accent)",
             }}
           >
             <div
               style={{
                 width: "28px",
                 height: "28px",
-                border: "3px solid rgba(6, 182, 212, 0.2)",
-                borderTopColor: "#06b6d4",
+                border: "3px solid rgba(79, 140, 255, 0.2)",
+                borderTopColor: "var(--accent)",
                 borderRadius: "50%",
                 animation: "spin 1s linear infinite",
               }}
             />
-            <span style={{ fontSize: "13px" }}>Connecting to Kali Worker ({wsUrl})...</span>
+            <span style={{ fontSize: "12px" }}>Connecting to Kali Worker ({wsUrl})...</span>
           </div>
         )}
       </div>
 
       {/* Bottom Telemetry Bar */}
-      <div
-        style={{
-          display: "flex",
-          justifyContent: "space-between",
-          alignItems: "center",
-          padding: "5px 12px",
-          background: "#0f172a",
-          borderTop: "1px solid #1e293b",
-          fontSize: "11px",
-          color: "#94a3b8",
-          flexWrap: "wrap",
-          gap: "8px",
-        }}
-      >
+      <div className="screen-bottom-bar">
         <div style={{ display: "flex", gap: "12px" }}>
           <span>
-            Plane: <strong style={{ color: "#38bdf8" }}>{streamInfo?.plane || "WSL2 kali-linux"}</strong>
+            Plane: <strong style={{ color: "var(--accent)" }}>{streamInfo?.plane || "WSL2 kali-linux"}</strong>
           </span>
           <span>
-            Res: <strong>{streamInfo?.width || 1024}x{streamInfo?.height || 768}</strong> (32bpp TrueColor)
+            Res: <strong>{streamInfo?.width || 1024}×{streamInfo?.height || 768}</strong> (32bpp TrueColor)
           </span>
           <span>
             Protocol: <strong>RFB 3.8 / WebSocket</strong>
           </span>
         </div>
         <div style={{ display: "flex", gap: "10px", alignItems: "center" }}>
-          {sessionLabel && <span style={{ color: "#38bdf8" }}>{sessionLabel}</span>}
-          {lastConnectedAt && <span>Connected since: {lastConnectedAt}</span>}
-          <span style={{ color: "#64748b" }}>
-            💡 Tip: Click inside desktop to interact with mouse & keyboard
+          {sessionLabel && <span style={{ color: "var(--accent)", fontFamily: "var(--font-mono)" }}>{sessionLabel}</span>}
+          {lastConnectedAt && <span>Connected: {lastConnectedAt}</span>}
+          <span style={{ color: "var(--text-muted)" }}>
+            Tip: Click desktop to interact
           </span>
         </div>
       </div>

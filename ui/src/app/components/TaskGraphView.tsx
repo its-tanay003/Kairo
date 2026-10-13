@@ -497,13 +497,13 @@ export default function TaskGraphView({
     <div className="task-graph-root">
       {/* Top Input & Goal Formulation Bar */}
       <div className="task-graph-top-bar">
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: "8px" }}>
           <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
-            <span style={{ fontSize: "14px", fontWeight: "700", color: "var(--accent-cyan)" }}>
-              🌐 Autonomous DAG Planner
+            <span style={{ fontSize: "13px", fontWeight: "600", color: "var(--text-primary)" }}>
+              Task Graph (DAG Planner)
             </span>
             <span style={{ fontSize: "11px", color: "var(--text-muted)" }}>
-              (Directed Acyclic Graph decomposition with parallel branching & multi-parent convergence)
+              Parallel branching &amp; multi-parent convergence
             </span>
           </div>
 
@@ -512,12 +512,12 @@ export default function TaskGraphView({
             <span style={{ fontSize: "11px", color: "var(--text-muted)" }}>Load Plan:</span>
             <select
               style={{
-                background: "rgba(15, 23, 42, 0.9)",
-                border: "1px solid rgba(255, 255, 255, 0.15)",
-                color: "#e2e8f0",
+                background: "var(--bg-surface-raised)",
+                border: "1px solid var(--border-subtle)",
+                color: "var(--text-primary)",
                 fontSize: "11px",
-                padding: "3px 8px",
-                borderRadius: "4px",
+                padding: "4px 8px",
+                borderRadius: "6px",
                 outline: "none",
               }}
               value={currentPlan?.plan_id || ""}
@@ -534,7 +534,7 @@ export default function TaskGraphView({
             </select>
             <button
               className="quick-btn secondary"
-              style={{ padding: "3px 8px", fontSize: "11px" }}
+              style={{ padding: "4px 8px", fontSize: "11px" }}
               onClick={fetchPlansList}
               title="Refresh saved plans list"
             >
@@ -550,7 +550,7 @@ export default function TaskGraphView({
             className="task-graph-input"
             value={goal}
             onChange={(e) => setGoal(e.target.value)}
-            placeholder="Describe your security goal (e.g., Penetration test target 192.168.1.50 with parallel web enum and port scan)..."
+            placeholder="Describe your security goal to decompose into an execution DAG..."
             disabled={isPlanning}
             onKeyDown={(e) => {
               if (e.key === "Enter" && !isPlanning) handleDecompose();
@@ -560,17 +560,14 @@ export default function TaskGraphView({
           <button
             className="quick-btn"
             style={{
-              padding: "8px 16px",
-              fontSize: "12px",
-              fontWeight: 700,
-              background: "rgba(6, 182, 212, 0.2)",
-              borderColor: "var(--accent-cyan)",
-              color: "#fff",
+              padding: "8px 14px",
+              fontSize: "11px",
+              fontWeight: 600,
             }}
             onClick={handleDecompose}
             disabled={isPlanning || !goal.trim()}
           >
-            {isPlanning ? "🧠 Decomposing DAG..." : "⚡ Decompose to DAG"}
+            {isPlanning ? "🧠 Decomposing..." : "⚡ Decompose to DAG"}
           </button>
         </div>
 
@@ -608,12 +605,12 @@ export default function TaskGraphView({
 
         {/* Error / Status Feedback */}
         {errorMsg && (
-          <div style={{ background: "rgba(244, 63, 94, 0.15)", border: "1px solid rgba(244, 63, 94, 0.4)", color: "#fca5a5", padding: "6px 10px", borderRadius: "4px", fontSize: "11px" }}>
+          <div style={{ background: "rgba(240, 99, 107, 0.15)", border: "1px solid rgba(240, 99, 107, 0.4)", color: "#fca5a5", padding: "6px 10px", borderRadius: "4px", fontSize: "11px" }}>
             ⚠️ {errorMsg}
           </div>
         )}
         {statusFeedback && (
-          <div style={{ background: "rgba(16, 185, 129, 0.15)", border: "1px solid rgba(16, 185, 129, 0.4)", color: "#6ee7b7", padding: "6px 10px", borderRadius: "4px", fontSize: "11px" }}>
+          <div style={{ background: "rgba(62, 207, 142, 0.15)", border: "1px solid rgba(62, 207, 142, 0.4)", color: "var(--status-success)", padding: "6px 10px", borderRadius: "4px", fontSize: "11px" }}>
             ✓ {statusFeedback}
           </div>
         )}
@@ -624,7 +621,7 @@ export default function TaskGraphView({
         <div className="dag-metrics-banner">
           <div className="dag-metric-item">
             <span className="dag-metric-label">Plan ID:</span>
-            <span className="dag-metric-val" style={{ color: "var(--accent-cyan)" }}>
+            <span className="dag-metric-val" style={{ color: "var(--accent)" }}>
               {currentPlan.plan_id}
             </span>
           </div>
@@ -636,20 +633,20 @@ export default function TaskGraphView({
 
           <div className="dag-metric-item">
             <span className="dag-metric-label">Parallel Roots:</span>
-            <span className="dag-metric-val" style={{ color: "var(--accent-emerald)" }}>
+            <span className="dag-metric-val" style={{ color: "var(--status-success)" }}>
               {currentPlan.parallel_roots ? currentPlan.parallel_roots.length : groupedColumns[0]?.nodes.length || 0}
             </span>
           </div>
 
           <div className="dag-metric-item">
             <span className="dag-metric-label">Convergence Nodes:</span>
-            <span className="dag-metric-val" style={{ color: "#c084fc" }}>
+            <span className="dag-metric-val">
               {currentPlan.convergence_nodes ? currentPlan.convergence_nodes.length : 0}
             </span>
           </div>
 
           <div className="dag-metric-item">
-            <span className="dag-metric-label">Status Breakdown:</span>
+            <span className="dag-metric-label">Status:</span>
             <div style={{ display: "flex", gap: "4px" }}>
               <span className="dag-status-pill queued">{statusCounts.queued} Queued</span>
               <span className="dag-status-pill running">{statusCounts.running} Running</span>
@@ -663,30 +660,25 @@ export default function TaskGraphView({
             </div>
           </div>
 
-          <div style={{ display: "flex", gap: "6px" }}>
+          <div style={{ display: "flex", gap: "6px", alignItems: "center", flexWrap: "wrap" }}>
             <button
               className="quick-btn"
               style={{
-                padding: "2px 10px",
+                padding: "3px 10px",
                 fontSize: "10px",
-                fontWeight: 700,
-                background: "rgba(16, 185, 129, 0.2)",
-                borderColor: "#10b981",
-                color: "#6ee7b7",
               }}
               onClick={handleExecuteTaskGraph}
               disabled={isExecutingGraph}
               title="Execute unblocked DAG nodes through Observer, Critic & Recovery Agent"
             >
-              {isExecutingGraph ? "⚙️ Executing DAG..." : "▶ Execute DAG"}
+              {isExecutingGraph ? "⚙️ Executing..." : "▶ Execute DAG"}
             </button>
             <button
               className="quick-btn secondary"
               style={{
-                padding: "2px 8px",
+                padding: "3px 8px",
                 fontSize: "10px",
-                borderColor: readyNodeIds.length > 0 ? "rgba(16, 185, 129, 0.4)" : undefined,
-                color: readyNodeIds.length > 0 ? "#34d399" : undefined,
+                color: readyNodeIds.length > 0 ? "var(--status-success)" : undefined,
               }}
               onClick={() => currentPlan && fetchReadyNodes(currentPlan.plan_id)}
               title="Query ready nodes whose dependencies are satisfied"
@@ -694,24 +686,20 @@ export default function TaskGraphView({
               Ready to Run ({readyNodeIds.length})
             </button>
             <button
-              className="quick-btn"
+              className="quick-btn secondary"
               style={{
-                padding: "2px 10px",
+                padding: "3px 8px",
                 fontSize: "10px",
-                fontWeight: 700,
-                background: "rgba(245, 158, 11, 0.15)",
-                borderColor: "#f59e0b",
-                color: "#fbbf24",
               }}
               onClick={() => currentPlan && handleGenerateReport(currentPlan.plan_id)}
               disabled={isGeneratingReport}
               title="Generate final security report with failure-aware recovery lineage and SHA-256 artifacts"
             >
-              {isGeneratingReport ? "📄 Generating..." : "📄 Audit Report"}
+              {isGeneratingReport ? "Generating..." : "📄 Audit Report"}
             </button>
             <button
               className="quick-btn secondary"
-              style={{ padding: "2px 8px", fontSize: "10px" }}
+              style={{ padding: "3px 8px", fontSize: "10px" }}
               onClick={() => currentPlan && loadPlan(currentPlan.plan_id)}
               title="Reload plan"
             >
@@ -795,8 +783,8 @@ export default function TaskGraphView({
                       <div className="dag-deps-box">
                         <span className="dag-dep-label">Depends on:</span>
                         {node.dependencies.length === 0 ? (
-                          <span style={{ fontSize: "10px", color: "var(--accent-emerald)", fontStyle: "italic" }}>
-                            ⚡ None (Parallel Root)
+                          <span style={{ fontSize: "10px", color: "var(--status-success)" }}>
+                            None (Parallel Root)
                           </span>
                         ) : (
                           node.dependencies.map((depId) => {
@@ -806,14 +794,6 @@ export default function TaskGraphView({
                               <span
                                 key={depId}
                                 className="dag-dep-tag"
-                                style={{
-                                  borderColor:
-                                    depStatus === "success"
-                                      ? "rgba(16, 185, 129, 0.5)"
-                                      : depStatus === "running"
-                                      ? "rgba(56, 189, 248, 0.5)"
-                                      : undefined,
-                                }}
                                 title={`Dependency #${depId} is currently ${depStatus}`}
                               >
                                 #{depId} {depStatus === "success" ? "✓" : ""}
@@ -834,7 +814,7 @@ export default function TaskGraphView({
                         </button>
                         <button
                           className="dag-action-btn"
-                          style={{ color: "#34d399" }}
+                          style={{ color: "var(--status-success)" }}
                           title="Mark Success"
                           onClick={() => handleUpdateNodeStatus(node.node_id, "success")}
                         >
@@ -842,7 +822,7 @@ export default function TaskGraphView({
                         </button>
                         <button
                           className="dag-action-btn"
-                          style={{ color: "#fbbf24" }}
+                          style={{ color: "var(--status-warning)" }}
                           title="Mark Warning"
                           onClick={() => handleUpdateNodeStatus(node.node_id, "warning")}
                         >
@@ -850,7 +830,7 @@ export default function TaskGraphView({
                         </button>
                         <button
                           className="dag-action-btn"
-                          style={{ color: "#fb7185" }}
+                          style={{ color: "var(--status-error)" }}
                           title="Mark Failed"
                           onClick={() => handleUpdateNodeStatus(node.node_id, "failed")}
                         >

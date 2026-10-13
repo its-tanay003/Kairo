@@ -10,7 +10,7 @@ with sync_playwright() as p:
     page.on("console", lambda msg: errors.append(f"ConsoleError: {msg.text}") if msg.type == "error" else None)
 
     print("[*] Navigating to http://localhost:3000...")
-    page.goto("http://localhost:3000", wait_until="networkidle")
+    page.goto("http://localhost:3000", wait_until="domcontentloaded")
     time.sleep(1.5)
 
     print("[*] Opening Advanced drawer...")

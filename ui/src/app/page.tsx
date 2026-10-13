@@ -1117,7 +1117,6 @@ export default function Home() {
 
                 {advancedTab === "terminal" && (
                   <div style={{ height: "100%", display: "flex", flexDirection: "column" }}>
-                    <h3>Live Kali Terminal Stream</h3>
                     <div style={{ flex: 1, minHeight: "450px" }}>
                       <TerminalProcessView
                         ws={wsInstance}
@@ -1132,7 +1131,6 @@ export default function Home() {
 
                 {advancedTab === "screen" && (
                   <div style={{ height: "100%", display: "flex", flexDirection: "column" }}>
-                    <h3>Kali Desktop Stream (RFB/noVNC)</h3>
                     <div style={{ flex: 1, minHeight: "450px" }}>
                       <ScreenPanel
                         ws={wsInstance}
@@ -1146,7 +1144,6 @@ export default function Home() {
 
                 {advancedTab === "graph" && (
                   <div style={{ height: "100%", display: "flex", flexDirection: "column" }}>
-                    <h3>Task Graph (DAG Planner)</h3>
                     <div style={{ flex: 1, minHeight: "450px" }}>
                       <TaskGraphView ws={wsInstance} activeSessionId={sessionId} />
                     </div>

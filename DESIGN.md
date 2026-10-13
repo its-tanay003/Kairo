@@ -25,10 +25,11 @@
    - [7.7 Advanced Drawer: Filtered Event Search Results](#77-advanced-drawer-filtered-event-search-results)
    - [7.8 Advanced Drawer: Live Kali Terminal Stream (CLI)](#78-advanced-drawer-live-kali-terminal-stream-cli)
    - [7.9 Advanced Drawer: Kali Desktop Screen Stream (noVNC GUI)](#79-advanced-drawer-kali-desktop-screen-stream-novnc-gui)
-   - [7.10 Advanced Drawer: Dev Tools & Interactive Command Runner](#710-advanced-drawer-dev-tools--interactive-command-runner)
-   - [7.11 Mobile Viewport: Clean Chat (375px)](#711-mobile-viewport-clean-chat-375px)
-   - [7.12 Mobile Viewport: Full-Screen Sidebar Overlay](#712-mobile-viewport-full-screen-sidebar-overlay)
-   - [7.13 Mobile Viewport: Full-Screen Advanced Drawer](#713-mobile-viewport-full-screen-advanced-drawer)
+   - [7.10 Advanced Drawer: Task Graph (DAG Planner)](#710-advanced-drawer-task-graph-dag-planner)
+   - [7.11 Advanced Drawer: Dev Tools & Interactive Command Runner](#711-advanced-drawer-dev-tools--interactive-command-runner)
+   - [7.12 Mobile Viewport: Clean Chat (375px)](#712-mobile-viewport-clean-chat-375px)
+   - [7.13 Mobile Viewport: Full-Screen Sidebar Overlay](#713-mobile-viewport-full-screen-sidebar-overlay)
+   - [7.14 Mobile Viewport: Full-Screen Advanced Drawer](#714-mobile-viewport-full-screen-advanced-drawer)
 8. [Responsive Breakpoint Architecture & Mobile Behavior](#8-responsive-breakpoint-architecture--mobile-behavior)
 9. [Accessibility (a11y) & Visual Safety Controls](#9-accessibility-a11y--visual-safety-controls)
 
@@ -299,25 +300,31 @@ Live RFB/noVNC desktop display stream for interactive graphical penetration test
 
 ![advanced_screen_tab.png](/docs/assets/screenshots/advanced_screen_tab.png)
 
-### 7.10 Advanced Drawer: Dev Tools & Interactive Command Runner
+### 7.10 Advanced Drawer: Task Graph (DAG Planner)
+
+Interactive Directed Acyclic Graph visualizer with goal decomposition, topological layer staging, and execution tracking.
+
+![advanced_task_graph_tab.png](/docs/assets/screenshots/advanced_task_graph_tab.png)
+
+### 7.11 Advanced Drawer: Dev Tools & Interactive Command Runner
 
 Interactive sandbox command runner with custom bash execution, test fixtures, and emergency SIGKILL control.
 
 ![advanced_devtools_tab.png](/docs/assets/screenshots/advanced_devtools_tab.png)
 
-### 7.11 Mobile Viewport: Clean Chat (375px)
+### 7.12 Mobile Viewport: Clean Chat (375px)
 
 On mobile screens (e.g., iPhone 375×812), the layout gracefully scales with zero horizontal overflow and full touch ergonomics.
 
 ![10_mobile_chat_375px.png](/docs/assets/screenshots/10_mobile_chat_375px.png)
 
-### 7.12 Mobile Viewport: Full-Screen Sidebar Overlay
+### 7.13 Mobile Viewport: Full-Screen Sidebar Overlay
 
 Triggered via the hamburger button, the sidebar presents a dedicated full-screen drawer with a dismiss button.
 
 ![11_mobile_sidebar_375px.png](/docs/assets/screenshots/11_mobile_sidebar_375px.png)
 
-### 7.13 Mobile Viewport: Full-Screen Advanced Drawer
+### 7.14 Mobile Viewport: Full-Screen Advanced Drawer
 
 The Advanced drawer adapts into a full-screen view with horizontally scrollable tab navigation and touch-optimized controls.
 

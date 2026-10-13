@@ -66,13 +66,28 @@ with sync_playwright() as p:
     time.sleep(1.2)
     page.screenshot(path=os.path.join(output_dir, "advanced_screen_tab.png"))
 
-    # 7. Test Dev Tools Tab with Command Runner
+    # 7. Test Task Graph Tab
+    print("[*] Testing Task Graph tab...")
+    page.locator(".drawer-nav-item:has-text('Task Graph')").click()
+    time.sleep(1.2)
+    # Click preset to generate/load DAG nodes if empty
+    preset_btn = page.locator(".quick-btn.secondary:has-text('Full Pentest')").first
+    if preset_btn.is_visible():
+        preset_btn.click()
+        time.sleep(0.5)
+        decompose_btn = page.locator("button:has-text('Decompose to DAG')")
+        if decompose_btn.is_visible():
+            decompose_btn.click()
+            time.sleep(1.5)
+    page.screenshot(path=os.path.join(output_dir, "advanced_task_graph_tab.png"))
+
+    # 8. Test Dev Tools Tab with Command Runner
     print("[*] Testing Dev Tools tab...")
     page.locator(".drawer-nav-item:has-text('Dev tools')").click()
     time.sleep(1.0)
     page.screenshot(path=os.path.join(output_dir, "advanced_devtools_tab.png"))
 
-    # 8. Test Escape key to dismiss drawer
+    # 9. Test Escape key to dismiss drawer
     print("[*] Testing Escape key dismissal...")
     page.keyboard.press("Escape")
     time.sleep(1.0)

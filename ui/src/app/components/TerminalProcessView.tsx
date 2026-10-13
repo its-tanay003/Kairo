@@ -254,10 +254,7 @@ export default function TerminalProcessView({
         termInstanceRef.current = term;
         fitAddonRef.current = fitAddon;
 
-        term.writeln("\x1b[1;36m╭────────────────────────────────────────────────────────────────────────╮\x1b[0m");
-        term.writeln("\x1b[1;36m│\x1b[0m \x1b[1;32mKAIRO WORKER TERMINAL\x1b[0m - \x1b[90mLive Stream from Isolated Kali Sandbox\x1b[0m        \x1b[1;36m│\x1b[0m");
-        term.writeln("\x1b[1;36m│\x1b[0m \x1b[90mConnected via Session Gateway WebSocket (Port 4000 ➔ VM 9999)\x1b[0m         \x1b[1;36m│\x1b[0m");
-        term.writeln("\x1b[1;36m╰────────────────────────────────────────────────────────────────────────╯\x1b[0m\r\n");
+        term.writeln("\x1b[38;2;79;140;255m● KAIRO WORKER TERMINAL\x1b[0m \x1b[90m— Isolated Kali Sandbox (Gateway ws://127.0.0.1:4000)\x1b[0m\r\n");
 
         const handleResize = () => {
           try {
