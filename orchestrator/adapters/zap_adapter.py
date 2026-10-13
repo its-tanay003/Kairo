@@ -217,6 +217,22 @@ class ZapGuiAdapter(BaseGuiAdapter):
             "screenshot_sha256": vis.sha256,
         }
 
+    def _workflow_default(self, task_id: str, params: Dict[str, Any]) -> Dict[str, Any]:
+        """Default workflow: Inspect alerts and export compliance report to evidence store."""
+        alerts_res = self._workflow_inspect_alerts(task_id, params)
+        rep_res = self._workflow_export_report(task_id, params)
+        return {
+            "success": True,
+            "status": "completed",
+            "findings_count": len(self.alerts),
+            "risk_summary": alerts_res.get("risk_summary", {}),
+            "alerts": alerts_res.get("alerts", self.alerts),
+            "report_filepath": rep_res.get("report_filepath"),
+            "report_filename": rep_res.get("report_filename"),
+            "report_sha256": rep_res.get("report_sha256"),
+            "screenshot_sha256": rep_res.get("screenshot_sha256") or alerts_res.get("screenshot_sha256"),
+        }
+
     # ------------------------------------------------------------------
     # Visual Rendering Engine (OWASP ZAP Classic Blue Aesthetic)
     # ------------------------------------------------------------------

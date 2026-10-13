@@ -632,6 +632,45 @@ class HybridToolSelector:
             args = {"command": f"ping -c 2 {host_only or '127.0.0.1'}"}
         elif tid == "system_ping":
             args = {"target": host_only or "127.0.0.1", "count": 3}
+        elif tid == "zap.gui.v1":
+            target_url = target if target.startswith("http") else f"http://{target}"
+            gl = goal.lower()
+            if any(w in gl for w in ["report", "compliance", "export"]):
+                wf = "export_report"
+            elif any(w in gl for w in ["spider", "crawl"]):
+                wf = "run_spider"
+            elif any(w in gl for w in ["alert", "inspect", "finding", "vulnerability"]):
+                wf = "inspect_alerts"
+            else:
+                wf = "quick_start"
+            args = {
+                "action": "workflow",
+                "workflow": wf,
+                "target_url": target_url,
+                "params": {"target_url": target_url, "format": "html"},
+            }
+        elif tid in ("burpsuite.gui.v1", "burp.gui.v1"):
+            gl = goal.lower()
+            if any(w in gl for w in ["history", "proxy"]):
+                wf = "inspect_proxy_history"
+            elif any(w in gl for w in ["repeater", "replay"]):
+                wf = "send_to_repeater"
+            elif any(w in gl for w in ["sitemap", "map"]):
+                wf = "export_target_sitemap"
+            else:
+                wf = "init_project"
+            args = {"action": "workflow", "workflow": wf, "params": {}}
+        elif tid == "wireshark.gui.v1":
+            gl = goal.lower()
+            if any(w in gl for w in ["filter", "display"]):
+                wf = "apply_display_filter"
+            elif any(w in gl for w in ["packet", "inspect"]):
+                wf = "inspect_packet"
+            elif any(w in gl for w in ["save", "pcap", "stop"]):
+                wf = "stop_and_save_pcap"
+            else:
+                wf = "start_capture"
+            args = {"action": "workflow", "workflow": wf, "params": {"interface": "eth0"}}
         elif tid == "hello_world":
             args = {"name": "kairo"}
         else:

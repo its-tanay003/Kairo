@@ -427,6 +427,20 @@ class BaseGuiAdapter(ToolAdapter):
             params = params or {}
             method_name = f"_workflow_{workflow_name}"
             if not hasattr(self, method_name):
+                # Intelligent fallback when 'default' or unrecognized workflow requested
+                avail = self.list_workflows()
+                if workflow_name in ("default", ""):
+                    for candidate in ("default", "inspect_alerts", "quick_start", "export_report", "init_project", "inspect_proxy_history", "select_interface", "start_capture"):
+                        if candidate in avail:
+                            method_name = f"_workflow_{candidate}"
+                            workflow_name = candidate
+                            break
+                    else:
+                        if avail:
+                            method_name = f"_workflow_{avail[0]}"
+                            workflow_name = avail[0]
+
+            if not hasattr(self, method_name):
                 return {
                     "success": False,
                     "error": f"Unknown workflow '{workflow_name}'. Available: {self.list_workflows()}",
@@ -507,7 +521,10 @@ class BaseGuiAdapter(ToolAdapter):
                 observation_data = self.stop(task_id)
             elif action == "workflow":
                 wf_name = inputs.get("workflow", "default")
-                wf_params = inputs.get("params", {})
+                wf_params = dict(inputs.get("params", {}))
+                for k, v in inputs.items():
+                    if k not in ("action", "workflow", "params") and k not in wf_params:
+                        wf_params[k] = v
                 observation_data = self.execute_workflow(task_id, wf_name, wf_params)
                 if not observation_data.get("success", True):
                     status = "error"
