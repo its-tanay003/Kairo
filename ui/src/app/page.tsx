@@ -1407,7 +1407,6 @@ export default function Home() {
 
                 {advancedTab === "benchmarks" && (
                   <div style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
-                    <h3>Leaderboard &amp; Training</h3>
                     <BenchmarkLeaderboard />
                     <DatasetCurationPanel />
                   </div>
@@ -1415,7 +1414,6 @@ export default function Home() {
 
                 {advancedTab === "audit" && (
                   <div style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
-                    <h3>Audit Explorer</h3>
                     <AuditExplorer />
                   </div>
                 )}

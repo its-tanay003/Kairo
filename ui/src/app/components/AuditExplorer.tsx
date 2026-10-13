@@ -199,6 +199,18 @@ export default function AuditExplorer() {
 
   return (
     <div className="audit-explorer-container">
+      {/* Top Accountability Hero */}
+      <div className="audit-hero-card">
+        <div className="hero-top-row">
+          <span className="hero-badge">Immutable Audit Ledger</span>
+          <span className="font-xs mono text-muted">Task 2.3 Scope Contract Accountability</span>
+        </div>
+        <h2 className="hero-title">Audit Explorer &amp; Timeline Stream</h2>
+        <p className="hero-desc">
+          Cryptographically correlated timeline of every agent, supervisor, and tool action. Enforces HMAC-SHA256 scope boundary contracts and deterministic SLA compliance.
+        </p>
+      </div>
+
       {/* Top Accountability KPI Strip */}
       <div className="audit-kpi-bar">
         <div className="kpi-card">
