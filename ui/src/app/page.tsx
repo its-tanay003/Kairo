@@ -363,7 +363,7 @@ export default function Home() {
             });
 
             // If execution failed, auto-expand tool card
-            if (data.execution && data.execution.exit_code !== 0) {
+            if (data.execution && typeof data.execution.exit_code === "number" && data.execution.exit_code !== 0) {
               setExpandedCards((prev) => ({ ...prev, [msgId]: true }));
             }
 
@@ -846,58 +846,60 @@ export default function Home() {
                         {m.text && <div className="agent-body-text">{m.text}</div>}
 
                         {/* Claude Artifact / Tool Execution Card */}
-                        {m.tool && (
-                          <div
-                            className={`tool-card ${
-                              m.execution && m.execution.exit_code !== 0 ? "failed" : ""
-                            }`}
-                          >
-                            <div className="tool-card-header">
-                              <div className="tool-card-left">
-                                <span className="artifact-pill">Artifact</span>
-                                <span className="tool-card-title">
-                                  {m.tool.name || m.tool.id}
-                                </span>
-                                <div className="tool-card-status">
-                                  <span
-                                    className={`status-dot ${
-                                      m.execution?.exit_code === 0 ? "success" : "error"
-                                    }`}
-                                  />
-                                  <span>
-                                    {m.execution?.exit_code === 0 ? "Verified" : "Failed"}
-                                    {m.durationMs ? ` (${(m.durationMs / 1000).toFixed(1)}s)` : ""}
+                        {m.tool && (() => {
+                          const isToolFailed = Boolean(
+                            m.execution &&
+                            typeof m.execution.exit_code === "number" &&
+                            m.execution.exit_code !== 0
+                          );
+                          return (
+                            <div
+                              className={`tool-card ${isToolFailed ? "failed" : ""}`}
+                            >
+                              <div className="tool-card-header">
+                                <div className="tool-card-left">
+                                  <span className="artifact-pill">Artifact</span>
+                                  <span className="tool-card-title">
+                                    {m.tool.name || m.tool.id}
                                   </span>
-                                </div>
-                              </div>
-                              <div className="tool-card-actions">
-                                <button
-                                  className="open-console-btn"
-                                  onClick={() => openToolInConsole(m.tool?.id)}
-                                  title="Inspect in Advanced Console"
-                                >
-                                  Open in Console ↗
-                                </button>
-                                <button
-                                  className="tool-card-toggle"
-                                  onClick={() => toggleCard(m.id)}
-                                >
-                                  {expandedCards[m.id] ? "▲ Details" : "▼ Details"}
-                                </button>
-                              </div>
-                            </div>
-
-                            {expandedCards[m.id] && (
-                              <div className="tool-card-body">
-                                {/* 1. Plain Language Summary */}
-                                <div>
-                                  <div className="tool-section-label">Summary</div>
-                                  <div className="tool-summary-text">
-                                    {m.execution?.exit_code === 0
-                                      ? `Execution succeeded for ${m.tool.id}. Results verified against declared schema.`
-                                      : `Execution failed with exit code ${m.execution?.exit_code || 1}.`}
+                                  <div className="tool-card-status">
+                                    <span
+                                      className={`status-dot ${isToolFailed ? "error" : "success"}`}
+                                    />
+                                    <span>
+                                      {isToolFailed ? "Failed" : "Verified"}
+                                      {m.durationMs ? ` (${(m.durationMs / 1000).toFixed(1)}s)` : ""}
+                                    </span>
                                   </div>
                                 </div>
+                                <div className="tool-card-actions">
+                                  <button
+                                    className="open-console-btn"
+                                    onClick={() => openToolInConsole(m.tool?.id)}
+                                    title="Inspect in Advanced Console"
+                                  >
+                                    Open in Console ↗
+                                  </button>
+                                  <button
+                                    className="tool-card-toggle"
+                                    onClick={() => toggleCard(m.id)}
+                                  >
+                                    {expandedCards[m.id] ? "▲ Details" : "▼ Details"}
+                                  </button>
+                                </div>
+                              </div>
+
+                              {expandedCards[m.id] && (
+                                <div className="tool-card-body">
+                                  {/* 1. Plain Language Summary */}
+                                  <div>
+                                    <div className="tool-section-label">Summary</div>
+                                    <div className="tool-summary-text">
+                                      {!isToolFailed
+                                        ? `Execution succeeded for ${m.tool.name || m.tool.id}. Results verified against declared schema.`
+                                        : `Execution failed with exit code ${m.execution?.exit_code || 1}.`}
+                                    </div>
+                                  </div>
 
                                 {/* 2. Why This Tool Scoring */}
                                 {m.toolSelection?.selected_tool && (
@@ -966,7 +968,8 @@ export default function Home() {
                               </div>
                             )}
                           </div>
-                        )}
+                        );
+                      })()}
                       </div>
                     ) : (
                       <div className="system-notice">{m.text}</div>

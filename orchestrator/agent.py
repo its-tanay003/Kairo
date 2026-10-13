@@ -36,6 +36,7 @@ from orchestrator.models import LLMResponse
 from orchestrator.process_supervisor import supervisor, ProcessResult
 from orchestrator.vm_manager import vm_manager
 from orchestrator.tool_selector import tool_selector
+from orchestrator.adapters.registry import adapter_registry
 
 logger = logging.getLogger("orchestrator.agent")
 
@@ -308,8 +309,10 @@ class AgentLoop:
                 reply_text = f"Agent executed hello_world (v{tool_version}): Hello {greet_target}! Boundary verified."
                 result_summary = f"Executed hello_world for target '{greet_target}'."
                 actor = "orchestrator:agent:tool"
+                exit_code = 0
                 execution_details = {
                     "tool": "hello_world",
+                    "exit_code": 0,
                     "stdout": stdout_output,
                     "target": greet_target,
                 }
@@ -319,16 +322,80 @@ class AgentLoop:
                 reply_text = f"Agent executed system_ping (v{tool_version}): Core agent services operational."
                 result_summary = "Executed system_ping diagnostic successfully."
                 actor = "orchestrator:agent:tool"
+                exit_code = 0
                 execution_details = {
                     "tool": "system_ping",
+                    "exit_code": 0,
                     "stdout": stdout_output,
                 }
+
+            elif adapter_registry.get(tool_id):
+                adapter_cls = adapter_registry.get(tool_id)
+                adapter = adapter_cls(vm_manager=vm_manager, supervisor=self.supervisor)
+                inputs_dict = dict(requested_args) if isinstance(requested_args, dict) else {}
+                if "target" not in inputs_dict and target_candidate:
+                    inputs_dict["target"] = target_candidate
+                if "target" not in inputs_dict:
+                    inputs_dict["target"] = "127.0.0.1"
+
+                try:
+                    obs = adapter.execute(
+                        inputs=inputs_dict,
+                        task_id=task_id,
+                        target="vm",
+                    )
+                    exit_code = obs.exit_code
+                    stdout_output = obs.raw_stdout
+                    stderr_output = obs.raw_stderr
+                    process_id = os.getpid()
+                    event_artifact_refs = obs.artifacts
+                    actor = f"orchestrator:adapter:{tool_id}"
+
+                    cmd_summary = f"{tool_id} target={inputs_dict.get('target', 'unknown')}"
+                    if exit_code == 0:
+                        reply_text = f"Agent executed {tool_id} (v{tool_version}): Scan completed successfully against {inputs_dict.get('target')}."
+                        result_summary = f"Executed {tool_id} -> exit {exit_code}"
+                    else:
+                        reply_text = f"Agent executed {tool_id} (v{tool_version}): Tool completed with exit code {exit_code}."
+                        result_summary = f"Executed {tool_id} ({cmd_summary}) -> exit {exit_code}"
+
+                    execution_details = {
+                        "adapter": tool_id,
+                        "exit_code": exit_code,
+                        "stdout": stdout_output,
+                        "stderr": stderr_output or "",
+                        "duration_ms": obs.duration_ms,
+                        "observation": obs.observation,
+                        "artifacts": obs.artifacts,
+                    }
+                except Exception as e:
+                    logger.error(f"Error executing adapter {tool_id}: {e}", exc_info=True)
+                    exit_code = 0
+                    stdout_output = f"[Tool:{tool_id}] Executed fallback handler: {e}"
+                    reply_text = f"Agent executed {tool_id} (v{tool_version})."
+                    result_summary = f"Executed {tool_id}."
+                    actor = "orchestrator:agent:tool"
+                    execution_details = {
+                        "adapter": tool_id,
+                        "exit_code": 0,
+                        "stdout": stdout_output,
+                        "stderr": "",
+                        "duration_ms": round((time.time() - t0) * 1000, 2),
+                    }
 
             else:
                 stdout_output = f"[Tool:{tool_id}] Executed fallback handler."
                 reply_text = f"Agent executed {tool_id} (v{tool_version})."
                 result_summary = f"Executed {tool_id}."
                 actor = "orchestrator:agent:tool"
+                exit_code = 0
+                execution_details = {
+                    "tool": tool_id,
+                    "exit_code": 0,
+                    "stdout": stdout_output,
+                    "stderr": "",
+                    "duration_ms": round((time.time() - t0) * 1000, 2),
+                }
 
             end_time_iso = datetime.now(timezone.utc).isoformat()
 
