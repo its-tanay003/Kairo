@@ -170,6 +170,31 @@ export default function Home() {
   const [eventFilterMode, setEventFilterMode] = useState<"all" | "success" | "error">("all");
   const [expandedEventId, setExpandedEventId] = useState<number | null>(null);
   const [devCustomCmd, setDevCustomCmd] = useState<string>("");
+  const [isSidebarCollapsed, setIsSidebarCollapsed] = useState<boolean>(false);
+  const [expandedThinking, setExpandedThinking] = useState<Record<string, boolean>>({});
+  const [selectedModel, setSelectedModel] = useState<string>("Kairo 3.7 (Cyber-Ops Sonnet)");
+  const [showModelMenu, setShowModelMenu] = useState<boolean>(false);
+
+  const toggleThinking = (id: string) => {
+    setExpandedThinking((prev) => ({ ...prev, [id]: !prev[id] }));
+  };
+
+  const openToolInConsole = (toolId?: string) => {
+    if (!toolId) {
+      setAdvancedTab("events");
+    } else if (toolId.includes("terminal") || toolId.includes("kali") || toolId.includes("shell") || toolId.includes("exec")) {
+      setAdvancedTab("terminal");
+    } else if (toolId.includes("novnc") || toolId.includes("screen") || toolId.includes("gui") || toolId.includes("desktop")) {
+      setAdvancedTab("screen");
+    } else if (toolId.includes("planner") || toolId.includes("graph") || toolId.includes("decompose")) {
+      setAdvancedTab("graph");
+    } else if (toolId.includes("audit") || toolId.includes("evidence") || toolId.includes("cve")) {
+      setAdvancedTab("audit");
+    } else {
+      setAdvancedTab("events");
+    }
+    setIsAdvancedOpen(true);
+  };
 
   // System & Telemetry Data
   const [modelCenter, setModelCenter] = useState<ModelCenterStatus | null>(null);
@@ -472,9 +497,20 @@ export default function Home() {
 
   return (
     <div className="app-shell">
-      {/* 1. TOP BAR (56px) */}
+      {/* 1. TOP BAR (Claude Minimalist Style) */}
       <header className="top-bar">
         <div className="top-bar-left">
+          <button
+            className="sidebar-toggle-btn"
+            onClick={() => setIsSidebarCollapsed(!isSidebarCollapsed)}
+            aria-label="Toggle Sessions Sidebar"
+            title={isSidebarCollapsed ? "Expand sidebar" : "Collapse sidebar"}
+          >
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <rect width="18" height="18" x="3" y="3" rx="2" />
+              <path d="M9 3v18" />
+            </svg>
+          </button>
           <button
             className="mobile-hamburger-btn"
             onClick={() => setIsMobileSidebarOpen(!isMobileSidebarOpen)}
@@ -482,7 +518,72 @@ export default function Home() {
           >
             ☰
           </button>
-          <span className="wordmark">Kairo</span>
+          <div className="wordmark-container" onClick={handleNewSession}>
+            <svg className="wordmark-spark" viewBox="0 0 24 24" fill="currentColor">
+              <path d="M12 2L14.39 8.26L21 9.27L16.2 13.97L17.33 20.6L12 17.27L6.67 20.6L7.8 13.97L3 9.27L9.61 8.26L12 2Z" />
+            </svg>
+            <span className="wordmark">Kairo</span>
+            <span className="wordmark-badge">Claude v3.0</span>
+          </div>
+        </div>
+
+        {/* Center: Claude Model Selector */}
+        <div className="top-bar-center">
+          <div className="model-picker-container">
+            <button
+              className="claude-model-pill"
+              onClick={() => setShowModelMenu(!showModelMenu)}
+              aria-label="Select Model"
+            >
+              <span className="model-pill-spark">✦</span>
+              <span>{selectedModel}</span>
+              <span className="model-pill-chevron">{showModelMenu ? "▲" : "▼"}</span>
+            </button>
+            {showModelMenu && (
+              <div className="model-dropdown-menu">
+                <button
+                  className={`model-dropdown-item ${selectedModel.includes("Sonnet") ? "active" : ""}`}
+                  onClick={() => { setSelectedModel("Kairo 3.7 (Cyber-Ops Sonnet)"); setShowModelMenu(false); }}
+                >
+                  <div className="model-item-title">
+                    <span>Kairo 3.7 (Sonnet Tier)</span>
+                    <span className="wordmark-badge">Default</span>
+                  </div>
+                  <span className="model-item-desc">High-capability autonomous planning & Kali VM reasoning</span>
+                </button>
+                <button
+                  className={`model-dropdown-item ${selectedModel.includes("Haiku") ? "active" : ""}`}
+                  onClick={() => { setSelectedModel("Kairo 3.5 (Haiku Fast)"); setShowModelMenu(false); }}
+                >
+                  <div className="model-item-title">
+                    <span>Kairo 3.5 (Haiku Fast)</span>
+                    <span style={{ fontSize: "10px", color: "var(--accent-green)" }}>⚡ Low Latency</span>
+                  </div>
+                  <span className="model-item-desc">High-speed port discovery & initial banner reconnaissance</span>
+                </button>
+                <button
+                  className={`model-dropdown-item ${selectedModel.includes("Llama") ? "active" : ""}`}
+                  onClick={() => { setSelectedModel("Llama-3-70B Pentest SFT"); setShowModelMenu(false); }}
+                >
+                  <div className="model-item-title">
+                    <span>Llama-3-70B Pentest SFT</span>
+                    <span style={{ fontSize: "10px", color: "var(--accent-blue)" }}>Fine-Tuned</span>
+                  </div>
+                  <span className="model-item-desc">Local 70B cyber-ops weights with strict grammar constraints</span>
+                </button>
+                <button
+                  className={`model-dropdown-item ${selectedModel.includes("DeepSeek") ? "active" : ""}`}
+                  onClick={() => { setSelectedModel("DeepSeek-R1 Reasoner"); setShowModelMenu(false); }}
+                >
+                  <div className="model-item-title">
+                    <span>DeepSeek-R1 Reasoner</span>
+                    <span style={{ fontSize: "10px", color: "var(--accent-amber)" }}>Thinking</span>
+                  </div>
+                  <span className="model-item-desc">Deep chain-of-thought mathematical and exploit analysis</span>
+                </button>
+              </div>
+            )}
+          </div>
         </div>
 
         <div className="top-bar-right">
@@ -501,28 +602,37 @@ export default function Home() {
             {showStatusTooltip && (
               <div key="status-tooltip" className="status-tooltip">
                 <div className="status-tooltip-row">
-                  <span>Model</span>
-                  <strong>{modelCenter?.model_id || "None loaded"}</strong>
+                  <span>Model Engine</span>
+                  <strong>{modelCenter?.model_id || selectedModel}</strong>
                 </div>
                 <div className="status-tooltip-row">
-                  <span>Kali Worker</span>
+                  <span>Kali Worker VM</span>
                   <strong>{vmStatus?.worker_online ? "Online" : "Offline"}</strong>
                 </div>
                 <div className="status-tooltip-row">
-                  <span>Session</span>
+                  <span>Scope Boundary</span>
+                  <strong>{scopeInfo.target}</strong>
+                </div>
+                <div className="status-tooltip-row">
+                  <span>Session Hash</span>
                   <strong>{sessionId.slice(0, 12)}</strong>
                 </div>
               </div>
             )}
           </div>
 
-          {/* Single Advanced Button */}
+          {/* Claude Split Console / Artifacts Button */}
           <button
-            className="ghost-btn"
+            className="console-btn"
             onClick={() => setIsAdvancedOpen(true)}
-            aria-label="Open Advanced Panel"
+            aria-label="Open Console and Artifacts"
+            title="Open Console, Artifacts, and Subsystem Telemetry"
           >
-            ⚙ Advanced
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <rect width="18" height="18" x="3" y="3" rx="2" />
+              <line x1="15" x2="15" y1="3" y2="21" />
+            </svg>
+            <span>⚙ Advanced</span>
           </button>
         </div>
       </header>
@@ -539,10 +649,15 @@ export default function Home() {
           />
         )}
 
-        {/* Sidebar (260px) */}
-        <aside className={`sidebar ${isMobileSidebarOpen ? "mobile-open" : ""}`}>
+        {/* Sidebar (Claude-styled 260px) */}
+        <aside className={`sidebar ${isSidebarCollapsed ? "collapsed" : ""} ${isMobileSidebarOpen ? "mobile-open" : ""}`}>
           <div className="sidebar-mobile-header">
-            <span className="wordmark">Kairo</span>
+            <div className="wordmark-container">
+              <svg className="wordmark-spark" viewBox="0 0 24 24" fill="currentColor">
+                <path d="M12 2L14.39 8.26L21 9.27L16.2 13.97L17.33 20.6L12 17.27L6.67 20.6L7.8 13.97L3 9.27L9.61 8.26L12 2Z" />
+              </svg>
+              <span className="wordmark">Kairo</span>
+            </div>
             <button
               className="ghost-btn"
               onClick={() => setIsMobileSidebarOpen(false)}
@@ -553,7 +668,11 @@ export default function Home() {
           </div>
 
           <button className="new-session-btn" onClick={handleNewSession}>
-            + New session
+            <div className="new-session-left">
+              <span className="new-session-spark">✦</span>
+              <span>New session</span>
+            </div>
+            <span className="new-session-shortcut">Ctrl K</span>
           </button>
 
           <div className="sidebar-section-label">Recent</div>
@@ -572,6 +691,15 @@ export default function Home() {
               </button>
             ))}
           </div>
+
+          {/* Bottom Operator Profile Card */}
+          <div className="sidebar-profile-card">
+            <div className="profile-avatar">OP</div>
+            <div className="profile-info">
+              <span className="profile-name">Security Operator</span>
+              <span className="profile-tier">Airgap · Tier 2 Authorized</span>
+            </div>
+          </div>
         </aside>
 
         {/* Central Chat Area */}
@@ -579,11 +707,73 @@ export default function Home() {
           <div className="messages-scroll-area">
             <div className="messages-inner">
               {messages.length === 0 ? (
-                <div className="chat-empty-state">
-                  <div className="chat-empty-icon">🛡️</div>
-                  <p className="chat-empty-text">
-                    Describe a security task in plain language to get started.
+                /* Claude Welcome Screen with 4 Starter Cards */
+                <div className="claude-welcome-container">
+                  <svg className="claude-welcome-spark" viewBox="0 0 24 24" fill="currentColor">
+                    <path d="M12 2L14.39 8.26L21 9.27L16.2 13.97L17.33 20.6L12 17.27L6.67 20.6L7.8 13.97L3 9.27L9.61 8.26L12 2Z" />
+                  </svg>
+                  <h1 className="claude-welcome-title">What would you like to investigate today?</h1>
+                  <p className="claude-welcome-subtitle">
+                    Kairo is your autonomous cyber defense cockpit. Select an operational template or describe a security directive in plain language below.
                   </p>
+
+                  <div className="claude-starter-grid">
+                    <div
+                      className="claude-starter-card"
+                      onClick={() => {
+                        setInputVal("Perform comprehensive reconnaissance and port discovery against 192.168.1.0/24");
+                        textareaRef.current?.focus();
+                      }}
+                    >
+                      <div className="claude-starter-header">
+                        <span className="claude-starter-icon">🔍</span>
+                        <span className="claude-starter-title">Reconnaissance &amp; Scan</span>
+                      </div>
+                      <p className="claude-starter-desc">Map attack surface and identify open ports on target subnet</p>
+                    </div>
+
+                    <div
+                      className="claude-starter-card"
+                      onClick={() => {
+                        setInputVal("Conduct comprehensive penetration test against 192.168.1.50 with parallel decomposition");
+                        textareaRef.current?.focus();
+                      }}
+                    >
+                      <div className="claude-starter-header">
+                        <span className="claude-starter-icon">⚡</span>
+                        <span className="claude-starter-title">Autonomous DAG Plan</span>
+                      </div>
+                      <p className="claude-starter-desc">Decompose multi-stage penetration test into ordered tasks</p>
+                    </div>
+
+                    <div
+                      className="claude-starter-card"
+                      onClick={() => {
+                        setAdvancedTab("terminal");
+                        setIsAdvancedOpen(true);
+                      }}
+                    >
+                      <div className="claude-starter-header">
+                        <span className="claude-starter-icon">💻</span>
+                        <span className="claude-starter-title">Kali Terminal Session</span>
+                      </div>
+                      <p className="claude-starter-desc">Launch isolated CLI sandbox environment with live audit</p>
+                    </div>
+
+                    <div
+                      className="claude-starter-card"
+                      onClick={() => {
+                        setAdvancedTab("audit");
+                        setIsAdvancedOpen(true);
+                      }}
+                    >
+                      <div className="claude-starter-header">
+                        <span className="claude-starter-icon">🛡️</span>
+                        <span className="claude-starter-title">Audit Findings &amp; CVEs</span>
+                      </div>
+                      <p className="claude-starter-desc">Inspect verified vulnerability findings and evidence store</p>
+                    </div>
+                  </div>
                 </div>
               ) : (
                 messages.map((m) => (
@@ -592,19 +782,61 @@ export default function Home() {
                       <div className="user-bubble">{m.text}</div>
                     ) : m.sender === "agent" ? (
                       <div className="agent-document">
-                        {m.text && <p>{m.text}</p>}
+                        <div className="agent-header">
+                          <div className="agent-avatar">
+                            <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
+                              <path d="M12 2L14.39 8.26L21 9.27L16.2 13.97L17.33 20.6L12 17.27L6.67 20.6L7.8 13.97L3 9.27L9.61 8.26L12 2Z" />
+                            </svg>
+                          </div>
+                          <span className="agent-name">Kairo</span>
+                          <span className="agent-model-badge">Sonnet-Grade</span>
+                          <span className="agent-timestamp">{m.timestamp || "Just now"}</span>
+                        </div>
 
-                        {/* Inline Tool Execution Card */}
+                        {/* Claude 3.7 Extended Thinking Accordion */}
+                        {(m.toolSelection || m.recovery_path || m.durationMs) && (
+                          <div className="claude-thinking-block">
+                            <button className="claude-thinking-toggle" onClick={() => toggleThinking(m.id)}>
+                              <div className="thinking-left">
+                                <span className="thinking-spark">✦</span>
+                                <span>Thought for {m.durationMs ? `${(m.durationMs / 1000).toFixed(1)}s` : "1.4s"}</span>
+                              </div>
+                              <span className="thinking-chevron">{expandedThinking[m.id] ? "▲" : "▼"}</span>
+                            </button>
+                            {expandedThinking[m.id] && (
+                              <div className="claude-thinking-content">
+                                <div style={{ marginBottom: "6px" }}>
+                                  <strong style={{ color: "var(--text-primary)" }}>Cognitive Evaluation:</strong> Evaluated goal requirements against Scope Contract <code>{scopeInfo.target}</code> and tool safety tier.
+                                </div>
+                                {m.toolSelection?.selection_reason && (
+                                  <div style={{ marginBottom: "6px" }}>
+                                    <strong style={{ color: "var(--text-primary)" }}>Tool Selection Rationale:</strong> {m.toolSelection.selection_reason}
+                                  </div>
+                                )}
+                                {m.recovery_narrative && (
+                                  <div>
+                                    <strong style={{ color: "var(--status-warning)" }}>Self-Healing Recovery:</strong> {m.recovery_narrative}
+                                  </div>
+                                )}
+                              </div>
+                            )}
+                          </div>
+                        )}
+
+                        {m.text && <div className="agent-body-text">{m.text}</div>}
+
+                        {/* Claude Artifact / Tool Execution Card */}
                         {m.tool && (
                           <div
                             className={`tool-card ${
                               m.execution && m.execution.exit_code !== 0 ? "failed" : ""
                             }`}
                           >
-                            <div className="tool-card-header" onClick={() => toggleCard(m.id)}>
+                            <div className="tool-card-header">
                               <div className="tool-card-left">
+                                <span className="artifact-pill">Artifact</span>
                                 <span className="tool-card-title">
-                                  🔧 {m.tool.name || m.tool.id}
+                                  {m.tool.name || m.tool.id}
                                 </span>
                                 <div className="tool-card-status">
                                   <span
@@ -613,14 +845,26 @@ export default function Home() {
                                     }`}
                                   />
                                   <span>
-                                    {m.execution?.exit_code === 0 ? "success" : "failed"}
+                                    {m.execution?.exit_code === 0 ? "Verified" : "Failed"}
                                     {m.durationMs ? ` (${(m.durationMs / 1000).toFixed(1)}s)` : ""}
                                   </span>
                                 </div>
                               </div>
-                              <button className="tool-card-toggle">
-                                {expandedCards[m.id] ? "▲ Details" : "▼ Details"}
-                              </button>
+                              <div className="tool-card-actions">
+                                <button
+                                  className="open-console-btn"
+                                  onClick={() => openToolInConsole(m.tool?.id)}
+                                  title="Inspect in Advanced Console"
+                                >
+                                  Open in Console ↗
+                                </button>
+                                <button
+                                  className="tool-card-toggle"
+                                  onClick={() => toggleCard(m.id)}
+                                >
+                                  {expandedCards[m.id] ? "▲ Details" : "▼ Details"}
+                                </button>
+                              </div>
                             </div>
 
                             {expandedCards[m.id] && (
@@ -663,7 +907,7 @@ export default function Home() {
 
                                 {/* 3. Command & Output */}
                                 <div>
-                                  <div className="tool-section-label">Command & Telemetry</div>
+                                  <div className="tool-section-label">Command &amp; Telemetry</div>
                                   <div className="code-block">
                                     {m.execution?.command && (
                                       <div>
@@ -714,7 +958,7 @@ export default function Home() {
             </div>
           </div>
 
-          {/* Composer & Bottom Controls */}
+          {/* Claude Floating Composer & Bottom Controls */}
           <footer className="chat-footer">
             <div className="chat-footer-inner">
               {/* Scope & Notice bar */}
@@ -773,7 +1017,7 @@ export default function Home() {
                 </div>
               )}
 
-              {/* Composer Input Row */}
+              {/* Claude Rounded Composer */}
               <div className="composer-row">
                 <textarea
                   ref={textareaRef}
@@ -784,22 +1028,33 @@ export default function Home() {
                   onKeyDown={handleKeyDown}
                   placeholder={
                     wsStatus === "connected"
-                      ? "Describe what you want to do…"
-                      : "Connecting to Kairo…"
+                      ? "Reply to Kairo or enter an autonomous cyber security directive…"
+                      : "Connecting to Kairo Gateway…"
                   }
                   disabled={wsStatus !== "connected"}
                 />
-                <button
-                  className="send-btn"
-                  onClick={handleSend}
-                  disabled={!inputVal.trim() || wsStatus !== "connected"}
-                  aria-label="Send Message"
-                >
-                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                    <line x1="22" y1="2" x2="11" y2="13" />
-                    <polygon points="22 2 15 22 11 13 2 9 22 2" />
-                  </svg>
-                </button>
+                <div className="composer-actions-bottom">
+                  <div className="composer-tools-left">
+                    <span
+                      className="composer-model-pill"
+                      style={{ cursor: "pointer" }}
+                      onClick={() => setShowModelMenu(true)}
+                    >
+                      ✦ {selectedModel.split(" ")[0]}
+                    </span>
+                  </div>
+                  <button
+                    className="send-btn"
+                    onClick={handleSend}
+                    disabled={!inputVal.trim() || wsStatus !== "connected"}
+                    aria-label="Send Directive"
+                  >
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                      <line x1="12" y1="19" x2="12" y2="5" />
+                      <polyline points="5 12 12 5 19 12" />
+                    </svg>
+                  </button>
+                </div>
               </div>
             </div>
           </footer>

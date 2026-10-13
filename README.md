@@ -4,8 +4,25 @@ An enterprise-grade, local-first autonomous agent platform engineered for defens
 
 ---
 
+## Complete Documentation Suite
+
+| Document | Path | Scope & Focus |
+| :--- | :--- | :--- |
+| **Claude UI Design System** | [`DESIGN.md`](DESIGN.md) | Anthropic Claude Warm Dark design language, design tokens, Newsreader typography, interactive state specs, and screenshot gallery |
+| **System Architecture** | [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) | Monorepo service topology, boundaries, process execution lifecycle, IPC protocols, and fault recovery |
+| **Claude UI Specification** | [`docs/CLAUDE_UI_SPEC.md`](docs/CLAUDE_UI_SPEC.md) | Component catalog, welcome screen, starter prompts, thinking accordions, artifact cards, and mobile responsive layout |
+| **API Reference** | [`docs/API_REFERENCE.md`](docs/API_REFERENCE.md) | Gateway WebSocket protocol, Orchestrator FastAPI REST routes, Kali worker REST API, and SQLite 20-field audit schema |
+| **ToolSpec Guide & SDK** | [`docs/TOOLSPEC_GUIDE.md`](docs/TOOLSPEC_GUIDE.md) | 16-field declarative ToolSpec schema, authoring workflow, 7-Gate Conformance Engine, and registry loading |
+| **Security & Scope Contracts** | [`docs/SECURITY_AND_SCOPE.md`](docs/SECURITY_AND_SCOPE.md) | Cryptographic HMAC-SHA256 scope authorization, CIDR IP validation, and Kali VM sandbox zero-trust containment |
+| **Deployment & Setup** | [`docs/DEPLOYMENT_AND_SETUP.md`](docs/DEPLOYMENT_AND_SETUP.md) | Step-by-step local development setup, VirtualBox Kali VM provisioning, Docker lab targets, and troubleshooting |
+| **Evaluation & Benchmarks** | [`docs/EVALUATION_AND_BENCHMARKS.md`](docs/EVALUATION_AND_BENCHMARKS.md) | 50-task Golden & 120-task Full Benchmark suites, scoring metrics, and model leaderboard comparisons |
+| **Contributing Guide** | [`docs/CONTRIBUTING.md`](docs/CONTRIBUTING.md) | Code style, commit standards, test requirements, 7-gate certification workflow, and pull request checklist |
+
+---
+
 ## Table of Contents
 
+- [Claude UI Architecture & Visual Interface](#claude-ui-architecture--visual-interface)
 - [1. Monorepo Architecture & Service Topology](#1-monorepo-architecture--service-topology)
 - [2. Quickstart & Service Orchestration](#2-quickstart--service-orchestration)
 - [3. Local Model Plumbing & Grammar Constraints (`llama.cpp`)](#3-local-model-plumbing--grammar-constraints-llamacpp)
@@ -25,6 +42,37 @@ An enterprise-grade, local-first autonomous agent platform engineered for defens
 - [17. ToolSpec SDK & Third-Party Extension Framework](#17-toolspec-sdk--third-party-extension-framework)
 - [18. Public Benchmark Leaderboard & Multi-Model Version Score History](#18-public-benchmark-leaderboard--multi-model-version-score-history)
 - [19. Master Verification & Test Suite Matrix](#19-master-verification--test-suite-matrix)
+
+---
+
+## Claude UI Architecture & Visual Interface
+
+Kairo features an executive-grade frontend interface faithfully modeled after the **Anthropic Claude UI**, blending literary, book-inspired visual quiet with high-density security operational tooling:
+
+- **Warm Dark Slate Palette**: Built on deep warm slate backgrounds (`#181816`), warm obsidian sidebars (`#141413`), stone borders (`#2d2c28`), and Anthropic's signature Terracotta Coral accent (`#d97757`).
+- **Editorial Typography**: Pairing serif headlines (`Newsreader` / `Lora`) with crisp sans-serif text (`Inter`) and monospace code formatting (`JetBrains Mono`).
+- **Signature Claude Welcome Screen**: Features the 8-point terracotta starburst spark icon, welcome greeting, and a responsive 2x2 grid of starter prompts with pre-filled scope presets.
+- **Claude Model Selector**: Header dropdown offering seamless selection between *Sonnet 3.7 Tier* (Advanced Reasoning), *Haiku 3.5 Fast* (Triage), *Llama-3-70B SFT* (Air-gapped), and *DeepSeek-R1 Reasoner*.
+- **Claude 3.7 Extended Thinking Accordion**: Collapsible thinking blocks displaying real-time cognitive reasoning telemetry (`✦ Thought for 1.4s ▾`).
+- **Claude Artifact Cards**: Interactive inline tool deliverables featuring dual actions: copy raw JSON output or deep-link directly into the corresponding drawer tab (`Open in Console ↗`).
+- **Floating Pill Composer**: Rounded floating input bar (`border-radius: 20px`) with integrated cryptographic Scope Contract popover and circular terracotta send button.
+- **Collapsible Console & Subsystem Drawer**: Right-hand drawer with smooth toggle (`[ | ] ⚙ Advanced`), width toggling (560px standard / 880px wide), and deep subsystem views (Terminal, Kali Screen, DAG Task Graph, System Telemetry, Audit Explorer, and Benchmark Leaderboard).
+
+### Visual Screenshot Gallery
+
+| Screen View | Description | Screenshot |
+| :--- | :--- | :--- |
+| **Claude Welcome Screen** | Serif typography, terracotta spark monogram, and interactive starter prompt cards | ![Claude Welcome Screen](docs/assets/screenshots/01_claude_welcome_screen.png) |
+| **Claude Model Selector** | Top bar dropdown selecting Claude models and local LLM backends | ![Claude Model Selector](docs/assets/screenshots/02_claude_model_selector.png) |
+| **Scope Contract Modal** | Cryptographic HMAC-SHA256 authorization and CIDR containment popover | ![Scope Contract Modal](docs/assets/screenshots/03_claude_scope_popover.png) |
+| **Extended Thinking & Artifacts** | Live chat stream with collapsible thinking accordions and artifact cards | ![Chat Messages & Thinking](docs/assets/screenshots/04_claude_chat_messages.png) |
+| **Console: System Telemetry** | Real-time memory, process, and Kali sandbox hardware monitoring | ![Console System](docs/assets/screenshots/05_claude_console_system.png) |
+| **Console: Interactive Terminal** | VT100 / Xterm.js streaming terminal connected to isolated Kali worker | ![Console Terminal](docs/assets/screenshots/06_claude_console_terminal.png) |
+| **Console: Kali Screen Stream** | Low-latency RFB / noVNC streaming for GUI security tool automation | ![Console Screen](docs/assets/screenshots/07_claude_console_screen.png) |
+| **Console: DAG Task Graph** | Interactive node-based Directed Acyclic Graph planner visualization | ![Console Task Graph](docs/assets/screenshots/08_claude_console_task_graph.png) |
+| **Console: Audit Explorer** | Immutable 20-field SQLite operational audit log inspector | ![Console Audit](docs/assets/screenshots/09_claude_console_audit.png) |
+| **Console: Benchmark Leaderboard** | Multi-model evaluation history and golden benchmark scoring matrix | ![Console Benchmarks](docs/assets/screenshots/10_claude_console_benchmarks.png) |
+| **Mobile Responsive View** | Fluid touch-friendly layout on narrow 375px mobile viewports | ![Mobile View](docs/assets/screenshots/11_claude_mobile_view.png) |
 
 ---
 
