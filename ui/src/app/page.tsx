@@ -99,6 +99,7 @@ interface ChatMessage {
   text: string;
   timestamp: string;
   taskId?: string;
+  eventId?: string | number;
   tool?: {
     id: string;
     version: string;
@@ -140,6 +141,17 @@ interface VMStatus {
   worker_online: boolean;
   snapshots_count?: number;
   snapshots?: Array<{ name: string; timestamp?: string }>;
+}
+
+let msgCounter = 0;
+function createUniqueMsgId(prefix: string, explicitId?: string): string {
+  msgCounter = (msgCounter + 1) % 1000000;
+  const rand = Math.random().toString(36).substring(2, 8);
+  const ts = Date.now();
+  if (explicitId && typeof explicitId === "string" && explicitId.trim()) {
+    return `${explicitId.trim()}_${ts}_${msgCounter}_${rand}`;
+  }
+  return `msg_${ts}_${msgCounter}_${rand}_${prefix}`;
 }
 
 export default function Home() {
@@ -327,22 +339,28 @@ export default function Home() {
           } else if (data.type === "agent_response") {
             setActiveTaskId(null);
             setRunningToolName(null);
-            const msgId = `msg_${Date.now()}_resp`;
-            setMessages((prev) => [
-              ...prev,
-              {
-                id: msgId,
-                sender: "agent",
-                text: data.reply || "",
-                timestamp: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
-                tool: data.toolExecuted,
-                execution: data.execution,
-                durationMs: data.durationMs,
-                toolSelection: data.toolSelection,
-                recovery_narrative: data.execution?.recovery_narrative,
-                recovery_path: data.execution?.recovery_path,
-              },
-            ]);
+            const msgId = createUniqueMsgId("resp", data.id || data.messageId);
+            setMessages((prev) => {
+              if (data.eventId && prev.some((m) => m.eventId === data.eventId)) {
+                return prev;
+              }
+              return [
+                ...prev,
+                {
+                  id: msgId,
+                  eventId: data.eventId,
+                  sender: "agent",
+                  text: data.reply || "",
+                  timestamp: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
+                  tool: data.toolExecuted,
+                  execution: data.execution,
+                  durationMs: data.durationMs,
+                  toolSelection: data.toolSelection,
+                  recovery_narrative: data.execution?.recovery_narrative,
+                  recovery_path: data.execution?.recovery_path,
+                },
+              ];
+            });
 
             // If execution failed, auto-expand tool card
             if (data.execution && data.execution.exit_code !== 0) {
@@ -355,10 +373,11 @@ export default function Home() {
           } else if (data.type === "scope_violation") {
             setActiveTaskId(null);
             setRunningToolName(null);
+            const msgId = createUniqueMsgId("scope_err");
             setMessages((prev) => [
               ...prev,
               {
-                id: `msg_${Date.now()}_scope_err`,
+                id: msgId,
                 sender: "agent",
                 text: `Scope Violation Blocked: Tool "${data.tool || "tool"}" targeting ${data.target || "host"} is outside the authorized CIDR scope contract. ${data.reason || ""}`,
                 timestamp: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
@@ -367,10 +386,11 @@ export default function Home() {
           } else if (data.type === "error") {
             setActiveTaskId(null);
             setRunningToolName(null);
+            const msgId = createUniqueMsgId("err");
             setMessages((prev) => [
               ...prev,
               {
-                id: `msg_${Date.now()}_err`,
+                id: msgId,
                 sender: "system",
                 text: `Error: ${data.error}`,
                 timestamp: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
@@ -412,7 +432,7 @@ export default function Home() {
     setRunningToolName(null);
 
     const userMsg: ChatMessage = {
-      id: `msg_${Date.now()}_user`,
+      id: createUniqueMsgId("user"),
       sender: "user",
       text,
       timestamp: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
@@ -447,7 +467,7 @@ export default function Home() {
 
   // Start a new session
   const handleNewSession = () => {
-    const newId = `sess_${Date.now().toString(36)}`;
+    const newId = `sess_${Date.now().toString(36)}_${Math.random().toString(36).substring(2, 6)}`;
     setSessionId(newId);
     setMessages([]);
     setActiveTaskId(null);
@@ -677,9 +697,9 @@ export default function Home() {
 
           <div className="sidebar-section-label">Recent</div>
           <div className="session-list">
-            {sessions.map((s) => (
+            {sessions.map((s, idx) => (
               <button
-                key={s.id}
+                key={`${s.id}-${idx}`}
                 className={`session-item ${s.id === sessionId ? "active" : ""}`}
                 onClick={() => {
                   setSessionId(s.id);
@@ -776,8 +796,8 @@ export default function Home() {
                   </div>
                 </div>
               ) : (
-                messages.map((m) => (
-                  <div key={m.id} className={`turn-wrapper ${m.sender}`}>
+                messages.map((m, idx) => (
+                  <div key={`${m.id || "msg"}-${idx}`} className={`turn-wrapper ${m.sender}`}>
                     {m.sender === "user" ? (
                       <div className="user-bubble">{m.text}</div>
                     ) : m.sender === "agent" ? (
