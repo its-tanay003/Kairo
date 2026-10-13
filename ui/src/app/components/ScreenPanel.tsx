@@ -67,7 +67,7 @@ export default function ScreenPanel({
   // Query orchestrator screen info/status
   const fetchScreenStatus = useCallback(async () => {
     try {
-      const resp = await fetch("/screen/status");
+      const resp = await fetch("http://localhost:4000/screen/status");
       if (resp.ok) {
         const data = (await resp.json()) as ScreenTelemetry;
         setStreamInfo(data);

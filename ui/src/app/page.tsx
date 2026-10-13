@@ -312,20 +312,29 @@ export default function Home() {
 
   // WebSocket lifecycle
   useEffect(() => {
+    let isMounted = true;
     let reconnectTimeout: ReturnType<typeof setTimeout> | undefined;
 
     function connect() {
+      if (!isMounted) return;
       setWsStatus("connecting");
       const wsUrl = `ws://localhost:4000/?sessionId=${sessionId}`;
       const ws = new WebSocket(wsUrl);
       wsRef.current = ws;
 
       ws.onopen = () => {
+        if (!isMounted) {
+          if (ws.readyState === WebSocket.OPEN) {
+            ws.close();
+          }
+          return;
+        }
         setWsStatus("connected");
         setWsInstance(ws);
       };
 
       ws.onmessage = (event) => {
+        if (!isMounted) return;
         try {
           const data = JSON.parse(event.data);
 
@@ -403,22 +412,47 @@ export default function Home() {
       };
 
       ws.onclose = () => {
+        if (!isMounted) return;
         setWsStatus("disconnected");
         setWsInstance(null);
         reconnectTimeout = setTimeout(connect, 3000);
       };
 
       ws.onerror = () => {
-        ws.close();
+        if (!isMounted) return;
+        if (ws.readyState === WebSocket.OPEN) {
+          ws.close();
+        }
       };
     }
 
     connect();
 
     return () => {
+      isMounted = false;
       clearTimeout(reconnectTimeout);
       setWsInstance(null);
-      wsRef.current?.close();
+
+      const socket = wsRef.current;
+      if (socket) {
+        socket.onopen = null;
+        socket.onmessage = null;
+        socket.onerror = null;
+        socket.onclose = null;
+
+        if (socket.readyState === WebSocket.OPEN) {
+          socket.close();
+        } else if (socket.readyState === WebSocket.CONNECTING) {
+          socket.onopen = () => {
+            try {
+              socket.close();
+            } catch {
+              // Ignore any errors if closed during transition
+            }
+          };
+        }
+      }
+      wsRef.current = null;
     };
   }, [sessionId]);
 
