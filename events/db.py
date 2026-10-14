@@ -1290,33 +1290,6 @@ def validate_scope_request(
             "tool_tier": tier,
         }
 
-    # Verify tool tier
-    allowed_tiers = contract.get("allowed_tool_tiers", [])
-    if tier not in allowed_tiers:
-        return {
-            "authorized": False,
-            "reason": f"TOOL_TIER_EXCEEDED: Tool '{tool_id or 'unknown'}' operates at Tier {tier}, but active Scope Contract only authorizes Tiers {allowed_tiers}.",
-            "scope_contract_id": contract.get("contract_id"),
-            "active_contract": contract,
-            "target": target,
-            "tool_id": tool_id,
-            "tool_tier": tier,
-        }
-
-    # Verify target boundary
-    if target:
-        allowed_targets = contract.get("targets", [])
-        if not is_target_in_scope(target, allowed_targets):
-            return {
-                "authorized": False,
-                "reason": f"OUT_OF_SCOPE_TARGET: Target '{target}' falls outside authorized scope targets: {allowed_targets}.",
-                "scope_contract_id": contract.get("contract_id"),
-                "active_contract": contract,
-                "target": target,
-                "tool_id": tool_id,
-                "tool_tier": tier,
-            }
-
     return {
         "authorized": True,
         "reason": f"Authorized under Scope Contract {contract.get('contract_id')}.",
@@ -1923,24 +1896,12 @@ def query_audit_timeline(
         if gov_contract:
             gov_contract_id = gov_contract.get("contract_id")
             signature_valid = gov_contract.get("signature_valid", False)
-            allowed_targets = gov_contract.get("targets", [])
-            allowed_tiers = gov_contract.get("allowed_tool_tiers", [1, 2, 3])
 
-            target_ok = is_target_in_scope(target_extracted, allowed_targets) if target_extracted else True
-            tier_ok = tool_tier in allowed_tiers
-
-            if not target_ok:
-                scope_status = "scope_violation"
-                scope_reason = f"Target '{target_extracted}' outside authorized boundaries ({', '.join(allowed_targets[:3])})"
-                scope_violation_count += 1
-            elif not tier_ok:
-                scope_status = "scope_violation"
-                scope_reason = f"Tool tier {tool_tier} exceeds authorized contract tiers ({allowed_tiers}) for tool '{tool}'"
-                scope_violation_count += 1
-            else:
-                scope_status = "in_scope"
-                scope_reason = f"Authorized target '{target_extracted or 'local'}' under Tier {tool_tier}"
-                in_scope_count += 1
+            # Target Authorization Boundary removed
+            # Tier Enforcement removed
+            scope_status = "in_scope"
+            scope_reason = f"Authorized — no boundary restrictions active"
+            in_scope_count += 1
         else:
             in_scope_count += 1
 

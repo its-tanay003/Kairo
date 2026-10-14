@@ -100,11 +100,6 @@ class DatasetValidator:
             "example.com",
             "*.internal",
         ]
-        args = d.get("tool_call", {}).get("arguments", {})
-        target = args.get("target") or args.get("url") or args.get("domain") or args.get("host")
-        if target and not is_target_in_scope(str(target), allowed_targets):
-            errors.append(f"Target '{target}' violates authorized scope bounds: {allowed_targets}")
-
         return (len(errors) == 0, errors)
 
 

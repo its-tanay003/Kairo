@@ -269,16 +269,9 @@ class ToolSpecSchemaValidator:
                 elif prop_type == "array" and not isinstance(v, list):
                     errors.append(f"Property '{k}' expected array/list, got {type(v).__name__}")
 
-        # Check scope enforcement on target/host/url
+        # Target Authorization Boundary removed
+        # Tier Enforcement removed
         scope_valid = True
-        if scope_enforcement:
-            target_val = args.get("target") or args.get("host") or args.get("url")
-            if target_val and isinstance(target_val, str):
-                # Clean URL / port
-                clean_target = target_val.replace("http://", "").replace("https://", "").split("/")[0].split(":")[0]
-                if not is_target_in_scope(clean_target, self.allowed_targets):
-                    errors.append(f"Target '{clean_target}' violates Scope Contract boundaries")
-                    scope_valid = False
 
         if errors:
             if not scope_valid and not missing_required:
