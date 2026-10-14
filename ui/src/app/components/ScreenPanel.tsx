@@ -57,8 +57,8 @@ export default function ScreenPanel({
     const host = window.location.hostname || "127.0.0.1";
     if (useGatewayTunnel) {
       const proto = window.location.protocol === "https:" ? "wss:" : "ws:";
-      const port = window.location.port ? `:${window.location.port}` : "";
-      return `${proto}//${host}${port}/vnc`;
+      const gatewayPort = (host === "localhost" || host === "127.0.0.1") ? ":4000" : (window.location.port ? `:${window.location.port}` : "");
+      return `${proto}//${host}${gatewayPort}/vnc`;
     }
     // Direct port 6080 VNC WebSocket
     return `ws://${host}:6080`;
@@ -223,8 +223,8 @@ export default function ScreenPanel({
   useEffect(() => {
     let isMounted = true;
     const init = async () => {
+      await fetchScreenStatus();
       if (isMounted) {
-        await fetchScreenStatus();
         await connectVnc();
       }
     };
@@ -238,6 +238,7 @@ export default function ScreenPanel({
         } catch {
           // ignore
         }
+        rfbRef.current = null;
       }
     };
   }, [connectVnc, fetchScreenStatus]);
