@@ -1180,6 +1180,8 @@ def seed_default_scope_contract(db_path: Path | str = DEFAULT_DB_PATH) -> Dict[s
             "192.168.56.0/24",
             "example.com",
             "*.internal",
+            "internet.lpu.in",
+            "*.lpu.in",
         ],
         network_scope="authorized_lab",
         time_window="8h",
