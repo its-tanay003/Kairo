@@ -125,7 +125,7 @@ export default function TerminalProcessView({
   const [customCommand, setCustomCommand] = useState<string>("");
   const [logCount, setLogCount] = useState<number>(0);
   const [internalMaximized, setInternalMaximized] = useState<boolean>(false);
-  const [viewMode, setViewMode] = useState<"split" | "terminal" | "tree">("split");
+  const [viewMode, setViewMode] = useState<"split" | "terminal" | "tree">("terminal");
   const [inspectorTab, setInspectorTab] = useState<"tree" | "caps" | "artifacts">("tree");
 
   // Resource caps and sandbox automation state
@@ -215,26 +215,26 @@ export default function TerminalProcessView({
 
         const term = new Terminal({
           theme: {
-            background: "#090d16",
-            foreground: "#38bdf8",
-            cursor: "#00f0ff",
-            cursorAccent: "#090d16",
-            selectionBackground: "rgba(56, 189, 248, 0.3)",
-            black: "#1e293b",
-            red: "#ef4444",
-            green: "#10b981",
-            yellow: "#f59e0b",
-            blue: "#3b82f6",
-            magenta: "#d946ef",
-            cyan: "#06b6d4",
-            white: "#f8fafc",
-            brightBlack: "#475569",
-            brightRed: "#f87171",
-            brightGreen: "#34d399",
-            brightYellow: "#fbbf24",
-            brightBlue: "#60a5fa",
-            brightMagenta: "#e879f9",
-            brightCyan: "#22d3ee",
+            background: "#0d0d0c",
+            foreground: "#ececec",
+            cursor: "#d97757",
+            cursorAccent: "#0d0d0c",
+            selectionBackground: "rgba(217, 119, 87, 0.3)",
+            black: "#1e1e1c",
+            red: "#f87171",
+            green: "#4ade80",
+            yellow: "#fbbf24",
+            blue: "#60a5fa",
+            magenta: "#c084fc",
+            cyan: "#38bdf8",
+            white: "#f5f5f4",
+            brightBlack: "#52524e",
+            brightRed: "#ef4444",
+            brightGreen: "#22c55e",
+            brightYellow: "#f59e0b",
+            brightBlue: "#3b82f6",
+            brightMagenta: "#a855f7",
+            brightCyan: "#06b6d4",
             brightWhite: "#ffffff",
           },
           fontFamily: "'JetBrains Mono', 'Fira Code', 'Cascadia Code', monospace",

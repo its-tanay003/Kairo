@@ -38,6 +38,8 @@ from orchestrator.vm_manager import vm_manager
 from orchestrator.tool_selector import tool_selector
 from orchestrator.adapters.registry import adapter_registry
 
+from orchestrator.claude_synthesis import synthesize_agent_response
+
 logger = logging.getLogger("orchestrator.agent")
 
 
@@ -166,11 +168,25 @@ class AgentLoop:
                 )
                 rejection_event_id = insert_event(rejection_event, self.db_path)
 
+                scope_synth = synthesize_agent_response(
+                    user_goal=message,
+                    tool_id=tool_id,
+                    tool_name=spec.name if spec else tool_id,
+                    inputs={"target": target_candidate},
+                    exit_code=403,
+                    stdout="",
+                    stderr=rejection_reason,
+                    duration_ms=0,
+                    is_scope_violation=True,
+                    scope_violation_reason=rejection_reason,
+                )
+
                 return {
                     "status": "rejected",
                     "authorized": False,
                     "error": "SCOPE_VIOLATION",
-                    "reply": f"⛔ Execution Gateway Rejected Tool '{tool_id}':\n{rejection_reason}",
+                    "reply": scope_synth["reply"],
+                    "synthesis": scope_synth,
                     "scope_violation": {
                         "reason": rejection_reason,
                         "scope_contract_id": scope_check.get("scope_contract_id"),
@@ -182,6 +198,14 @@ class AgentLoop:
                         "id": tool_id,
                         "name": spec.name if spec else tool_id,
                         "version": tool_version,
+                    },
+                    "execution": {
+                        "adapter": tool_id,
+                        "exit_code": 403,
+                        "stdout": "",
+                        "stderr": rejection_reason,
+                        "duration_ms": 0,
+                        "synthesis": scope_synth,
                     },
                     "event_id": rejection_event_id,
                     "event": asdict(rejection_event),
@@ -444,10 +468,30 @@ class AgentLoop:
             except Exception as e:
                 logger.warning(f"Failed to record tool memory: {e}")
 
+            # Generate Claude-style rich synthesis & structured process/output/result
+            try:
+                synthesis = synthesize_agent_response(
+                    user_goal=message,
+                    tool_id=tool_id,
+                    tool_name=spec.name if spec else tool_id,
+                    inputs=requested_args if isinstance(requested_args, dict) else {},
+                    exit_code=exit_code,
+                    stdout=stdout_output or "",
+                    stderr=stderr_output or "",
+                    observation=execution_details.get("observation"),
+                    duration_ms=round((time.time() - t0) * 1000, 2),
+                )
+                if synthesis.get("reply"):
+                    reply_text = synthesis["reply"]
+                execution_details["synthesis"] = synthesis
+            except Exception as e:
+                logger.warning(f"Synthesis error: {e}", exc_info=True)
+
             return {
                 "session_id": session_id,
                 "task_id": task_id,
                 "reply": reply_text,
+                "synthesis": execution_details.get("synthesis"),
                 "tool_executed": {
                     "id": tool_id,
                     "version": tool_version,

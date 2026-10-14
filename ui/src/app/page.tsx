@@ -7,6 +7,7 @@ import ScreenPanel from "./components/ScreenPanel";
 import AuditExplorer from "./components/AuditExplorer";
 import DatasetCurationPanel from "./components/DatasetCurationPanel";
 import BenchmarkLeaderboard from "./components/BenchmarkLeaderboard";
+import ClaudeOutputCard, { ClaudeSynthesisPayload, ClaudeToolSelectionMeta } from "./components/ClaudeOutputCard";
 
 interface EventRecord {
   id?: number;
@@ -61,6 +62,7 @@ interface ExecutionDetails {
   attempts?: number;
   event_id?: string;
   parent_event?: string;
+  synthesis?: ClaudeSynthesisPayload;
 }
 
 interface DimensionScore {
@@ -110,6 +112,7 @@ interface ChatMessage {
   toolSelection?: ToolSelectionResult;
   recovery_narrative?: string;
   recovery_path?: RecoveryHistoryStep[];
+  synthesis?: ClaudeSynthesisPayload;
 }
 
 interface ModelCenterStatus {
@@ -183,13 +186,8 @@ export default function Home() {
   const [expandedEventId, setExpandedEventId] = useState<number | null>(null);
   const [devCustomCmd, setDevCustomCmd] = useState<string>("");
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState<boolean>(false);
-  const [expandedThinking, setExpandedThinking] = useState<Record<string, boolean>>({});
   const [selectedModel, setSelectedModel] = useState<string>("Kairo 3.7 (Cyber-Ops Sonnet)");
   const [showModelMenu, setShowModelMenu] = useState<boolean>(false);
-
-  const toggleThinking = (id: string) => {
-    setExpandedThinking((prev) => ({ ...prev, [id]: !prev[id] }));
-  };
 
   const openToolInConsole = (toolId?: string) => {
     if (!toolId) {
@@ -212,7 +210,6 @@ export default function Home() {
   const [modelCenter, setModelCenter] = useState<ModelCenterStatus | null>(null);
   const [vmStatus, setVmStatus] = useState<VMStatus | null>(null);
   const [allEvents, setAllEvents] = useState<EventRecord[]>([]);
-  const [expandedCards, setExpandedCards] = useState<Record<string, boolean>>({});
 
   // Active Scope Contract info
   const [scopeInfo] = useState<{
@@ -367,14 +364,11 @@ export default function Home() {
                   toolSelection: data.toolSelection,
                   recovery_narrative: data.execution?.recovery_narrative,
                   recovery_path: data.execution?.recovery_path,
+                  synthesis: data.synthesis || data.execution?.synthesis,
                 },
               ];
             });
 
-            // If execution failed, auto-expand tool card
-            if (data.execution && typeof data.execution.exit_code === "number" && data.execution.exit_code !== 0) {
-              setExpandedCards((prev) => ({ ...prev, [msgId]: true }));
-            }
 
             if (data.event) {
               setAllEvents((prev) => [data.event, ...prev]);
@@ -512,10 +506,6 @@ export default function Home() {
     setIsMobileSidebarOpen(false);
   };
 
-  // Toggle tool card details
-  const toggleCard = (msgId: string) => {
-    setExpandedCards((prev) => ({ ...prev, [msgId]: !prev[msgId] }));
-  };
 
   // Dev tools helper actions
   const triggerDevAction = (type: string, payload: Record<string, unknown>) => {
@@ -835,176 +825,22 @@ export default function Home() {
                     {m.sender === "user" ? (
                       <div className="user-bubble">{m.text}</div>
                     ) : m.sender === "agent" ? (
-                      <div className="agent-document">
-                        <div className="agent-header">
-                          <div className="agent-avatar">
-                            <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
-                              <path d="M12 2L14.39 8.26L21 9.27L16.2 13.97L17.33 20.6L12 17.27L6.67 20.6L7.8 13.97L3 9.27L9.61 8.26L12 2Z" />
-                            </svg>
-                          </div>
-                          <span className="agent-name">Kairo</span>
-                          <span className="agent-model-badge">Sonnet-Grade</span>
-                          <span className="agent-timestamp">{m.timestamp || "Just now"}</span>
-                        </div>
-
-                        {/* Claude 3.7 Extended Thinking Accordion */}
-                        {(m.toolSelection || m.recovery_path || m.durationMs) && (
-                          <div className="claude-thinking-block">
-                            <button className="claude-thinking-toggle" onClick={() => toggleThinking(m.id)}>
-                              <div className="thinking-left">
-                                <span className="thinking-spark">✦</span>
-                                <span>Thought for {m.durationMs ? `${(m.durationMs / 1000).toFixed(1)}s` : "1.4s"}</span>
-                              </div>
-                              <span className="thinking-chevron">{expandedThinking[m.id] ? "▲" : "▼"}</span>
-                            </button>
-                            {expandedThinking[m.id] && (
-                              <div className="claude-thinking-content">
-                                <div style={{ marginBottom: "6px" }}>
-                                  <strong style={{ color: "var(--text-primary)" }}>Cognitive Evaluation:</strong> Evaluated goal requirements against Scope Contract <code>{scopeInfo.target}</code> and tool safety tier.
-                                </div>
-                                {m.toolSelection?.selection_reason && (
-                                  <div style={{ marginBottom: "6px" }}>
-                                    <strong style={{ color: "var(--text-primary)" }}>Tool Selection Rationale:</strong> {m.toolSelection.selection_reason}
-                                  </div>
-                                )}
-                                {m.recovery_narrative && (
-                                  <div>
-                                    <strong style={{ color: "var(--status-warning)" }}>Self-Healing Recovery:</strong> {m.recovery_narrative}
-                                  </div>
-                                )}
-                              </div>
-                            )}
-                          </div>
-                        )}
-
-                        {m.text && <div className="agent-body-text">{m.text}</div>}
-
-                        {/* Claude Artifact / Tool Execution Card */}
-                        {m.tool && (() => {
-                          const isToolFailed = Boolean(
-                            m.execution &&
-                            typeof m.execution.exit_code === "number" &&
-                            m.execution.exit_code !== 0
-                          );
-                          return (
-                            <div
-                              className={`tool-card ${isToolFailed ? "failed" : ""}`}
-                            >
-                              <div className="tool-card-header">
-                                <div className="tool-card-left">
-                                  <span className="artifact-pill">Artifact</span>
-                                  <span className="tool-card-title">
-                                    {m.tool.name || m.tool.id}
-                                  </span>
-                                  <div className="tool-card-status">
-                                    <span
-                                      className={`status-dot ${isToolFailed ? "error" : "success"}`}
-                                    />
-                                    <span>
-                                      {isToolFailed ? "Failed" : "Verified"}
-                                      {m.durationMs ? ` (${(m.durationMs / 1000).toFixed(1)}s)` : ""}
-                                    </span>
-                                  </div>
-                                </div>
-                                <div className="tool-card-actions">
-                                  <button
-                                    className="open-console-btn"
-                                    onClick={() => openToolInConsole(m.tool?.id)}
-                                    title="Inspect in Advanced Console"
-                                  >
-                                    Open in Console ↗
-                                  </button>
-                                  <button
-                                    className="tool-card-toggle"
-                                    onClick={() => toggleCard(m.id)}
-                                  >
-                                    {expandedCards[m.id] ? "▲ Details" : "▼ Details"}
-                                  </button>
-                                </div>
-                              </div>
-
-                              {expandedCards[m.id] && (
-                                <div className="tool-card-body">
-                                  {/* 1. Plain Language Summary */}
-                                  <div>
-                                    <div className="tool-section-label">Summary</div>
-                                    <div className="tool-summary-text">
-                                      {!isToolFailed
-                                        ? `Execution succeeded for ${m.tool.name || m.tool.id}. Results verified against declared schema.`
-                                        : `Execution failed with exit code ${m.execution?.exit_code || 1}.`}
-                                    </div>
-                                  </div>
-
-                                {/* 2. Why This Tool Scoring */}
-                                {m.toolSelection?.selected_tool && (
-                                  <div>
-                                    <div className="tool-section-label">Why This Tool</div>
-                                    <div className="scoring-bars-container">
-                                      {m.toolSelection.selected_tool.dimension_scores.map((dim) => (
-                                        <div key={dim.name} className="score-row">
-                                          <div className="score-row-meta">
-                                            <span>{dim.name.replace("_", " ")}</span>
-                                            <span>{dim.score_pct}%</span>
-                                          </div>
-                                          <div className="score-bar-track">
-                                            <div
-                                              className="score-bar-fill"
-                                              style={{ width: `${dim.score_pct}%` }}
-                                            />
-                                          </div>
-                                          <span className="score-row-reason">
-                                            {dim.raw_signal}
-                                          </span>
-                                        </div>
-                                      ))}
-                                    </div>
-                                  </div>
-                                )}
-
-                                {/* 3. Command & Output */}
-                                <div>
-                                  <div className="tool-section-label">Command &amp; Telemetry</div>
-                                  <div className="code-block">
-                                    {m.execution?.command && (
-                                      <div>
-                                        $ {m.execution.command} {m.execution.args?.join(" ")}
-                                      </div>
-                                    )}
-                                    {m.execution?.stdout && <div>{m.execution.stdout}</div>}
-                                    {m.execution?.stderr && (
-                                      <div style={{ color: "var(--status-error)" }}>
-                                        {m.execution.stderr}
-                                      </div>
-                                    )}
-                                    {!m.execution?.stdout && !m.execution?.command && (
-                                      <div>No stdout recorded.</div>
-                                    )}
-                                  </div>
-                                </div>
-
-                                {/* 4. Recovery Path */}
-                                {m.recovery_path && m.recovery_path.length > 0 && (
-                                  <div>
-                                    <div className="tool-section-label">Recovery Path</div>
-                                    <ul className="recovery-list">
-                                      {m.recovery_path.map((step, idx) => (
-                                        <li key={idx} className="recovery-step">
-                                          <strong>{idx + 1}.</strong>
-                                          <span>
-                                            Tried {step.tool || "tool"} — {step.failure_reason || "failed"}.{" "}
-                                            {step.action_taken || ""}
-                                          </span>
-                                        </li>
-                                      ))}
-                                    </ul>
-                                  </div>
-                                )}
-                              </div>
-                            )}
-                          </div>
-                        );
-                      })()}
-                      </div>
+                      <ClaudeOutputCard
+                        messageId={m.id}
+                        text={m.text}
+                        timestamp={m.timestamp}
+                        tool={m.tool}
+                        execution={m.execution}
+                        durationMs={m.durationMs}
+                        toolSelection={(m.toolSelection as unknown) as ClaudeToolSelectionMeta}
+                        synthesis={m.synthesis || m.execution?.synthesis}
+                        scopeTarget={scopeInfo.target}
+                        onRunPrompt={(prompt) => {
+                          setInputVal(prompt);
+                          textareaRef.current?.focus();
+                        }}
+                        onOpenConsole={(toolId) => openToolInConsole(toolId)}
+                      />
                     ) : (
                       <div className="system-notice">{m.text}</div>
                     )}
