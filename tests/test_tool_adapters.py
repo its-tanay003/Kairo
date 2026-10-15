@@ -701,5 +701,34 @@ class TestGobusterLiveVM:
         assert isinstance(obs.observation["findings"], list)
 
 
+class TestDnsenumParser:
+    def test_build_args(self):
+        from orchestrator.adapters.dnsenum_adapter import DnsenumAdapter
+        adapter = DnsenumAdapter.__new__(DnsenumAdapter)
+        args = adapter.build_args({"target": "example.com", "threads": 10, "noreverse": True})
+        assert "--threads" in args
+        assert "10" in args
+        assert "--noreverse" in args
+        assert "example.com" in args
+
+    def test_parse_output(self):
+        from orchestrator.adapters.dnsenum_adapter import DnsenumAdapter
+        adapter = DnsenumAdapter.__new__(DnsenumAdapter)
+        stdout = (
+            "Host's addresses:\n"
+            "__________________\n\n"
+            "example.com.                             5        IN    A        93.184.216.34\n\n"
+            "Name Servers:\n"
+            "______________\n\n"
+            "a.iana-servers.net.                      5        IN    A        199.43.135.53\n"
+        )
+        res = adapter.parse(stdout, "", 0, {"inputs": {"target": "example.com"}})
+        assert res["tool"] == "dnsenum"
+        assert res["domain"] == "example.com"
+        assert len(res["host_addresses"]) >= 1
+        assert res["host_addresses"][0]["ip"] == "93.184.216.34"
+        assert "199.43.135.53" in res["name_servers"]
+
+
 if __name__ == "__main__":
     pytest.main(["-v", __file__, "--tb=short"])

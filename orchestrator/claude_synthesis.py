@@ -444,11 +444,33 @@ def _synthesize_web_audit(
     observation: Optional[Dict[str, Any]],
     duration_s: float,
 ) -> Dict[str, Any]:
-    target = inputs.get("target") or inputs.get("url") or "target.local"
+    target = inputs.get("target") or inputs.get("url") or inputs.get("host") or "target.local"
     obs = observation or {}
-    alerts_count = obs.get("alerts_count", 0)
+    findings_list = obs.get("findings") or obs.get("vulnerabilities") or []
+    alerts_count = obs.get("alerts_count") or obs.get("total_findings") or len(findings_list)
+    server_info = obs.get("server_info", {})
+    conn_status = server_info.get("connection_status", "")
 
-    if exit_code == 0:
+    findings_rows = []
+    for f in findings_list[:50]:
+        findings_rows.append({
+            "item": f.get("uri") or f.get("path") or "/",
+            "value": f.get("description") or f.get("msg") or "Web finding",
+            "status": f.get("id") or f.get("osvdb") or "ALERT",
+        })
+
+    is_unreachable = conn_status == "unreachable" or "unable to connect" in stdout.lower() or "connection refused" in stdout.lower()
+
+    if exit_code == 0 and not is_unreachable:
+        findings_md = ""
+        if findings_list:
+            findings_md = "\n#### 🚨 Key Discovered Findings\n"
+            for f in findings_list[:8]:
+                uri = f.get("uri") or "/"
+                desc = f.get("description") or "Potential vulnerability"
+                fid = f.get("id") or f.get("osvdb") or "FINDING"
+                findings_md += f"- **`{fid}`** at `{uri}`: {desc}\n"
+
         md = f"""### 🛡️ Web Security Audit Completed
 
 Executed **`{tool_name}`** against web target **`{target}`**.
@@ -457,14 +479,29 @@ Executed **`{tool_name}`** against web target **`{target}`**.
 - **Target URL:** `{target}`
 - **Security Alerts Identified:** `{alerts_count}`
 - **Analysis Execution Time:** `{duration_s}s`
-
+{f"- **Web Server:** `{server_info.get('server')}`" if server_info.get('server') else ""}
+{findings_md}
 #### 📋 Discovered Vulnerability Posture
-- Verified against declared OWASP Top 10 baseline.
+- Verified against declared OWASP baseline.
 - Findings and evidence files have been logged into the cryptographically verifiable SQLite Evidence Store.
 
 #### 💡 Recommended Next Actions
 - Inspect the generated audit compliance report in the Advanced Console -> Audit tab.
 - Re-test specific endpoints after remediation.
+"""
+    elif is_unreachable:
+        md = f"""### ⚠️ Web Target Unreachable
+
+Executed **`{tool_name}`** against **`{target}`**, but the target server did not respond on the designated port.
+
+#### 🔍 Execution Details:
+- **Target Asset:** `{target}`
+- **Port:** `{inputs.get('port', 80)}`
+- **Diagnostic:** Target service is not running or connections are refused/filtered.
+
+#### 💡 Resolution:
+- Verify that the web server on `{target}` is running and bound to port `{inputs.get('port', 80)}`.
+- If testing a local dev server, ensure it is listening on `0.0.0.0` or test against an active HTTP/HTTPS endpoint.
 """
     else:
         md = f"""### ⚠️ Web Security Audit Notice
@@ -489,25 +526,25 @@ Ensure the target web server `{target}` is running and accepting HTTP/HTTPS conn
             "command_line": f"{tool_id} target={target}",
             "target": target,
             "duration_s": duration_s,
-            "status": "success" if exit_code == 0 else "warning",
+            "status": "success" if (exit_code == 0 and not is_unreachable) else ("warning" if is_unreachable else "error"),
             "status_label": f"Exit {exit_code}",
             "tier": 2,
         },
         "output": {
             "summary_metrics": [
-                {"label": "Alerts Found", "value": str(alerts_count), "type": "warning" if alerts_count > 0 else "success"},
+                {"label": "Alerts Found", "value": str(alerts_count), "type": "warning" if alerts_count > 0 else ("neutral" if is_unreachable else "success")},
                 {"label": "Target", "value": target, "type": "info"},
                 {"label": "Duration", "value": f"{duration_s}s", "type": "neutral"},
             ],
-            "findings_table": [],
+            "findings_table": findings_rows,
             "raw_stdout": stdout,
             "raw_stderr": stderr,
             "has_raw_terminal": bool(stdout.strip() or stderr.strip()),
         },
         "result": {
-            "headline": f"Web audit of {target} finished with {alerts_count} alert(s)",
-            "status": "clean" if exit_code == 0 else "warning",
-            "security_posture": "Audit Completed",
+            "headline": f"Web audit of {target} finished with {alerts_count} alert(s)" if not is_unreachable else f"Target {target} unreachable on port {inputs.get('port', 80)}",
+            "status": "clean" if (exit_code == 0 and not is_unreachable) else "warning",
+            "security_posture": "Audit Completed" if not is_unreachable else "Host Unreachable",
             "key_takeaways": [
                 f"Scanned web target {target}.",
                 f"Generated evidence artifacts in local store.",

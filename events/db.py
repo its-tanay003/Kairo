@@ -843,6 +843,7 @@ TOOL_TIER_MAPPING: Dict[str, int] = {
     # Tier 1
     "whois.lookup.v1": 1,
     "dig.lookup.v1": 1,
+    "dnsenum.enum.v1": 1,
     "exiftool.extract.v1": 1,
     "hashid.identify.v1": 1,
     "searchsploit.search.v1": 1,

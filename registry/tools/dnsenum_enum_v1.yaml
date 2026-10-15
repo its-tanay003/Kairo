@@ -1,0 +1,112 @@
+id: dnsenum.enum.v1
+name: Dnsenum Domain Enumerator
+version: 1.0.0
+description: Multithreaded perl script to enumerate DNS information of a domain and discover non-contiguous ip blocks.
+category: recon
+binary: dnsenum
+capabilities:
+  - dns_enumeration
+  - host_discovery
+  - zone_transfer
+  - subdomain_enumeration
+  - name_servers_discovery
+
+inputs:
+  type: object
+  properties:
+    target:
+      type: string
+      description: Target domain to enumerate (e.g. example.com)
+    noreverse:
+      type: boolean
+      description: Skip reverse lookup operations
+      default: true
+    subfile:
+      type: string
+      description: Wordlist for subdomain brute forcing
+      default: ""
+    threads:
+      type: integer
+      description: Number of threads to use
+      default: 5
+    timeout:
+      type: integer
+      description: Timeout in seconds for DNS operations
+      default: 10
+    extra_args:
+      type: array
+      items:
+        type: string
+      default: []
+  required:
+    - target
+
+outputs:
+  type: object
+  properties:
+    domain: {type: string}
+    name_servers:
+      type: array
+      items: {type: string}
+    mail_servers:
+      type: array
+      items: {type: string}
+    host_addresses:
+      type: array
+      items:
+        type: object
+        properties:
+          host: {type: string}
+          ip: {type: string}
+    subdomains:
+      type: array
+      items: {type: string}
+    zone_transfer:
+      type: object
+
+side_effects:
+  - dns_traffic
+
+privilege: user
+gui: false
+
+parser:
+  type: dnsenum_text
+  format: text
+  structured: true
+
+prerequisites:
+  - dnsenum
+
+docs:
+  summary: DNS enumeration utility for discovering subdomains, MX, NS records, and IP ranges.
+  usage: Provide target domain name. Optionally specify subfile wordlist and thread counts.
+  examples:
+    - target: "target.local"
+      noreverse: true
+
+success_signals:
+  exit_codes: [0]
+
+failure_signals:
+  exit_codes: [1, 2]
+  timeout: true
+
+rollback:
+  supported: false
+  strategy: none
+
+version_compatibility:
+  min_agent_version: 1.0.0
+  os: [linux, darwin]
+
+timeout_ms: 60000
+parameters:
+  type: object
+  properties:
+    target: {type: string}
+    noreverse: {type: boolean}
+    subfile: {type: string}
+    threads: {type: integer}
+  required: [target]
+

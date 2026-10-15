@@ -498,7 +498,8 @@ class KaliWorkerConnector:
         # Explicitly route security tools to kali-linux
         security_tools = {
             "searchsploit", "nmap", "nikto", "sqlmap", "gobuster", "ffuf",
-            "whatweb", "exiftool", "hydra", "metasploit", "tcpdump", "hashid", "dig"
+            "whatweb", "exiftool", "hydra", "metasploit", "tcpdump", "hashid", "dig",
+            "dnsenum", "msfconsole", "msfrpcd", "hashcat", "whois"
         }
         if command in security_tools:
             distro = "kali-linux"

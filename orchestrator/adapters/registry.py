@@ -23,6 +23,7 @@ _ADAPTER_MODULES = [
     "orchestrator.adapters.searchsploit_adapter",
     "orchestrator.adapters.whois_adapter",
     "orchestrator.adapters.dig_adapter",
+    "orchestrator.adapters.dnsenum_adapter",
     "orchestrator.adapters.tcpdump_adapter",
     "orchestrator.adapters.exiftool_adapter",
     "orchestrator.adapters.hashid_adapter",

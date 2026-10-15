@@ -53,8 +53,9 @@ CAPABILITY_TOOL_AFFINITY: Dict[str, List[str]] = {
     "host_live_detection": ["system_ping", "nmap.scan.v1"],
     "service_detection": ["nmap.scan.v1", "whatweb.scan.v1"],
     "service_fingerprinting": ["whatweb.scan.v1", "nmap.scan.v1"],
-    "dns_subdomain_discovery": ["dig.lookup.v1", "gobuster.dir.v1"],
-    "dns_lookup": ["dig.lookup.v1"],
+    "dns_subdomain_discovery": ["dnsenum.enum.v1", "dig.lookup.v1", "gobuster.dir.v1"],
+    "dns_enumeration": ["dnsenum.enum.v1", "dig.lookup.v1"],
+    "dns_lookup": ["dig.lookup.v1", "dnsenum.enum.v1"],
     "domain_whois_lookup": ["whois.lookup.v1"],
     "whois": ["whois.lookup.v1"],
     "web_directory_enum": ["gobuster.dir.v1", "ffuf.fuzz.v1"],
@@ -616,6 +617,8 @@ class HybridToolSelector:
             args = {"target": target}
         elif tid == "dig.lookup.v1":
             args = {"target": target, "record_type": "A"}
+        elif tid == "dnsenum.enum.v1":
+            args = {"target": host_only or "target.local", "noreverse": True}
         elif tid == "searchsploit.search.v1":
             args = {"query": "Apache 2.4", "json_output": True}
         elif tid == "tcpdump.capture.v1":
@@ -625,7 +628,7 @@ class HybridToolSelector:
         elif tid == "hashid.identify.v1":
             args = {"hash": target if len(target) >= 16 else "5f4dcc3b5aa765d61d8327deb882cf99"}
         elif tid == "metasploit.rpc.v1":
-            args = {"module": "exploit/linux/samba/trans2open", "rhosts": host_only or "127.0.0.1"}
+            args = {"module": "auxiliary/scanner/portscan/tcp", "rhosts": host_only or "127.0.0.1"}
         elif tid == "kali.exec.v1":
             args = {"command": "uname", "args": ["-a"]}
         elif tid == "shell.run.v1":
