@@ -22,7 +22,7 @@ from events.db import (
     init_db,
     insert_event,
 )
-from orchestrator.model_center import model_center
+from orchestrator.model_center import ModelCenter, model_center
 from training.schema_reward import ToolSpecSchemaValidator
 
 logger = logging.getLogger("orchestrator.failover_router")
@@ -50,11 +50,13 @@ class FailoverRouter:
         primary_role: str = "primary-custom",
         fallback_role: str = "fallback",
         db_path: Optional[Path | str] = None,
+        model_center_instance: Optional[ModelCenter] = None,
     ):
         self.failure_threshold = failure_threshold
         self.primary_role = primary_role
         self.fallback_role = fallback_role
         self.db_path = Path(db_path) if db_path else DEFAULT_DB_PATH
+        self.model_center = model_center_instance or model_center
         self.validator = ToolSpecSchemaValidator()
         self.consecutive_schema_failures: int = 0
         self.failover_active: bool = False
@@ -70,9 +72,22 @@ class FailoverRouter:
         self.failover_active = False
         self.active_role = target_role
         try:
-            model_center.select_model(target_role)
+            self.model_center.select_model(target_role)
         except Exception as e:
             logger.warning(f"Could not select {target_role} in ModelCenter: {e}")
+
+    def reselect_primary(self, primary_role_or_id: Optional[str] = None) -> Dict[str, Any]:
+        """Reselects the primary model in ModelCenter and cleanly resets the circuit-breaker."""
+        target = primary_role_or_id or self.primary_role
+        self.reset(restore_role=target)
+        active = self.model_center.get_active_model()
+        return {
+            "reselected": True,
+            "active_model_id": active.get("model_id"),
+            "active_role": active.get("role"),
+            "failover_active": self.failover_active,
+            "consecutive_failures": self.consecutive_schema_failures,
+        }
 
     def validate_tool_call(
         self,
@@ -88,8 +103,6 @@ class FailoverRouter:
         err = "; ".join(res.errors) if res.errors else None
         return res.is_valid, err
 
-
-
     def handle_tool_call_output(
         self,
         tool_id: str,
@@ -103,9 +116,18 @@ class FailoverRouter:
         If the active model is primary-custom and fails schema validation repeatedly,
         triggers automatic failover to the fallback model.
         """
-        active_model_meta = model_center.get_active_model()
+        active_model_meta = self.model_center.get_active_model()
         model_id = current_model_id or active_model_meta.get("model_id", "kairo-custom-model")
         current_role = active_model_meta.get("role", self.active_role)
+
+        # If primary model is reselected while failover was active, auto-recover cleanly
+        fallback_meta = self.model_center.get_model_by_role(self.fallback_role) or self.model_center.get_model_by_id(self.fallback_role)
+        fallback_id = fallback_meta.get("model_id", self.fallback_role) if fallback_meta else self.fallback_role
+        if self.failover_active and model_id != fallback_id and current_role != self.fallback_role:
+            self.failover_active = False
+            self.consecutive_schema_failures = 0
+            self.active_role = current_role
+            logger.info(f"Primary model '{model_id}' reselected; recovered cleanly from failover state.")
 
         # Validate against registered ToolSpec JSON schemas
         is_valid, error_msg = self.validate_tool_call(tool_id, arguments)
@@ -174,12 +196,18 @@ class FailoverRouter:
         self.failover_active = True
         self.active_role = self.fallback_role
 
-        fallback_meta = model_center.get_model_by_role(self.fallback_role)
-        fallback_id = fallback_meta.get("model_id", "Qwen2.5-0.5B-Instruct") if fallback_meta else "Qwen2.5-0.5B-Instruct"
+        fallback_meta = self.model_center.get_model_by_role(self.fallback_role)
+        if not fallback_meta:
+            fallback_meta = self.model_center.get_model_by_id(self.fallback_role)
+        fallback_id = (
+            fallback_meta.get("model_id", self.fallback_role)
+            if fallback_meta
+            else self.fallback_role
+        )
 
         # Switch active model in ModelCenter
         try:
-            model_center.select_model(self.fallback_role)
+            self.model_center.select_model(self.fallback_role)
         except Exception as e:
             logger.error(f"Failed to switch model in ModelCenter: {e}")
 
@@ -243,7 +271,7 @@ class FailoverRouter:
 
     def get_status(self) -> Dict[str, Any]:
         """Returns the current failover status and health."""
-        active_meta = model_center.get_active_model()
+        active_meta = self.model_center.get_active_model()
         return {
             "failover_active": self.failover_active,
             "active_role": active_meta.get("role", self.active_role),
