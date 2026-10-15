@@ -1810,6 +1810,21 @@ def get_public_benchmark_card():
     return benchmark_manager.get_public_verification_card()
 
 
+@app.get("/benchmark/sweeps/{sweep_id}")
+def get_benchmark_sweep_comparison(sweep_id: str):
+    """Retrieves comparative side-by-side analysis and metric rankings for a benchmark sweep."""
+    res = benchmark_manager.get_sweep_comparison(sweep_id=sweep_id)
+    if not res:
+        raise HTTPException(status_code=404, detail=f"Sweep '{sweep_id}' not found")
+    return res
+
+
+@app.get("/benchmark/sweep-comparison")
+def get_latest_sweep_comparison(sweep_id: Optional[str] = None):
+    """Retrieves comparative side-by-side analysis and metric rankings for the latest sweep."""
+    return benchmark_manager.get_sweep_comparison(sweep_id=sweep_id)
+
+
 
 if __name__ == "__main__":
     import uvicorn
