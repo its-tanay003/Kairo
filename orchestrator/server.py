@@ -1637,6 +1637,11 @@ class CleanDatasetRequest(BaseModel):
     min_reward: float = 1.0
 
 
+class ExpandDatasetRequest(BaseModel):
+    min_reward: float = 1.0
+    val_ratio: float = 0.10
+
+
 class StartTrainingJobRequest(BaseModel):
     job_type: str = "sft"  # sft, dpo, grpo
     preset: str = "kairo-compact-380m"
@@ -1693,6 +1698,14 @@ def curate_dataset_example(req: CurateExampleRequest):
 def run_schema_cleaning(req: CleanDatasetRequest):
     """Executes schema-validation filter to prune malformed trajectories."""
     return training_manager.run_cleaning_filter(min_reward=req.min_reward)
+
+
+@app.post("/training/dataset/expand")
+def expand_training_dataset(req: Optional[ExpandDatasetRequest] = None):
+    """Pulls recovery chains, benchmark sweeps, and ToolSpecs across all 27 tools to expand dataset."""
+    min_reward = req.min_reward if req else 1.0
+    val_ratio = req.val_ratio if req else 0.10
+    return training_manager.expand_dataset(min_reward=min_reward, val_ratio=val_ratio)
 
 
 @app.get("/training/jobs")
