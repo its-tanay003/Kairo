@@ -71,4 +71,7 @@ class SearchsploitAdapter(ToolAdapter):
             "query": meta.get("inputs", {}).get("query", ""),
             "exploits": exploits,
             "total_found": len(exploits),
+            "exit_code": exit_code,
+            "status": "success" if exit_code == 0 else "error",
+            "error": stderr.strip() if exit_code != 0 else None,
         }

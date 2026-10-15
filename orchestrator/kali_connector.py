@@ -196,7 +196,7 @@ class KaliWorkerConnector:
                 proc = subprocess.run(
                     [wsl_path, "-l", "-v"],
                     capture_output=True,
-                    timeout=4.0,
+                    timeout=10.0,
                     check=False,
                 )
                 raw_bytes = proc.stdout
@@ -225,12 +225,19 @@ class KaliWorkerConnector:
                             wsl_version = v_num
 
                 if not kali_distro and distros:
-                    # If specific kali not named, find default or first WSL2
+                    # Explicitly look for kali distro first
                     for d in distros:
-                        if d["version"] == 2:
+                        if "kali" in d["name"].lower():
                             kali_distro = d["name"]
-                            wsl_version = 2
+                            wsl_version = d["version"]
                             break
+                    if not kali_distro:
+                        # Fallback to first available WSL2 distro
+                        for d in distros:
+                            if d["version"] == 2:
+                                kali_distro = d["name"]
+                                wsl_version = 2
+                                break
             except Exception as e:
                 logger.warning(f"Error querying WSL2 distributions: {e}")
 
@@ -488,6 +495,14 @@ class KaliWorkerConnector:
         wsl_path = shutil.which("wsl.exe") or r"C:\Windows\System32\wsl.exe"
         distro = info.distro_name or "kali-linux"
 
+        # Explicitly route security tools to kali-linux
+        security_tools = {
+            "searchsploit", "nmap", "nikto", "sqlmap", "gobuster", "ffuf",
+            "whatweb", "exiftool", "hydra", "metasploit", "tcpdump", "hashid", "dig"
+        }
+        if command in security_tools:
+            distro = "kali-linux"
+
         # Build WSL command line
         cmd_line = [wsl_path, "-d", distro, "--", command] + args
         try:
@@ -498,13 +513,37 @@ class KaliWorkerConnector:
                 timeout=timeout_ms / 1000.0,
                 check=False,
             )
+
+            # If command not found (exit code 127), retry via full path in kali-linux
+            if proc.returncode == 127:
+                fallback_cmd = [wsl_path, "-d", "kali-linux", "--", f"/usr/bin/{command}"] + args
+                try:
+                    retry_proc = subprocess.run(
+                        fallback_cmd,
+                        capture_output=True,
+                        text=True,
+                        timeout=timeout_ms / 1000.0,
+                        check=False,
+                    )
+                    if retry_proc.returncode != 127:
+                        proc = retry_proc
+                        distro = "kali-linux"
+                except Exception:
+                    pass
+
             dur_ms = round((time.perf_counter() - t0) * 1000, 2)
+            # Filter harmless Windows path translation warnings from stderr
+            clean_stderr = "\n".join(
+                line for line in (proc.stderr or "").splitlines()
+                if "Failed to translate" not in line
+            ).strip()
+
             return {
                 "task_id": task_id,
                 "status": "success" if proc.returncode == 0 else "error",
                 "exit_code": proc.returncode,
                 "stdout": proc.stdout,
-                "stderr": proc.stderr,
+                "stderr": clean_stderr,
                 "duration_ms": dur_ms,
                 "execution_plane": "windows_wsl2",
                 "backend": f"WSL2 ({distro})",
