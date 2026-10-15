@@ -53,8 +53,8 @@ class NiktoAdapter(ToolAdapter):
         ssl = inputs.get("ssl", ssl_inferred or (port == 443))
         plugins = inputs.get("plugins", "")
         tuning = inputs.get("tuning", "")
-        timeout = int(inputs.get("timeout", 3))
-        maxtime = str(inputs.get("maxtime", "35s")).strip()
+        timeout = int(inputs.get("timeout", 2))
+        maxtime = str(inputs.get("maxtime", "20s")).strip()
         extra = inputs.get("extra_args", [])
 
         args = [
@@ -63,6 +63,8 @@ class NiktoAdapter(ToolAdapter):
             "-Format", "csv",
             "-timeout", str(timeout),
             "-maxtime", maxtime,
+            "-nocheck",
+            "-nolookup",
             "-ipv4",
             "-nointeractive",
         ]
