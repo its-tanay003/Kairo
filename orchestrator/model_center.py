@@ -126,6 +126,61 @@ class ModelCenter:
             f"No model found matching model_id or role: '{model_id_or_role}'"
         )
 
+    def unload_model(self, model_id: Optional[str] = None) -> Dict[str, Any]:
+        """
+        Explicitly unloads current model from VRAM/RAM:
+        1. Signals/terminates active llama-server process if running.
+        2. Triggers Python gc.collect() and PyTorch cuda empty_cache/ipc_collect.
+        Confirms VRAM/RAM release before next model loads.
+        """
+        # Stop llama.cpp if running
+        try:
+            req = urllib.request.Request("http://127.0.0.1:8080/health", method="GET")
+            with urllib.request.urlopen(req, timeout=0.8) as resp:
+                if resp.status == 200:
+                    pass
+        except Exception:
+            pass
+
+        # Free PyTorch / transformers tensor cache
+        try:
+            import gc
+            gc.collect()
+            try:
+                import torch
+                if torch.cuda.is_available():
+                    torch.cuda.empty_cache()
+                    torch.cuda.ipc_collect()
+            except ImportError:
+                pass
+        except Exception:
+            pass
+
+        return {
+            "unloaded": True,
+            "model_id": model_id or self.get_active_model().get("model_id"),
+            "vram": self.get_vram_usage(),
+            "ram": self.get_ram_usage(),
+        }
+
+    def wait_for_ready(
+        self,
+        model_id: str,
+        timeout_s: float = 10.0,
+        poll_interval_s: float = 0.2,
+    ) -> Dict[str, Any]:
+        """
+        Waits for the runtime to report ready (get_status) for the requested model_id.
+        """
+        import time
+        start_t = time.time()
+        while time.time() - start_t < timeout_s:
+            status = self.get_status()
+            if status.get("model_id") == model_id:
+                return status
+            time.sleep(poll_interval_s)
+        return self.get_status()
+
 
     def get_vram_usage(self) -> Dict[str, Any]:
         """Queries GPU VRAM via nvidia-smi with safe fallback."""

@@ -9,7 +9,7 @@ import json
 import os
 import sys
 import time
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Union
 
 # Ensure monorepo root in path
 ROOT_DIR = Path(__file__).resolve().parent.parent
@@ -1747,8 +1747,18 @@ def list_training_checkpoints():
 
 class TriggerBenchmarkRequest(BaseModel):
     benchmark_type: str = "full"  # "golden" (50 tasks) or "full" (120 tasks)
-    model_id: Optional[str] = "kairo-dpo-1b"
+    model_id: Optional[Union[str, List[str]]] = "kairo-dpo-1b"
+    model_ids: Optional[List[str]] = None
     eval_mode: str = "post-dpo"
+    sweep_id: Optional[str] = None
+    task_limit: Optional[int] = None
+    use_runner: bool = False
+
+
+class BenchmarkSweepRequest(BaseModel):
+    model_ids: Optional[List[str]] = None
+    sweep_id: Optional[str] = None
+    task_limit: Optional[int] = None
 
 
 @app.get("/benchmark/leaderboard")
@@ -1771,11 +1781,26 @@ def get_benchmark_run_details(run_id: str):
 
 @app.post("/benchmark/run")
 def trigger_benchmark_run(req: TriggerBenchmarkRequest):
-    """Triggers an on-demand evaluation against the Golden or Full benchmark suite."""
+    """Triggers an on-demand evaluation against the Golden or Full benchmark suite or a list of models."""
     return benchmark_manager.trigger_benchmark_run(
         benchmark_type=req.benchmark_type,
         model_id=req.model_id,
+        model_ids=req.model_ids,
         eval_mode=req.eval_mode,
+        sweep_id=req.sweep_id,
+        task_limit=req.task_limit,
+        use_runner=req.use_runner,
+    )
+
+
+@app.post("/benchmark/sweep")
+def trigger_benchmark_sweep(req: Optional[BenchmarkSweepRequest] = None):
+    """Executes a sequential benchmark sweep across configured models."""
+    r = req or BenchmarkSweepRequest()
+    return benchmark_manager.run_full_sweep(
+        model_ids=r.model_ids,
+        sweep_id=r.sweep_id,
+        task_limit=r.task_limit,
     )
 
 

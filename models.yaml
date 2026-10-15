@@ -1,4 +1,4 @@
-active_model: kairo-custom-model
+active_model: kairo-grpo-aligned
 models:
 - model_id: Qwen3-Coder-30B-A3B-Instruct
   runtime: llama.cpp
