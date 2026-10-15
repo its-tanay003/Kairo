@@ -3,12 +3,12 @@
     "status": "pruned",
     "notes": "Pruned due to outdated schema",
     "operator": "lead_security_evaluator",
-    "curated_at": "2026-10-13T11:45:36.090351+00:00"
+    "curated_at": "2026-10-15T14:55:23.251115+00:00"
   },
   "api_test_sample_01": {
     "status": "approved",
     "notes": "Verified tool syntax and parameter boundaries",
     "operator": "automated_test_suite",
-    "curated_at": "2026-10-13T11:46:29.390399+00:00"
+    "curated_at": "2026-10-15T14:55:49.981524+00:00"
   }
 }

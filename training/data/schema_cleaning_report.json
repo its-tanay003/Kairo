@@ -1,35 +1,23 @@
 {
   "min_reward_threshold": 0.8,
-  "tools_evaluated_count": 26,
+  "tools_evaluated_count": 27,
   "train": {
     "total_records": 2565,
-    "retained_records": 2196,
-    "discarded_records": 369,
-    "pass_rate_pct": 85.61,
-    "mean_schema_reward": 0.9546,
+    "retained_records": 2536,
+    "discarded_records": 29,
+    "pass_rate_pct": 98.87,
+    "mean_schema_reward": 0.9943,
     "discard_reasons": {
       "Property 'args' expected array/list, got dict": 23,
-      "Target '10.0.0.45' violates Scope Contract boundaries": 56,
-      "Target '192.168.56.101' violates Scope Contract boundaries": 175,
-      "Target 'metasploit-lab.internal' violates Scope Contract boundaries": 28,
-      "Target 'vuln-target.internal' violates Scope Contract boundaries": 28,
-      "Target 'app-server.internal' violates Scope Contract boundaries": 27,
-      "Target 'db-primary.internal' violates Scope Contract boundaries": 26,
       "Property 'x' expected integer, got NoneType": 6
     }
   },
   "validation": {
     "total_records": 284,
-    "retained_records": 249,
-    "discarded_records": 35,
-    "pass_rate_pct": 87.68,
-    "mean_schema_reward": 0.963,
-    "discard_reasons": {
-      "Target 'metasploit-lab.internal' violates Scope Contract boundaries": 6,
-      "Target 'db-primary.internal' violates Scope Contract boundaries": 2,
-      "Target 'vuln-target.internal' violates Scope Contract boundaries": 4,
-      "Target '192.168.56.101' violates Scope Contract boundaries": 19,
-      "Target 'app-server.internal' violates Scope Contract boundaries": 4
-    }
+    "retained_records": 284,
+    "discarded_records": 0,
+    "pass_rate_pct": 100.0,
+    "mean_schema_reward": 1.0,
+    "discard_reasons": {}
   }
 }
