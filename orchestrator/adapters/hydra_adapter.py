@@ -15,13 +15,13 @@ class HydraAdapter(ToolAdapter):
         return "hydra"
 
     def build_args(self, inputs: Dict[str, Any]) -> List[str]:
-        target = inputs["target"]
-        protocol = inputs["protocol"]
+        target = inputs.get("target") or inputs.get("host") or "127.0.0.1"
+        protocol = inputs.get("protocol") or "ssh"
         port = int(inputs.get("port", 0))
-        username = inputs.get("username", "")
+        username = inputs.get("username", "admin")
         username_list = inputs.get("username_list", "")
         password = inputs.get("password", "")
-        password_list = inputs.get("password_list", "/usr/share/wordlists/rockyou.txt")
+        password_list = inputs.get("password_list") or inputs.get("wordlist") or "/usr/share/wordlists/dirb/common.txt"
         tasks = int(inputs.get("tasks", 4))
         stop_on_success = inputs.get("stop_on_success", True)
         form_params = inputs.get("form_params", "")

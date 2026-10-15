@@ -35,27 +35,25 @@ class MetasploitRpcAdapter(ToolAdapter):
 
     def build_args(self, inputs: Dict[str, Any]) -> List[str]:
         """For fallback msfconsole resource script mode."""
-        module = inputs["module"]
-        rhosts = inputs["rhosts"]
+        module = inputs.get("module") or "auxiliary/scanner/portscan/tcp"
+        rhosts = inputs.get("rhosts") or inputs.get("target") or inputs.get("host") or "127.0.0.1"
         rport = inputs.get("rport", "")
-        threads = inputs.get("threads", 4)
+        threads = int(inputs.get("threads", 4))
         opts = inputs.get("options", {})
 
-        rc_lines = [
+        rc_commands = [
             f"use {module}",
             f"set RHOSTS {rhosts}",
             f"set THREADS {threads}",
         ]
         if rport:
-            rc_lines.append(f"set RPORT {rport}")
+            rc_commands.append(f"set RPORT {rport}")
         for k, v in (opts or {}).items():
-            rc_lines.append(f"set {k} {v}")
-        rc_lines += ["run -j", "sleep 5", "vulns -j", "exit -y"]
+            rc_commands.append(f"set {k} {v}")
+        rc_commands += ["run", "exit -y"]
 
-        # Write resource file and use -r flag
-        rc_content = "\n".join(rc_lines)
-        rc_path = f"/tmp/kairo_msf_{int(time.time())}.rc"
-        return ["-q", "-x", rc_content]
+        cmd_string = "; ".join(rc_commands)
+        return ["-q", "--no-readline", "-x", cmd_string]
 
     def parse(
         self,

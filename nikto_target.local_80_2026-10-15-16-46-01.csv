@@ -1,0 +1,3 @@
+"Nikto - v2.6.1/"
+"target.local","127.0.0.1","80","","","",""
+"target.local","127.0.0.1","80","","GET","/","Unable to connect to target.local:80."

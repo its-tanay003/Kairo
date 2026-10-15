@@ -23,7 +23,7 @@ class ExiftoolAdapter(ToolAdapter):
         return "exiftool"
 
     def build_args(self, inputs: Dict[str, Any]) -> List[str]:
-        file_path = inputs["file_path"]
+        file_path = inputs.get("file_path") or inputs.get("path") or inputs.get("target") or inputs.get("file") or "/etc/passwd"
         tags = inputs.get("tags", [])
         recursive = inputs.get("recursive", False)
         extra = inputs.get("extra_args", [])

@@ -15,9 +15,9 @@ class TcpdumpAdapter(ToolAdapter):
         return "tcpdump"
 
     def build_args(self, inputs: Dict[str, Any]) -> List[str]:
-        interface = inputs["interface"]
+        interface = inputs.get("interface") or "eth0"
         bpf_filter = inputs.get("filter", "")
-        count = int(inputs.get("count", 100))
+        count = int(inputs.get("count") or inputs.get("packet_count") or 50)
         duration_s = int(inputs.get("duration_s", 10))
         output_file = inputs.get("output_file", "/tmp/kairo_capture.pcap")
         snap_len = int(inputs.get("snap_len", 262144))
