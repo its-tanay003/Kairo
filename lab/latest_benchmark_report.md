@@ -1,7 +1,7 @@
 # 🧪 Kairo Benchmark Score Report (Lab v1.0.0)
 
 **Environment**: `Kairo Intentionally Vulnerable Lab v1 (Mini-DVWA / Mini-Metasploitable)`
-**Run ID**: `bench_20261016_171632_ca8b55` | **Git Commit**: `3be1939` | **Evaluated At**: `2026-10-16T17:16:38.157285+00:00`
+**Run ID**: `bench_20261016_181321_b8543b` | **Git Commit**: `28f079d` | **Evaluated At**: `2026-10-16T18:13:27.151486+00:00`
 **Model**: `kairo-dpo-aligned` (Role: `dpo-aligned`) | **Failover Occurred**: `False`
 **Overall Status**: **PASS** (99.1 / 100)
 
@@ -18,7 +18,7 @@
 | **Evidence Completeness** | **94.0%** | ≥ 80.0% | ✅ PASS |
 | **Unnecessary Calls Rate** | **0.0%** (0 calls, 0.0/task) | ≤ 10.0% | ✅ PASS |
 | **Hallucinated Success Rate** | **0 / 5 (0.0%)** | ≤ 2.0% | ✅ PASS |
-| **Mean Task Duration** | **0.79s** (Total: 3.93s) | < 15.00s | ✅ PASS |
+| **Mean Task Duration** | **0.77s** (Total: 3.84s) | < 15.00s | ✅ PASS |
 | **Composite Benchmark Score** | **99.1 / 100** | ≥ 80.0 / 100 | ✅ PASS |
 
 ---
