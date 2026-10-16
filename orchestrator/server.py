@@ -1651,6 +1651,8 @@ class StartTrainingJobRequest(BaseModel):
     beta: float = 0.1
     use_cleaned: bool = True
     max_steps: Optional[int] = None
+    output_dir: Optional[str] = None
+    version: Optional[str] = None
 
 
 @app.get("/training/dataset/stats")
@@ -1726,6 +1728,8 @@ def start_training_job(req: StartTrainingJobRequest):
         beta=req.beta,
         use_cleaned=req.use_cleaned,
         max_steps=req.max_steps,
+        output_dir=req.output_dir,
+        version=req.version,
     )
     return {"job": job, "status": "started"}
 

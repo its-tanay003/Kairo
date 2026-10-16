@@ -1,4 +1,4 @@
-active_model: kairo-grpo-aligned
+active_model: kairo-dpo-aligned
 models:
 - model_id: Qwen3-Coder-30B-A3B-Instruct
   runtime: llama.cpp
@@ -48,8 +48,36 @@ models:
   path: training/checkpoints/pretrain/kairo-2b_pretrained.pt
   repo: kairo/kairo-2b-domain-tier-c
   description: Tier C scaled 1.98B parameter decoder-only Transformer (RMSNorm+RoPE+GQA+SwiGLU)
-    conservatively sized for available hardware compute, pretrained on expanded Kali domain
-    corpus and aligned via multi-stage SFT, DPO, and GRPO on expanded Task B.1 dataset
+    conservatively sized for available hardware compute, pretrained on expanded Kali
+    domain corpus and aligned via multi-stage SFT, DPO, and GRPO on expanded Task
+    B.1 dataset
+- model_id: kairo-scale-2b-sft
+  runtime: transformers
+  quantization: FP32
+  context_length: 16384
+  role: primary-custom-scaled-sft
+  path: training/checkpoints/trl_sft/v2
+  repo: kairo/kairo-2b-domain-sft-v2
+  description: Tier C scaled 1.98B parameter model post-SFT stage on expanded Task
+    B.1 dataset
+- model_id: kairo-scale-2b-dpo
+  runtime: transformers
+  quantization: FP32
+  context_length: 16384
+  role: primary-custom-scaled-dpo
+  path: training/checkpoints/dpo/v2
+  repo: kairo/kairo-2b-domain-dpo-v2
+  description: Tier C scaled 1.98B parameter model post-DPO preference tuning stage
+    on task-graph pairs
+- model_id: kairo-scale-2b-grpo
+  runtime: transformers
+  quantization: FP32
+  context_length: 16384
+  role: primary-custom-scaled-grpo
+  path: training/checkpoints/grpo/v2
+  repo: kairo/kairo-2b-domain-grpo-v2
+  description: Tier C scaled 1.98B parameter model post-GRPO verifiable reward optimization
+    stage
 - model_id: kairo-sft-baseline
   runtime: transformers
   quantization: FP32

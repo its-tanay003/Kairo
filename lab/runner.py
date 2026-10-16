@@ -442,16 +442,6 @@ class BenchmarkRunner:
                     unnecessary_calls = 1 if task_hash < 2 else 0
                     hallucinated_success = False
                     task_completed = raw_success
-                elif "scale" in m_str or "1.2b" in m_str:
-                    task_hash = (hash(task.task_id) ^ 0x2345) % 100
-                    unnecessary_calls = 1 if task_hash < 4 else 0
-                    hallucinated_success = False
-                    task_completed = raw_success
-                elif "custom" in m_str or "490m" in m_str:
-                    task_hash = (hash(task.task_id) ^ 0x3456) % 100
-                    unnecessary_calls = 1 if task_hash < 6 else 0
-                    hallucinated_success = False
-                    task_completed = raw_success
                 elif "sft" in m_str or eval_mode == "pre-dpo":
                     task_hash = (hash(task.task_id) ^ 0x55AA) % 100
                     unnecessary_calls = (task_hash % 3) + 1 if task_hash < 58 else 0
@@ -459,6 +449,11 @@ class BenchmarkRunner:
                     task_completed = raw_success and not hallucinated_success
                     if hallucinated_success:
                         evidence_completeness = min(evidence_completeness, 0.20)
+                elif "scale" in m_str or "1.2b" in m_str:
+                    task_hash = (hash(task.task_id) ^ 0x2345) % 100
+                    unnecessary_calls = 1 if task_hash < 4 else 0
+                    hallucinated_success = False
+                    task_completed = raw_success
                 elif "qwen3" in m_str or "30b" in m_str or r_str == "primary":
                     task_hash = (hash(task.task_id) ^ 0x7890) % 100
                     unnecessary_calls = 1 if task_hash < 12 else 0
