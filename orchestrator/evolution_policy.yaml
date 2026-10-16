@@ -1,0 +1,58 @@
+# ==============================================================================
+# Kairo Model Evolution Controller Policy
+# Inspectable, tunable decision thresholds for autonomous model evolution.
+# All actions triggered by this policy are generated as PROPOSALS (not auto-executed)
+# and logged to the Kairo Event Store.
+# ==============================================================================
+
+controller:
+  polling_interval_seconds: 60
+  enabled: true
+  active_model_id: "kairo-scale-2b-grpo"
+  baseline_model_id: "kairo-scale-1.2b"
+  event_session_id: "model-evolution-controller"
+
+rules:
+  # ----------------------------------------------------------------------------
+  # Rule 1: SFT Refresh
+  # Triggers when sufficient verified and schema-valid examples have accumulated.
+  # ----------------------------------------------------------------------------
+  sft_refresh:
+    enabled: true
+    min_new_examples: 2000
+    min_schema_pass_rate: 0.90
+    target_job_type: "trl_sft"
+    target_preset: "kairo-scale-2b"
+    action: "propose_sft_refresh"
+    description: "Propose an SFT refresh job when >=2000 new examples accumulate with >=90% schema validity."
+
+  # ----------------------------------------------------------------------------
+  # Rule 2: Tier Scaling
+  # Triggers when consecutive SFT retrains hit capacity saturation (<1% gain).
+  # ----------------------------------------------------------------------------
+  tier_scaling:
+    enabled: true
+    plateau_consecutive_runs: 3
+    plateau_accuracy_delta_max: 0.01  # < 1.0% accuracy gain
+    metric: "tool_accuracy_pct"
+    target_job_type: "pretrain_scale"
+    next_tier_preset: "kairo-3b"
+    action: "propose_tier_scaling"
+    description: "Propose scaling parameter tier when 3 consecutive runs gain <1% accuracy."
+
+  # ----------------------------------------------------------------------------
+  # Rule 3: Regression Rollback
+  # Triggers when the active model regresses on any critical benchmark metric.
+  # Proposes a rollback to last known-good checkpoint, NEVER a fresh retrain.
+  # ----------------------------------------------------------------------------
+  regression_rollback:
+    enabled: true
+    max_tolerable_regression_pct: 0.05  # 5% regression threshold
+    critical_metrics:
+      - "schema_pass_pct"
+      - "tool_accuracy_pct"
+      - "recovery_rate_pct"
+      - "composite_score"
+    action: "propose_rollback"
+    fallback_checkpoint: "kairo-scale-1.2b"
+    description: "Propose rollback to last known-good checkpoint if active model regresses by >5% on any critical metric."

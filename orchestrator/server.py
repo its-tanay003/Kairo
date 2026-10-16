@@ -79,6 +79,7 @@ from orchestrator.adapters.registry import adapter_registry
 from orchestrator.adapters.gui_base import BaseGuiAdapter
 from orchestrator.training_manager import training_manager
 from orchestrator.benchmark_manager import benchmark_manager
+from orchestrator.model_evolution_controller import evolution_controller
 
 
 
@@ -1840,6 +1841,64 @@ def get_benchmark_sweep_comparison(sweep_id: str):
 def get_latest_sweep_comparison(sweep_id: Optional[str] = None):
     """Retrieves comparative side-by-side analysis and metric rankings for the latest sweep."""
     return benchmark_manager.get_sweep_comparison(sweep_id=sweep_id)
+
+
+# ==============================================================================
+# MODEL EVOLUTION CONTROLLER (Autonomous Model Lifecycle Management)
+# ==============================================================================
+
+class EvolutionCycleRequest(BaseModel):
+    dataset_stats_override: Optional[Dict[str, Any]] = None
+    leaderboard_data_override: Optional[Dict[str, Any]] = None
+    sweep_comparison_override: Optional[Dict[str, Any]] = None
+
+
+@app.get("/evolution/status")
+def get_evolution_status():
+    """Returns runtime telemetry, cycle counts, active proposals, and state for the evolution controller."""
+    return evolution_controller.get_status()
+
+
+@app.get("/evolution/proposals")
+def list_evolution_proposals(limit: int = 50):
+    """Returns inspectable proposals recorded by the evolution controller."""
+    return {"proposals": evolution_controller.get_proposals(limit=limit)}
+
+
+@app.get("/evolution/policy")
+def get_evolution_policy():
+    """Returns the currently loaded evolution policy config."""
+    return {"policy": evolution_controller.policy}
+
+
+@app.post("/evolution/cycle")
+def run_evolution_cycle(req: Optional[EvolutionCycleRequest] = None):
+    """Executes a single synchronous evaluation cycle of the evolution controller rules."""
+    r = req or EvolutionCycleRequest()
+    return evolution_controller.run_cycle(
+        dataset_stats_override=r.dataset_stats_override,
+        leaderboard_data_override=r.leaderboard_data_override,
+        sweep_comparison_override=r.sweep_comparison_override,
+    )
+
+
+@app.post("/evolution/start")
+def start_evolution_controller():
+    """Launches the background periodic evolution worker thread."""
+    return evolution_controller.start()
+
+
+@app.post("/evolution/stop")
+def stop_evolution_controller():
+    """Stops the background periodic evolution worker thread."""
+    return evolution_controller.stop()
+
+
+@app.post("/evolution/reload-policy")
+def reload_evolution_policy():
+    """Hot-reloads the evolution policy from evolution_policy.yaml."""
+    return {"policy": evolution_controller.reload_policy()}
+
 
 
 
