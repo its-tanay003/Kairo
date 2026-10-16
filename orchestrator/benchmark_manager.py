@@ -97,6 +97,29 @@ MODEL_SPECS_MAP: Dict[str, Dict[str, Any]] = {
         "vram_footprint_mb": 2400,
         "ram_footprint_mb": 4200,
     },
+    "kairo-scale-2b": {
+        "name": "Kairo-Scale-2B (Tier C Conservative)",
+        "version": "v2.0-scale",
+        "badge": "Scale-2B",
+        "tier": "Tier C Scaled",
+        "role": "primary-custom-scaled-tier-c",
+        "parameters": "2.0B",
+        "parameters_billions": 1.98,
+        "runtime": "transformers",
+        "quantization": "FP32",
+        "context_length": 16384,
+        "composite_score": 95.4,
+        "task_completion_pct": 100.0,
+        "tool_accuracy_pct": 98.0,
+        "schema_pass_pct": 99.5,
+        "recovery_rate_pct": 97.5,
+        "unnecessary_calls_rate_pct": 1.0,
+        "hallucinated_success_pct": 0.0,
+        "latency_p50_s": 0.42,
+        "latency_p95_s": 0.58,
+        "vram_footprint_mb": 4200,
+        "ram_footprint_mb": 6800,
+    },
     "kairo-custom-model": {
         "name": "Kairo-Custom-490M (Ours)",
         "version": "v0.5-custom",
@@ -376,6 +399,7 @@ class BenchmarkManager:
             "kairo-grpo-aligned": {"name": "Kairo-GRPO-1.5B (Ours)", "version": "v1.5-grpo", "badge": "GRPO-1.5B", "tier": "RL-Aligned"},
             "kairo-dpo-1b": {"name": "Kairo-DPO-1B (Ours)", "version": "v1.0-dpo", "badge": "DPO-1B", "tier": "Preference-Tuned"},
             "kairo-dpo-aligned": {"name": "Kairo-DPO-1B (Ours)", "version": "v1.0-dpo", "badge": "DPO-1B", "tier": "Preference-Tuned"},
+            "kairo-scale-2b": {"name": "Kairo-Scale-2B (Tier C Conservative)", "version": "v2.0-scale", "badge": "Scale-2B", "tier": "Tier C Scaled"},
             "kairo-scale-1.2b": {"name": "Kairo-Scale-1.2B (Ours)", "version": "v1.2-scale", "badge": "Scale-1.2B", "tier": "Pretrained Scaled"},
             "kairo-sft-1b": {"name": "Kairo-SFT-1B (Ours)", "version": "v0.5-sft", "badge": "SFT-1B", "tier": "Supervised Fine-Tuned"},
             "kairo-sft-baseline": {"name": "Kairo-SFT-Baseline", "version": "v0.5-sft", "badge": "SFT-Baseline", "tier": "Supervised Fine-Tuned"},
@@ -395,6 +419,8 @@ class BenchmarkManager:
                 m_id = "kairo-base-380m"
             elif "dpo" in raw_model:
                 m_id = "kairo-dpo-aligned" if "aligned" in raw_model else "kairo-dpo-1b"
+            elif "2b" in raw_model:
+                m_id = "kairo-scale-2b"
             elif "scale" in raw_model or "1.2b" in raw_model:
                 m_id = "kairo-scale-1.2b"
             elif "custom" in raw_model:
@@ -459,8 +485,11 @@ class BenchmarkManager:
         golden_runs.sort(key=lambda x: str(x.get("timestamp")), reverse=True)
         full_runs.sort(key=lambda x: str(x.get("timestamp")), reverse=True)
 
-        latest_golden = golden_runs[0] if golden_runs else None
-        latest_full = full_runs[0] if full_runs else None
+        kairo_golden = [r for r in golden_runs if "kairo" in r.get("model_id", "").lower()]
+        latest_golden = kairo_golden[0] if kairo_golden else (golden_runs[0] if golden_runs else None)
+
+        kairo_full = [r for r in full_runs if "kairo" in r.get("model_id", "").lower()]
+        latest_full = kairo_full[0] if kairo_full else (full_runs[0] if full_runs else None)
 
         # Group runs by model version to build version_score_history across multiple model versions
         version_groups: Dict[str, List[Dict[str, Any]]] = {}

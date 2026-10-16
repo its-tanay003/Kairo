@@ -1643,7 +1643,7 @@ class ExpandDatasetRequest(BaseModel):
 
 
 class StartTrainingJobRequest(BaseModel):
-    job_type: str = "sft"  # sft, dpo, grpo
+    job_type: str = "sft"  # sft, dpo, grpo, pretrain_scale
     preset: str = "kairo-compact-380m"
     epochs: int = 1
     learning_rate: float = 5e-5

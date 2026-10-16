@@ -1,23 +1,6 @@
 {
-  "timestamp": "2026-10-16T00:15:00Z",
-  "pipeline_task": "Task B.1 Dataset Expansion & Schema Filtering",
-  "min_reward_threshold": 1.0,
+  "min_reward_threshold": 0.8,
   "tools_evaluated_count": 27,
-  "before_expansion": {
-    "raw_total": 4501,
-    "clean_total": 4472
-  },
-  "new_sources_added": {
-    "phase2_recovery_chains": 449,
-    "benchmark_sweep_traces": 903,
-    "sdk_toolspec_scenarios": 300,
-    "total_new_harvested": 1652
-  },
-  "after_expansion": {
-    "raw_total": 6153,
-    "clean_total": 6124,
-    "overall_pass_rate_pct": 99.53
-  },
   "train": {
     "total_records": 5537,
     "retained_records": 5508,

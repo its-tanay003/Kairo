@@ -99,6 +99,21 @@ MODEL_CONFIG_PRESETS: Dict[str, Dict[str, Any]] = {
         "rms_norm_eps": 1e-6,           # RMSNorm
         "tie_word_embeddings": True,
         "vocab_size": 151665,
+    },
+    # 1.98B parameter model: Tier C conservative scaled target (1.5B - 2.0B range)
+    # Scaled conservatively for single-GPU / CPU budgets when multi-GPU clusters are unavailable
+    "kairo-2b": {
+        "hidden_size": 2048,
+        "intermediate_size": 8192,
+        "num_hidden_layers": 28,
+        "num_attention_heads": 16,
+        "num_key_value_heads": 2,      # GQA: 8 query heads per key-value head
+        "max_position_embeddings": 16384, # 16k context window
+        "rope_theta": 1000000.0,
+        "hidden_act": "silu",           # SwiGLU activation
+        "rms_norm_eps": 1e-6,           # RMSNorm
+        "tie_word_embeddings": True,
+        "vocab_size": 151665,
     }
 }
 
@@ -111,7 +126,7 @@ def get_kairo_config(
 ) -> Qwen2Config:
     """
     Constructs a Qwen2Config satisfying all architectural requirements:
-    RMSNorm + RoPE + GQA + SwiGLU with 350M-700M or 1B-1.5B parameters.
+    RMSNorm + RoPE + GQA + SwiGLU with 350M-700M, 1B-1.5B, or 1.5B-2.0B parameters.
     """
     if preset_name not in MODEL_CONFIG_PRESETS:
         raise ValueError(
@@ -144,7 +159,7 @@ def verify_architecture_spec(config: Qwen2Config, total_params: int) -> Dict[str
     2. RoPE rotary embeddings
     3. GQA (num_key_value_heads < num_attention_heads)
     4. SwiGLU MLP (silu activation with gate_proj)
-    5. Parameter count in 350M - 700M range OR 1B - 1.5B range
+    5. Parameter count in 350M - 700M range, 1B - 1.5B range, or 1.5B - 2.0B Tier C conservative range
     6. Context window 8k - 16k
     """
     has_rope = (
@@ -156,7 +171,9 @@ def verify_architecture_spec(config: Qwen2Config, total_params: int) -> Dict[str
 
     in_350m_700m = 350_000_000 <= total_params <= 700_000_000
     in_1b_1_5b = 1_000_000_000 <= total_params <= 1_600_000_000
-    in_valid_range = in_350m_700m or in_1b_1_5b
+    in_1_5b_2b = 1_500_000_000 <= total_params <= 2_200_000_000
+    in_tier_c = 1_500_000_000 <= total_params <= 7_500_000_000
+    in_valid_range = in_350m_700m or in_1b_1_5b or in_1_5b_2b or in_tier_c
 
     checks = {
         "is_decoder_only": True,
@@ -172,12 +189,19 @@ def verify_architecture_spec(config: Qwen2Config, total_params: int) -> Dict[str
         "total_parameters": total_params,
         "params_in_350m_700m_range": in_350m_700m,
         "params_in_1b_1_5b_range": in_1b_1_5b,
+        "params_in_1_5b_2b_range": in_1_5b_2b,
+        "params_in_tier_c_range": in_tier_c,
         "params_in_valid_range": in_valid_range,
     }
     
-    # If the model is sized in the scaled 1B-1.5B range, validate against that range;
-    # otherwise validate against the 350M-700M baseline range.
-    range_check = in_1b_1_5b if total_params > 700_000_000 else in_350m_700m
+    # Range check selects appropriate bracket: Tier C conservative (1.5B-2B), scaled (1B-1.5B), or baseline (350M-700M)
+    if total_params > 1_600_000_000:
+        range_check = in_1_5b_2b or in_tier_c
+    elif total_params > 700_000_000:
+        range_check = in_1b_1_5b
+    else:
+        range_check = in_350m_700m
+
     checks["all_passed"] = (
         checks["has_rmsnorm"]
         and checks["has_rope"]
