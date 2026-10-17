@@ -434,3 +434,36 @@ def test_api_audit_timeline_endpoints(client):
     stats_data = stats_resp.json()
     assert "total_events" in stats_data
     assert "success_rate_pct" in stats_data
+
+
+def test_api_model_evolution_endpoints(client):
+    """Tests FastAPI /audit/model-evolution-timeline and /audit/model-evolution-stats endpoints."""
+    # GET /audit/model-evolution-timeline
+    tl_resp = client.get("/audit/model-evolution-timeline?limit=25")
+    assert tl_resp.status_code == 200
+    tl_data = tl_resp.json()
+    assert "timeline" in tl_data
+    assert "stats" in tl_data
+    assert "total_count" in tl_data
+    stats = tl_data["stats"]
+    assert "total_events" in stats
+    assert "total_proposals" in stats
+    assert "total_approvals" in stats
+    assert "total_dismissals" in stats
+    assert "total_training_runs" in stats
+    assert "total_promotions" in stats
+    assert "total_rollbacks_guarded" in stats
+
+    # Test filtering by event_type
+    filter_resp = client.get("/audit/model-evolution-timeline?event_type=proposal")
+    assert filter_resp.status_code == 200
+    filter_data = filter_resp.json()
+    assert all(item["category"] == "PROPOSAL" for item in filter_data["timeline"])
+
+    # GET /audit/model-evolution-stats
+    stats_resp = client.get("/audit/model-evolution-stats")
+    assert stats_resp.status_code == 200
+    s_data = stats_resp.json()
+    assert "total_events" in s_data
+    assert "total_promotions" in s_data
+

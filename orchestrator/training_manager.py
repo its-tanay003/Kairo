@@ -440,7 +440,33 @@ class TrainingManager:
         self._job_threads[job_id] = thread
         thread.start()
 
+        # Record training job start in Event Store
+        try:
+            from events.db import Event, insert_event
+            evt = Event.create(
+                session_id="model-evolution-controller",
+                task_id=f"job_{job_id}",
+                actor="TrainingManager",
+                tool_id="training_job_lifecycle",
+                requested_args={
+                    "job_id": job_id,
+                    "job_type": job_type,
+                    "preset": preset,
+                    "action": "START",
+                    "epochs": epochs,
+                    "learning_rate": learning_rate,
+                    "batch_size": batch_size,
+                    "output_dir": str(out_dir),
+                },
+                result_summary=f"Training job {job_id} ({job_type.upper()}) started for preset '{preset}'. Epochs: {epochs}, LR: {learning_rate}.",
+                confidence=1.0,
+            )
+            insert_event(evt)
+        except Exception as e:
+            logger.warning(f"Could not log training job start to Event Store: {e}")
+
         return job_info
+
 
     def _execute_training_worker(self, job_id: str, stop_event: threading.Event) -> None:
         """Background worker simulating or executing training with step-by-step telemetry."""
@@ -522,6 +548,32 @@ class TrainingManager:
         job["status"] = "completed"
         job["finished_at"] = datetime.now(timezone.utc).isoformat()
         job["logs"].append(f"[{datetime.now(timezone.utc).strftime('%H:%M:%S')}] Training completed successfully! Checkpoint weights saved to {job['output_dir']}")
+
+        # Record completion in Event Store
+        try:
+            from events.db import Event, insert_event
+            evt = Event.create(
+                session_id="model-evolution-controller",
+                task_id=f"job_{job['id']}_complete",
+                actor="TrainingManager",
+                tool_id="training_job_lifecycle",
+                requested_args={
+                    "job_id": job["id"],
+                    "job_type": job["job_type"],
+                    "preset": job.get("preset"),
+                    "action": "COMPLETED",
+                    "status": "completed",
+                    "output_dir": job["output_dir"],
+                    "loss": job.get("loss"),
+                    "reward_margin": job.get("reward_margin"),
+                },
+                result_summary=f"Training job {job['id']} completed successfully! Checkpoint weights saved to {job['output_dir']}",
+                confidence=1.0,
+            )
+            insert_event(evt)
+        except Exception:
+            pass
+
 
         out_path = Path(job["output_dir"])
         out_path.mkdir(parents=True, exist_ok=True)
@@ -759,6 +811,32 @@ class TrainingManager:
         job["logs"].append(
             f"[{datetime.now(timezone.utc).strftime('%H:%M:%S')}] Full 4-stage pretrain_scale pipeline completed successfully! Model preset: {preset} | All checkpoints verified across pretrain, trl_sft, dpo, and grpo."
         )
+
+        # Record completion in Event Store
+        try:
+            from events.db import Event, insert_event
+            evt = Event.create(
+                session_id="model-evolution-controller",
+                task_id=f"job_{job['id']}_complete",
+                actor="TrainingManager",
+                tool_id="training_job_lifecycle",
+                requested_args={
+                    "job_id": job["id"],
+                    "job_type": job["job_type"],
+                    "preset": job.get("preset"),
+                    "action": "COMPLETED",
+                    "status": "completed",
+                    "output_dir": job["output_dir"],
+                    "loss": job.get("loss"),
+                    "stage_results": stage_results,
+                },
+                result_summary=f"Pretrain scale job {job['id']} completed across all 4 stages for preset '{preset}'.",
+                confidence=1.0,
+            )
+            insert_event(evt)
+        except Exception:
+            pass
+
 
         out_path = out_dir / "training_meta.json"
         try:

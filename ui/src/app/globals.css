@@ -7050,6 +7050,285 @@ body {
   color: var(--text-secondary);
 }
 
+/* =============================================================================
+   TASK C: AUDIT EXPLORER MODEL EVOLUTION TIMELINE & DECISION PROOF STYLES
+   ============================================================================= */
+
+.audit-view-mode-tabs {
+  display: flex;
+  gap: 8px;
+  background-color: var(--bg-surface-raised);
+  border: 1px solid var(--border-subtle);
+  border-radius: 12px;
+  padding: 6px;
+  margin-bottom: 2px;
+  width: fit-content;
+}
+
+.view-mode-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 16px;
+  border-radius: 8px;
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--text-secondary);
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.view-mode-pill:hover {
+  color: var(--text-primary);
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.view-mode-pill.active {
+  background: var(--bg-surface);
+  color: var(--text-primary);
+  font-weight: 600;
+  border-color: var(--border-subtle);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.25);
+}
+
+.mode-badge {
+  font-size: 11px;
+  font-weight: 600;
+  padding: 1px 7px;
+  border-radius: 10px;
+  background: var(--bg-surface-inset);
+  color: var(--text-secondary);
+  border: 1px solid var(--border-subtle);
+}
+
+.mode-badge.highlight {
+  background: rgba(96, 165, 250, 0.15);
+  color: #60a5fa;
+  border-color: rgba(96, 165, 250, 0.35);
+}
+
+.audit-hero-card.evolution-theme {
+  background: linear-gradient(135deg, rgba(96, 165, 250, 0.08) 0%, rgba(20, 20, 22, 0.98) 100%);
+  border-color: rgba(96, 165, 250, 0.25);
+}
+
+.hero-badge.evolution {
+  background: rgba(96, 165, 250, 0.15);
+  color: #60a5fa;
+  border: 1px solid rgba(96, 165, 250, 0.35);
+}
+
+.evolution-kpis .kpi-val.good {
+  color: #3ecf8e;
+}
+
+.evolution-kpis .sub-val {
+  font-size: 14px;
+  color: var(--text-muted);
+  font-weight: 400;
+}
+
+.evolution-kpis .kpi-val.warning {
+  color: #f5a623;
+}
+
+.evolution-type-badge {
+  font-size: 10.5px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  padding: 3px 8px;
+  border-radius: 4px;
+}
+
+.evolution-type-badge.proposal {
+  background: rgba(56, 189, 248, 0.15);
+  color: #38bdf8;
+  border: 1px solid rgba(56, 189, 248, 0.35);
+}
+
+.evolution-type-badge.approved {
+  background: rgba(62, 207, 142, 0.15);
+  color: #3ecf8e;
+  border: 1px solid rgba(62, 207, 142, 0.35);
+}
+
+.evolution-type-badge.dismissed {
+  background: rgba(245, 166, 35, 0.15);
+  color: #f5a623;
+  border: 1px solid rgba(245, 166, 35, 0.35);
+}
+
+.evolution-type-badge.training-start {
+  background: rgba(129, 140, 248, 0.15);
+  color: #818cf8;
+  border: 1px solid rgba(129, 140, 248, 0.35);
+}
+
+.evolution-type-badge.training-complete {
+  background: rgba(52, 211, 153, 0.15);
+  color: #34d399;
+  border: 1px solid rgba(52, 211, 153, 0.35);
+}
+
+.evolution-type-badge.training-stopped {
+  background: rgba(251, 146, 60, 0.15);
+  color: #fb923c;
+  border: 1px solid rgba(251, 146, 60, 0.35);
+}
+
+.evolution-type-badge.promoted {
+  background: rgba(62, 207, 142, 0.15);
+  color: #3ecf8e;
+  border: 1px solid rgba(62, 207, 142, 0.35);
+}
+
+.evolution-type-badge.guarded {
+  background: rgba(245, 166, 35, 0.15);
+  color: #f5a623;
+  border: 1px solid rgba(245, 166, 35, 0.35);
+}
+
+/* Card edge accents by event category */
+.ev-card.promotion-promoted {
+  border-left: 4px solid #3ecf8e;
+}
+
+.ev-card.promotion-guarded {
+  border-left: 4px solid #f5a623;
+}
+
+.ev-card.gate-approved {
+  border-left: 4px solid #3ecf8e;
+}
+
+.ev-card.gate-dismissed {
+  border-left: 4px solid #f5a623;
+}
+
+.ev-card.proposal-card {
+  border-left: 4px solid #38bdf8;
+}
+
+.ev-card.training-card {
+  border-left: 4px solid #818cf8;
+}
+
+.evolution-quote-box {
+  margin: 4px 0 10px 0;
+  padding: 8px 12px;
+  background: rgba(255, 255, 255, 0.02);
+  border-left: 3px solid rgba(255, 255, 255, 0.18);
+  border-radius: 4px;
+}
+
+.justification-callout-box {
+  background: var(--bg-surface-inset);
+  border: 1px solid var(--border-subtle);
+  border-radius: 8px;
+  padding: 12px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 6px;
+}
+
+.justification-header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11.5px;
+  color: var(--text-primary);
+}
+
+.just-icon {
+  font-size: 14px;
+}
+
+.justification-text {
+  font-size: 12.5px;
+  color: var(--text-secondary);
+  line-height: 1.45;
+  margin: 0;
+}
+
+.justification-pills-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 4px;
+}
+
+.just-pill {
+  font-size: 11px;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid var(--border-subtle);
+  padding: 3px 8px;
+  border-radius: 6px;
+  color: var(--text-secondary);
+}
+
+.just-pill strong {
+  color: var(--text-primary);
+}
+
+.eval-comparison-table-wrap.mini {
+  margin: 8px 0 0 0;
+  border: 1px solid var(--border-subtle);
+  border-radius: 6px;
+  overflow: hidden;
+  background: var(--bg-surface-raised);
+}
+
+.evolution-footer {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.inspect-hint {
+  font-size: 11px;
+  color: var(--accent);
+  font-weight: 500;
+  margin-left: auto;
+}
+
+.timeline-event-card:hover .inspect-hint {
+  text-decoration: underline;
+}
+
+.evolution-drawer {
+  max-width: 660px;
+}
+
+.evolution-proof {
+  background: var(--bg-surface-inset);
+  border: 1px solid var(--border-subtle);
+  border-radius: 8px;
+  padding: 14px 16px;
+}
+
+.drawer-quote {
+  margin: 8px 0 12px 0;
+}
+
+.drawer-rationale-full {
+  font-size: 12.5px;
+  color: var(--text-secondary);
+  line-height: 1.5;
+  margin: 0;
+}
+
+.refresh-btn {
+  font-weight: bold;
+  padding: 4px 10px;
+}
+
+
 
 
 

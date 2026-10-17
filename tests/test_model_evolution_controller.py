@@ -892,3 +892,139 @@ def test_auto_evaluation_runs_in_controller_cycle(sample_policy_file, temp_dir):
     assert mock_mc.active_model_id == "kairo-scale-2b-grpo"
 
 
+def test_evolution_timeline_aggregates_all_four_lifecycle_stages(sample_policy_file, temp_dir):
+    """
+    Verifies that get_evolution_timeline aggregates:
+    1. Proposals (Task C.1)
+    2. Human approvals/dismissals (Task C.2)
+    3. Training job start/completion
+    4. Auto-promotion/rollback guard decisions (Task C.3)
+    Each entry linking directly to the specific benchmark sweep numbers that justified it.
+    """
+    mock_tm = MockTrainingManager(total_examples=5200, pass_rate=95.0)
+    mock_bm = MockBenchmarkManager()
+    mock_mc = MockModelCenter(active_model_id="kairo-scale-1.2b")
+
+    controller = ModelEvolutionController(
+        training_manager=mock_tm,
+        benchmark_manager=mock_bm,
+        model_center=mock_mc,
+        policy_path=sample_policy_file,
+        proposals_path=temp_dir / "proposals.json",
+        state_path=temp_dir / "state.json",
+        evaluations_path=temp_dir / "evaluations.json",
+    )
+    controller.state["last_run_example_count"] = 3000
+
+    # 1. Generate Proposal (Task C.1)
+    cycle_res = controller.run_cycle()
+    assert len(cycle_res["proposals_generated"]) == 1
+    prop_id = cycle_res["proposals_generated"][0]["proposal_id"]
+
+    # 2. Human Approval (Task C.2)
+    app_res = controller.approve_proposal(prop_id, operator="operator_secops")
+    assert app_res["success"] is True
+
+    # 3. Add Training Job Lifecycle
+    mock_tm.jobs = [
+        {
+            "id": "job_training_777",
+            "job_type": "sft",
+            "preset": "kairo-scale-2b",
+            "status": "completed",
+            "started_at": "2026-10-17T08:00:00Z",
+            "finished_at": "2026-10-17T09:30:00Z",
+            "total_epochs": 1,
+            "learning_rate": 5e-5,
+            "batch_size": 2,
+            "loss": 0.42,
+            "output_dir": "training/checkpoints/sft/v2",
+        }
+    ]
+
+    # 4. Auto-Evaluation Decision (Task C.3)
+    eval_res = controller.evaluate_completed_jobs(
+        jobs_override=mock_tm.jobs,
+        active_model_override="kairo-scale-1.2b",
+        benchmark_run_override={
+            "model_id": "kairo-scale-2b-sft",
+            "tool_accuracy_pct": 99.5,
+            "schema_pass_pct": 100.0,
+            "recovery_rate_pct": 100.0,
+            "composite_score": 98.8,
+        },
+
+    )
+    assert len(eval_res) == 1
+
+    # Query Evolution Timeline
+    tl = controller.get_evolution_timeline()
+    timeline_items = tl["timeline"]
+    stats = tl["stats"]
+
+    # Ensure all 4 event types are represented
+    event_types = {item["event_type"] for item in timeline_items}
+    assert "PROPOSAL" in event_types
+    assert "HUMAN_GATE_DECISION" in event_types
+    assert "TRAINING_JOB_START" in event_types
+    assert "TRAINING_JOB_COMPLETED" in event_types
+    assert "PROMOTION_DECISION" in event_types
+
+    # Verify that each entry links to specific benchmark justification and sweep numbers
+    for item in timeline_items:
+        assert "benchmark_justification" in item
+        assert len(item["benchmark_justification"]) > 0
+        assert "justifying_sweep_numbers" in item
+        assert isinstance(item["justifying_sweep_numbers"], dict)
+
+    # Specific check for Promotion Decision
+    promo_item = next(it for it in timeline_items if it["event_type"] == "PROMOTION_DECISION")
+    assert promo_item["decision"] == "PROMOTED"
+    assert promo_item["promoted"] is True
+    assert "tool_accuracy_pct" in promo_item["justifying_sweep_numbers"]
+    assert promo_item["justifying_sweep_numbers"]["tool_accuracy_pct"]["delta"] > 0
+
+    # Verify Stats
+    assert stats["total_events"] >= 5
+    assert stats["total_proposals"] == 1
+    assert stats["total_approvals"] == 1
+    assert stats["total_promotions"] == 1
+
+
+def test_evolution_timeline_filtering_and_kpis(sample_policy_file, temp_dir):
+    """Verifies filtering by category, preset, and text query."""
+    mock_tm = MockTrainingManager(total_examples=5200, pass_rate=95.0)
+    mock_bm = MockBenchmarkManager()
+    mock_mc = MockModelCenter(active_model_id="kairo-scale-1.2b")
+
+    controller = ModelEvolutionController(
+        training_manager=mock_tm,
+        benchmark_manager=mock_bm,
+        model_center=mock_mc,
+        policy_path=sample_policy_file,
+        proposals_path=temp_dir / "proposals.json",
+        state_path=temp_dir / "state.json",
+        evaluations_path=temp_dir / "evaluations.json",
+    )
+    controller.state["last_run_example_count"] = 3000
+
+    # Create proposal and dismiss
+    res = controller.run_cycle()
+    prop_id = res["proposals_generated"][0]["proposal_id"]
+    controller.dismiss_proposal(prop_id, operator="admin", reason="Hardware thermal limit")
+
+    # Filter by human gate
+    tl_gate = controller.get_evolution_timeline(event_type="human_gate")
+    assert all(it["event_type"] == "HUMAN_GATE_DECISION" for it in tl_gate["timeline"])
+
+    # Filter by query
+    tl_query = controller.get_evolution_timeline(query="thermal limit")
+    assert len(tl_query["timeline"]) >= 1
+    assert "thermal limit" in tl_query["timeline"][0]["plain_language_summary"].lower()
+
+    # Filter by non-existent query
+    tl_empty = controller.get_evolution_timeline(query="nonexistent_metric_xyz")
+    assert len(tl_empty["timeline"]) == 0
+
+
+

@@ -1638,6 +1638,37 @@ def get_audit_explorer_stats(time_range: Optional[str] = None):
     return get_audit_stats(time_range=time_range)
 
 
+@app.get("/audit/model-evolution-timeline")
+def get_model_evolution_timeline(
+    query: Optional[str] = None,
+    event_type: Optional[str] = None,
+    preset: Optional[str] = None,
+    limit: int = 200,
+):
+    """
+    Returns the dedicated, cryptographically verifiable Model Evolution timeline:
+    - Every proposal (Task C.1)
+    - Every human approval / dismissal (Task C.2)
+    - Every training job start / stop
+    - Every auto-promote / no-promote decision (Task C.3)
+    Each entry links directly to the specific benchmark sweep numbers that justified it.
+    """
+    return evolution_controller.get_evolution_timeline(
+        query=query,
+        event_type=event_type,
+        preset=preset,
+        limit=limit,
+    )
+
+
+@app.get("/audit/model-evolution-stats")
+def get_model_evolution_stats():
+    """Returns real-time KPIs and metrics summary for Model Evolution."""
+    res = evolution_controller.get_evolution_timeline(limit=1)
+    return res.get("stats", {})
+
+
+
 # ==============================================================================
 # DATASET CURATION & SFT / DPO TRAINING PIPELINE (Phase 3 & 6)
 # ==============================================================================

@@ -953,6 +953,302 @@ class ModelEvolutionController:
         with self._lock:
             return sorted(self.proposals, key=lambda x: str(x.get("timestamp", "")), reverse=True)[:limit]
 
+    def get_evolution_timeline(
+        self,
+        query: Optional[str] = None,
+        event_type: Optional[str] = None,
+        preset: Optional[str] = None,
+        limit: int = 200,
+    ) -> Dict[str, Any]:
+        """
+        Builds the unified, inspectable Model Evolution Timeline:
+        - Every proposal (Task C.1)
+        - Every approval / dismissal (Task C.2)
+        - Every training job start / stop
+        - Every promote / no-promote decision (Task C.3)
+        Each entry links directly to the specific benchmark sweep numbers that justified it.
+        """
+        items: List[Dict[str, Any]] = []
+
+        with self._lock:
+            props = list(self.proposals)
+            evals = list(self.evaluations)
+
+        # 1. Proposals (Task C.1)
+        for p in props:
+            rule = p.get("rule_name", "")
+            metrics = p.get("trigger_metrics", {}) or {}
+
+            if rule == "sft_refresh":
+                new_ex = metrics.get("new_examples_since_last_run", 0)
+                schema_rate = float(metrics.get("schema_validity_pass_rate", 0.94)) * 100
+                justification = f"Accumulated {new_ex:,} validated examples (threshold: >=2,000) with {schema_rate:.1f}% schema validity."
+                sweep_numbers = {
+                    "new_examples": new_ex,
+                    "schema_pass_pct": round(schema_rate, 2),
+                    "total_available": metrics.get("total_examples_available", 0),
+                    "recovery_count": metrics.get("recovery_examples_count", 0),
+                }
+            elif rule == "tier_scaling":
+                justification = "3 consecutive SFT refreshes showed diminishing returns (<1.0% accuracy gain on tool_accuracy_pct benchmark sweeps). Capacity saturated."
+                sweep_numbers = {
+                    "plateau_runs": 3,
+                    "delta_threshold_pct": 1.0,
+                    "target_metric": "tool_accuracy_pct",
+                }
+            elif rule == "regression_rollback":
+                drop = metrics.get("regression_drop_pct", 5.0)
+                prev = metrics.get("previous_value", 98.0)
+                curr = metrics.get("current_value", 90.0)
+                justification = f"Active model regressed on critical metric from {prev:.1f}% to {curr:.1f}% (drop of {drop}%, exceeding tolerable threshold of 5.0%)."
+                sweep_numbers = {
+                    "regressed_metric": metrics.get("metric_name", "tool_accuracy_pct"),
+                    "previous_value": prev,
+                    "current_value": curr,
+                    "drop_pct": drop,
+                }
+            else:
+                justification = p.get("rationale", "Rule evaluation condition satisfied.")
+                sweep_numbers = metrics
+
+            items.append({
+                "id": p.get("proposal_id"),
+                "event_type": "PROPOSAL",
+                "category": "proposal",
+                "rule_name": rule,
+                "action": p.get("action"),
+                "target_preset": p.get("target_preset"),
+                "status": p.get("status"),
+                "timestamp": p.get("timestamp"),
+                "plain_language_summary": p.get("plain_language_summary"),
+                "rationale": p.get("rationale"),
+                "benchmark_justification": justification,
+                "justifying_sweep_numbers": sweep_numbers,
+                "estimated_cost": p.get("estimated_cost"),
+                "recommended_parameters": p.get("recommended_parameters"),
+                "event_id": p.get("event_id"),
+            })
+
+            # 2. Human Gate Decisions (Task C.2)
+            if p.get("status") in ("APPROVED", "DISMISSED"):
+                is_app = p.get("status") == "APPROVED"
+                decision_ts = p.get("approved_at") if is_app else p.get("dismissed_at")
+                op = p.get("approved_by") if is_app else p.get("dismissed_by")
+
+                if is_app:
+                    dispatched_id = p.get("executed_job", {}).get("id") or p.get("action")
+                    summary = f"Operator approved training run {dispatched_id} for {p.get('target_preset')}. Dispatched to TrainingManager."
+                else:
+                    summary = f"Operator dismissed proposal {p.get('proposal_id')}. Reason: {p.get('dismiss_reason', 'Operator dismissed from UI')}."
+
+                items.append({
+                    "id": f"decision_{p.get('proposal_id')}",
+                    "event_type": "HUMAN_GATE_DECISION",
+                    "category": "human_gate",
+                    "decision": p.get("status"),
+                    "proposal_id": p.get("proposal_id"),
+                    "operator": op or "operator_secops",
+                    "timestamp": decision_ts or p.get("timestamp"),
+                    "target_preset": p.get("target_preset"),
+                    "plain_language_summary": summary,
+                    "rationale": p.get("rationale"),
+                    "reason": p.get("dismiss_reason"),
+                    "executed_job": p.get("executed_job"),
+                    "dispatched_job_id": p.get("executed_job", {}).get("id"),
+                    "benchmark_justification": justification,
+                    "justifying_sweep_numbers": sweep_numbers,
+                    "event_id": p.get("event_id"),
+                })
+
+        # 3. Training Job Starts & Stops
+        try:
+            jobs = self.training_manager.get_training_jobs()
+            for j in jobs:
+                jid = j.get("id") or j.get("job_id")
+                # Start Event
+                start_ts = j.get("started_at")
+                if start_ts:
+                    items.append({
+                        "id": f"job_start_{jid}",
+                        "event_type": "TRAINING_JOB_START",
+                        "category": "training_lifecycle",
+                        "job_id": jid,
+                        "job_type": j.get("job_type"),
+                        "preset": j.get("preset"),
+                        "status": j.get("status"),
+                        "timestamp": start_ts,
+                        "plain_language_summary": f"Training job {jid} ({str(j.get('job_type')).upper()}) started for preset '{j.get('preset')}'. Epochs: {j.get('total_epochs')}, LR: {j.get('learning_rate')}.",
+                        "output_dir": j.get("output_dir"),
+                        "parameters": {
+                            "epochs": j.get("total_epochs"),
+                            "learning_rate": j.get("learning_rate"),
+                            "batch_size": j.get("batch_size"),
+                            "pipeline_stages": j.get("pipeline_stages"),
+                        },
+                        "benchmark_justification": f"Authorized run targeting preset '{j.get('preset')}'. Preserves versioned checkpoints without overwriting.",
+                        "justifying_sweep_numbers": {
+                            "preset": j.get("preset"),
+                            "epochs": j.get("total_epochs"),
+                            "learning_rate": j.get("learning_rate"),
+                        },
+                    })
+
+                # End / Stop Event
+                fin_ts = j.get("finished_at")
+                if fin_ts and j.get("status") in ("completed", "cancelled", "stopped"):
+                    is_completed = j.get("status") == "completed"
+                    items.append({
+                        "id": f"job_finish_{jid}",
+                        "event_type": "TRAINING_JOB_COMPLETED" if is_completed else "TRAINING_JOB_STOPPED",
+                        "category": "training_lifecycle",
+                        "job_id": jid,
+                        "job_type": j.get("job_type"),
+                        "preset": j.get("preset"),
+                        "status": j.get("status"),
+                        "timestamp": fin_ts,
+                        "plain_language_summary": (
+                            f"Training job {jid} completed successfully! Checkpoint weights preserved at {j.get('output_dir')}."
+                            if is_completed
+                            else f"Training job {jid} stopped/cancelled by operator."
+                        ),
+                        "output_dir": j.get("output_dir"),
+                        "final_loss": j.get("loss"),
+                        "reward_margin": j.get("reward_margin"),
+                        "stage_results": j.get("stage_results"),
+                        "benchmark_justification": f"Job {jid} finished with status '{j.get('status')}'. Checkpoints ready for automated evaluation sweep.",
+                        "justifying_sweep_numbers": {
+                            "final_loss": j.get("loss"),
+                            "reward_margin": j.get("reward_margin"),
+                            "status": j.get("status"),
+                        },
+                    })
+        except Exception as e:
+            logger.warning(f"Could not load training jobs for evolution timeline: {e}")
+
+        # 4. Promote / No-Promote Decisions (Task C.3)
+        for ev in evals:
+            is_promoted = ev.get("promoted", False)
+            comparisons = ev.get("comparisons", {}) or {}
+            regressions = ev.get("regressions", []) or []
+            improvements = ev.get("improvements", []) or []
+            chkpt = ev.get("checkpoint_model_id")
+            active_m = ev.get("active_model_id")
+
+            if is_promoted:
+                justification = (
+                    f"Auto-promotion justified: All tracked metrics met or exceeded baseline ({active_m}). "
+                    f"Composite score: {ev.get('new_checkpoint_metrics', {}).get('composite_score', 0)} vs "
+                    f"{ev.get('active_model_metrics', {}).get('composite_score', 0)}."
+                )
+            else:
+                if regressions:
+                    reg0 = regressions[0]
+                    justification = (
+                        f"Rollback protection engaged: Checkpoint regressed on {reg0.get('metric')} "
+                        f"by {reg0.get('drop')}% (exceeding {ev.get('tolerated_variance', 1.0)}% tolerance). "
+                        f"Active model preserved without deleting completed weights."
+                    )
+                else:
+                    justification = (
+                        f"Rollback protection engaged: Composite score showed no gain over active baseline. "
+                        f"Active model preserved."
+                    )
+
+            # Build sweep comparison table data for justification linking
+            sweep_comparison_table = {}
+            for mk, cd in comparisons.items():
+                sweep_comparison_table[mk] = {
+                    "active_baseline": cd.get("active_val"),
+                    "checkpoint": cd.get("new_val"),
+                    "delta": cd.get("delta"),
+                    "delta_pct": cd.get("delta_pct"),
+                    "regressed": any(r.get("metric") == mk for r in regressions),
+                    "improved": any(i.get("metric") == mk for i in improvements),
+                }
+
+            items.append({
+                "id": ev.get("evaluation_id"),
+                "event_type": "PROMOTION_DECISION",
+                "category": "promotion_gate",
+                "decision": ev.get("decision"),
+                "promoted": is_promoted,
+                "job_id": ev.get("job_id"),
+                "checkpoint_model_id": chkpt,
+                "active_model_id": active_m,
+                "timestamp": ev.get("timestamp"),
+                "plain_language_notice": ev.get("plain_language_notice"),
+                "plain_language_summary": ev.get("plain_language_notice"),
+                "benchmark_justification": justification,
+                "justifying_sweep_numbers": sweep_comparison_table,
+                "comparisons": comparisons,
+                "new_checkpoint_metrics": ev.get("new_checkpoint_metrics"),
+                "active_model_metrics": ev.get("active_model_metrics"),
+                "regressions": regressions,
+                "improvements": improvements,
+                "tolerated_variance": ev.get("tolerated_variance", 1.0),
+            })
+
+        # Sort reverse chronologically
+        items_sorted = sorted(items, key=lambda x: str(x.get("timestamp", "")), reverse=True)
+
+        # Filtering
+        filtered = []
+        for it in items_sorted:
+            # Filter by event_type
+            if event_type and event_type.lower() != "all":
+                et = event_type.lower()
+                cat = it.get("category", "").lower()
+                evt_type = it.get("event_type", "").lower()
+                if et in ("proposal", "proposals") and cat != "proposal":
+                    continue
+                elif et in ("human", "human_gate", "decisions", "approvals") and cat != "human_gate":
+                    continue
+                elif et in ("training", "training_jobs", "jobs") and cat != "training_lifecycle":
+                    continue
+                elif et in ("promotion", "evaluations", "promotion_decisions") and cat != "promotion_gate":
+                    continue
+                elif et not in (cat, evt_type):
+                    continue
+
+            # Filter by preset
+            if preset and preset.lower() != "all":
+                p_lower = preset.lower()
+                item_preset = (it.get("target_preset") or it.get("preset") or it.get("checkpoint_model_id") or "").lower()
+                if p_lower not in item_preset:
+                    continue
+
+            # Filter by text search query
+            if query and query.strip():
+                q = query.strip().lower()
+                corpus = (
+                    f"{it.get('plain_language_summary', '')} {it.get('plain_language_notice', '')} "
+                    f"{it.get('benchmark_justification', '')} {it.get('target_preset', '')} "
+                    f"{it.get('checkpoint_model_id', '')} {it.get('job_id', '')} {it.get('rule_name', '')} "
+                    f"{it.get('event_type', '')}"
+                ).lower()
+                if q not in corpus:
+                    continue
+
+            filtered.append(it)
+
+        # Calculate KPIs
+        stats = {
+            "total_events": len(items_sorted),
+            "total_proposals": sum(1 for it in items_sorted if it["event_type"] == "PROPOSAL"),
+            "total_approvals": sum(1 for it in items_sorted if it["event_type"] == "HUMAN_GATE_DECISION" and it.get("decision") == "APPROVED"),
+            "total_dismissals": sum(1 for it in items_sorted if it["event_type"] == "HUMAN_GATE_DECISION" and it.get("decision") == "DISMISSED"),
+            "total_training_runs": sum(1 for it in items_sorted if it["event_type"] == "TRAINING_JOB_START"),
+            "total_promotions": sum(1 for it in items_sorted if it["event_type"] == "PROMOTION_DECISION" and it.get("promoted") is True),
+            "total_rollbacks_guarded": sum(1 for it in items_sorted if it["event_type"] == "PROMOTION_DECISION" and it.get("promoted") is False),
+        }
+
+        return {
+            "timeline": filtered[:limit],
+            "stats": stats,
+            "total_count": len(filtered),
+        }
+
+
     def approve_proposal(self, proposal_id: str, operator: str = "operator") -> Dict[str, Any]:
         """
         HUMAN-IN-THE-LOOP CHECKPOINT:

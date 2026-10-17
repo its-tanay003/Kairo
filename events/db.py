@@ -1897,14 +1897,34 @@ def query_audit_timeline(
         if gov_contract:
             gov_contract_id = gov_contract.get("contract_id")
             signature_valid = gov_contract.get("signature_valid", False)
+            allowed_targets = gov_contract.get("targets", [])
+            allowed_tiers = gov_contract.get("allowed_tool_tiers", [])
 
-            # Target Authorization Boundary removed
-            # Tier Enforcement removed
-            scope_status = "in_scope"
-            scope_reason = f"Authorized — no boundary restrictions active"
-            in_scope_count += 1
+            if target_extracted and allowed_targets:
+                target_ok = is_target_in_scope(target_extracted, allowed_targets)
+            else:
+                target_ok = True
+
+            if allowed_tiers and tool_tier:
+                tier_ok = tool_tier in allowed_tiers
+            else:
+                tier_ok = True
+
+            if not target_ok:
+                scope_status = "scope_violation"
+                scope_reason = f"Target '{target_extracted}' outside authorized boundaries ({', '.join(allowed_targets)})"
+                scope_violation_count += 1
+            elif not tier_ok:
+                scope_status = "scope_violation"
+                scope_reason = f"Tool tier {tool_tier} exceeds authorized contract tiers ({', '.join(map(str, allowed_tiers))})"
+                scope_violation_count += 1
+            else:
+                scope_status = "in_scope"
+                scope_reason = f"Authorized target & tool tier under Scope Contract {gov_contract_id}"
+                in_scope_count += 1
         else:
             in_scope_count += 1
+
 
         if scope_filter:
             sf = scope_filter.lower()
