@@ -66,17 +66,17 @@ python tests/test_boundary.py
 
 ## 4. Testing & Conformance Verification
 
-Before submitting any Pull Request, ensure that all 4 master test suites pass cleanly:
+Before submitting any Pull Request, ensure that all master test suites pass cleanly:
 
 ```bash
-# 1. Boundary & Service Integration Tests
-python tests/test_boundary.py
+# 1. Run all Pytest test suites across subsystems
+python -m pytest -v
 
-# 2. ToolSpec 7-Gate Conformance Engine
-python -m pytest tests/test_third_party_sdk_tool_addition.py -v
+# 2. ToolSpec 7-Gate Conformance Engine CLI
+python -m sdk verify-toolspec registry/tools/subfinder_enum_v1.yaml
 
 # 3. Model Center & Grammar Constraint Verification
-python tests/test_model_center.py
+python -m pytest tests/test_model_center.py -v
 
 # 4. Playwright UI Runtime & Zero-DOM Exception Suite
 python scripts/test_runtime_errors.py
@@ -87,16 +87,20 @@ python scripts/test_runtime_errors.py
 ## 5. Adding a New ToolSpec (Step-by-Step)
 
 1. **Scaffold the blueprint**:
+
    ```bash
-   python sdk/cli.py create --id "yourtool.action.v1" --tier 2 --category "recon"
+   python -m sdk create-toolspec yourtool.action.v1 --category recon --binary yourtool
    ```
-2. **Define the 16-field YAML**: Fill in `parameters`, `required_args`, and `output_schema` in `registry/tools/yourtool.action.v1.yaml`.
-3. **Write the adapter**: Implement parameter normalization and subprocess execution in `registry/adapters/yourtool_action_v1.py`.
+
+2. **Define the 16-field YAML**: Fill in `inputs`, `outputs`, `capabilities`, and `docs` in `registry/tools/yourtool_action_v1.yaml`.
+3. **Write the adapter & parser**: Implement `build_args()` and `parse()` in `sdk/tools/yourtool_action_v1/`.
 4. **Run 7-Gate Conformance**:
+
    ```bash
-   python -m pytest tests/test_third_party_sdk_tool_addition.py -k "yourtool"
+   python -m sdk verify-toolspec registry/tools/yourtool_action_v1.yaml
    ```
-5. **Commit both the YAML blueprint and the adapter.**
+
+5. **Commit the YAML blueprint, adapter, parser, and conformance test.**
 
 ---
 

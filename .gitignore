@@ -55,3 +55,6 @@ training/*_output/
 .pytest_cache/
 workspaces/
 *.tsbuildinfo
+ui_screenshots/
+nikto_*.csv
+*.csv

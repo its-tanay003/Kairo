@@ -158,5 +158,5 @@ The SDK was validated by authoring and certifying three completely new tools not
 Run the complete test suite verifying generator scaffolding, dynamic bridging, observer fact normalization, and all conformance gates:
 
 ```bash
-python -m pytest test_toolspec_sdk.py -v
+python -m pytest tests/test_toolspec_sdk.py -v
 ```

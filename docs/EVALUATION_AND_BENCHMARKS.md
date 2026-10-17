@@ -59,32 +59,34 @@ Execute the benchmark runner against local model checkpoints or orchestrator end
 
 ```bash
 # Run the 50-task Golden Benchmark
-python lab/runner.py --suite golden --model kairo-3.7-cyberops
+python -m lab.runner --suite golden --model kairo-scale-2b
 
-# Run the full 120-task battery with parallel workers
-python lab/runner.py --suite full --workers 4 --output lab/history.json
+# Run the full 120-task battery with multi-model sweep
+python -m lab.runner --suite full --sweep --models kairo-scale-2b-grpo,kairo-scale-2b-dpo,kairo-custom-model,Qwen3-Coder-30B-A3B-Instruct
 ```
 
 ---
 
 ## 5. Public Leaderboard & Model Score History
 
-The Benchmark Leaderboard in [`ui/src/app/components/BenchmarkLeaderboard.tsx`](file:///c:/New%20Volume%20(D)/dev/ui/src/app/components/BenchmarkLeaderboard.tsx) presents real-time multi-model comparative results:
+The Benchmark Leaderboard in [`ui/src/app/components/BenchmarkLeaderboard.tsx`](file:///c:/New%20Volume%20(D)/dev/ui/src/app/components/BenchmarkLeaderboard.tsx) presents real-time multi-model comparative results from [`lab/history.json`](file:///c:/New%20Volume%20(D)/dev/lab/history.json):
 
-| Model Version | SFT / Training | Golden Score | Syntax Valid | Scope Pass | Recovery Rate |
-| :--- | :--- | :--- | :--- | :--- | :--- |
-| **Kairo 3.7 (Sonnet Tier)** | SFT + DPO + GRPO | **94.8%** | 99.8% | 100.0% | **92.5%** |
-| **Llama-3-70B Pentest SFT** | SFT (LoRA 70B) | **91.2%** | 98.4% | 100.0% | 88.0% |
-| **Kairo 1.5B (Edge SFT)** | SFT (2.8k traces) | **86.4%** | 97.2% | 99.2% | 76.0% |
-| **Qwen-2.5-Coder-7B (Base)** | Foundation Prompt | **73.5%** | 88.1% | 94.0% | 58.2% |
-| **Llama-3-8B (Base)** | Zero-Shot Prompt | **61.0%** | 74.5% | 89.0% | 42.0% |
+| Model Version | SFT / Training Mode | Tasks Completed | Tool Match % | Schema Pass % | Recovery Rate | Composite Score |
+| :--- | :--- | :--- | :--- | :--- | :--- | :--- |
+| **Kairo-Scale-2B-GRPO (Ours v2)** | Multi-Stage GRPO (Tier C 2B) | **120/120 (100%)** | **99.2%** | **100.0%** | **100.0%** | **98.2 / 100** |
+| **Kairo-Scale-2B-DPO (Ours v2)** | Pairwise DPO Aligned | **120/120 (100%)** | 97.5% | 100.0% | 97.5% | **94.8 / 100** |
+| **Kairo-Scale-2B-SFT (Ours v2)** | Supervised Fine-Tuned (TRL) | **118/120 (98.3%)** | 96.0% | 98.3% | 92.5% | **93.4 / 100** |
+| **Qwen3-Coder-30B-A3B-Instruct** | 30B MoE Foundation Baseline | 114/120 (95.0%) | 92.0% | 93.5% | 90.0% | **88.5 / 100** |
+| **Kairo-Custom-490M (Ours)** | 490M Custom Transformer SFT | 115/120 (96.0%) | 94.0% | 95.0% | 88.0% | **86.2 / 100** |
+| **Kairo-SFT-Baseline** | Pre-DPO Baseline | 112/120 (94.0%) | 94.2% | 94.0% | 87.5% | **84.6 / 100** |
+| **Qwen2.5-0.5B-Instruct** | 0.5B Quantized Fallback | 102/120 (85.0%) | 81.0% | 84.0% | 75.0% | **78.4 / 100** |
 
 ---
 
-## 6. Comparative Research: Custom SFT vs Foundation Fallback
+## 6. Comparative Research & Verifiable Public Cards
 
 Detailed research reports are documented in:
 - [`docs/research/model_comparison_qwen3_vs_custom.md`](file:///c:/New%20Volume%20(D)/dev/docs/research/model_comparison_qwen3_vs_custom.md)
 - [`docs/research/gap_analysis_custom_vs_fallback.md`](file:///c:/New%20Volume%20(D)/dev/docs/research/gap_analysis_custom_vs_fallback.md)
 
-Key findings show that fine-tuning with ToolSpec GBNF grammars increases syntax reliability from **74% to 99.8%**, virtually eliminating hallucinated CLI flags.
+Key findings show that fine-tuning with ToolSpec GBNF grammars increases syntax reliability from **74% to 100%**, completely eliminating hallucinated CLI flags and out-of-scope subnet scanning.

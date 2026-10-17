@@ -30,26 +30,26 @@ In KAIRO, autonomous models do not execute arbitrary shell strings directly. Eve
 
 ## 2. The 16-Field ToolSpec Schema Specification
 
-Every ToolSpec YAML file stored in [`registry/`](file:///c:/New%20Volume%20(D)/dev/registry) must contain exactly these 16 fields:
+Every ToolSpec YAML file stored in [`registry/tools/`](file:///c:/New%20Volume%20(D)/dev/registry/tools) must contain exactly all 16 specification fields defined in [`registry/schema/toolspec.schema.json`](file:///c:/New%20Volume%20(D)/dev/registry/schema/toolspec.schema.json):
 
 | Field | Type | Required | Description |
 | :--- | :--- | :--- | :--- |
-| `id` | `string` | Yes | Unique reverse-DNS identifier (e.g. `nmap.scan.v1`) |
-| `name` | `string` | Yes | Human-readable tool title |
-| `version` | `string` | Yes | Semantic version (e.g. `1.0.0`) |
-| `description` | `string` | Yes | Plain-language functional overview used for semantic matching |
-| `category` | `string` | Yes | Operational category (`recon`, `discovery`, `exploit`, `audit`) |
-| `tier` | `integer` | Yes | Safety tier: `1` (Safe Read-Only), `2` (Active CLI), `3` (GUI) |
-| `runner` | `string` | Yes | Execution environment: `python` or `bash` |
-| `entrypoint` | `string` | Yes | File path to execution adapter script |
-| `timeout_s` | `integer` | Yes | Hard execution cutoff in seconds |
-| `memory_cap_mb` | `integer` | Yes | Max RAM allocation before SIGKILL |
-| `cpu_limit_pct` | `integer` | Yes | Max cgroup CPU utilization threshold |
-| `parameters` | `object` | Yes | JSON Schema describing input arguments |
-| `required_args`| `array` | Yes | List of mandatory parameter keys |
-| `output_schema`| `object` | Yes | JSON Schema of structured observations |
-| `author` | `string` | Yes | Organization or maintainer |
-| `license` | `string` | Yes | Open-source or enterprise license |
+| `id` | `string` | Yes | Unique reverse-DNS identifier (e.g. `nmap.scan.v1`, `shell.run.v1`) |
+| `binary` | `string` | Yes | Executable command path, name, or internal protocol handler |
+| `category` | `string` | Yes | Operational classification (`recon`, `web_audit`, `vulnerability_scan`, `exploit`, `utility`) |
+| `capabilities` | `array[string]` | Yes | Capability tokens declaring tool features (e.g. `port_scan`, `service_detection`) |
+| `inputs` | `object` | Yes | Parameter schema with types, descriptions, defaults, and requirements |
+| `outputs` | `object` | Yes | Schema definition of return attributes, formats, and produced artifacts |
+| `side_effects` | `array[string]` | Yes | Declared external side effects (`network_scan`, `process_fork`, `disk_write`) |
+| `privilege` | `string` | Yes | Required privilege token: `user`, `elevated`, `root`, `admin`, `kernel`, `guest` |
+| `gui` | `boolean \| object`| Yes | GUI interaction requirement or display metadata |
+| `parser` | `string \| object`| Yes | Output parser strategy (`nmap_xml`, `nikto_csv`, `json`, `plain_text`) |
+| `prerequisites` | `array[string]` | Yes | Host packages, binaries, or kernel features required for execution |
+| `docs` | `string \| object` | Yes | Embedded reference documentation, syntax guide, and usage examples |
+| `success_signals` | `object` | Yes | Exit codes, regex patterns, and indicators of successful execution |
+| `failure_signals` | `object` | Yes | Error exit codes, timeout triggers, and failure pattern matching |
+| `rollback` | `string \| object` | Yes | Rollback strategy, compensating action, or VM snapshot restore |
+| `version_compatibility` | `object` | Yes | Supported agent versions and OS compatibility matrix |
 
 ---
 

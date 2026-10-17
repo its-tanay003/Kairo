@@ -6,17 +6,36 @@ An enterprise-grade, local-first autonomous agent platform engineered for defens
 
 ## Complete Documentation Suite
 
+### Core Architecture & System Guides
 | Document | Path | Scope & Focus |
 | :--- | :--- | :--- |
-| **Claude UI Design System** | [`DESIGN.md`](DESIGN.md) | Anthropic Claude Warm Dark design language, design tokens, Newsreader typography, interactive state specs, and screenshot gallery |
 | **System Architecture** | [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) | Monorepo service topology, boundaries, process execution lifecycle, IPC protocols, and fault recovery |
+| **API & Protocol Reference** | [`docs/API_REFERENCE.md`](docs/API_REFERENCE.md) | Gateway WebSocket protocol, Orchestrator FastAPI REST routes, Kali worker REST API, and SQLite 20-field audit schema |
+| **Claude UI Design System** | [`DESIGN.md`](DESIGN.md) | Anthropic Claude Warm Dark design language, design tokens, Newsreader typography, interactive state specs, and screenshot gallery |
 | **Claude UI Specification** | [`docs/CLAUDE_UI_SPEC.md`](docs/CLAUDE_UI_SPEC.md) | Component catalog, welcome screen, starter prompts, thinking accordions, artifact cards, and mobile responsive layout |
-| **API Reference** | [`docs/API_REFERENCE.md`](docs/API_REFERENCE.md) | Gateway WebSocket protocol, Orchestrator FastAPI REST routes, Kali worker REST API, and SQLite 20-field audit schema |
 | **ToolSpec Guide & SDK** | [`docs/TOOLSPEC_GUIDE.md`](docs/TOOLSPEC_GUIDE.md) | 16-field declarative ToolSpec schema, authoring workflow, 7-Gate Conformance Engine, and registry loading |
 | **Security & Scope Contracts** | [`docs/SECURITY_AND_SCOPE.md`](docs/SECURITY_AND_SCOPE.md) | Cryptographic HMAC-SHA256 scope authorization, CIDR IP validation, and Kali VM sandbox zero-trust containment |
 | **Deployment & Setup** | [`docs/DEPLOYMENT_AND_SETUP.md`](docs/DEPLOYMENT_AND_SETUP.md) | Step-by-step local development setup, VirtualBox Kali VM provisioning, Docker lab targets, and troubleshooting |
+| **Training & Autonomous Evolution** | [`docs/TRAINING_AND_EVOLUTION.md`](docs/TRAINING_AND_EVOLUTION.md) | Continuous self-improvement loop, evolution policies, scale stages (380M to 2B), SFT, DPO, and GRPO with verifiable rewards |
 | **Evaluation & Benchmarks** | [`docs/EVALUATION_AND_BENCHMARKS.md`](docs/EVALUATION_AND_BENCHMARKS.md) | 50-task Golden & 120-task Full Benchmark suites, scoring metrics, and model leaderboard comparisons |
+| **Testing & Quality Assurance** | [`docs/TESTING_AND_QA.md`](docs/TESTING_AND_QA.md) | Master 48-suite test matrix, 7-Gate conformance certification, chaos engineering, and continuous verification |
 | **Contributing Guide** | [`docs/CONTRIBUTING.md`](docs/CONTRIBUTING.md) | Code style, commit standards, test requirements, 7-gate certification workflow, and pull request checklist |
+
+### Subsystem Technical References
+| Subsystem | Path | Description |
+| :--- | :--- | :--- |
+| **Agent Orchestrator** | [`orchestrator/README.md`](orchestrator/README.md) | Cognitive loop, DAG planner, critic, recovery agent, failover router, model evolution controller, and process supervisor |
+| **Model Registry & Weights** | [`models/README.md`](models/README.md) | `models.yaml` configuration, GGUF local weights, custom Kairo-Scale checkpoints, and Model Center |
+| **Model Training & Alignment** | [`training/README.md`](training/README.md) | PyTorch Transformer architecture, pretraining, Hugging Face TRL SFT, DPO preference tuning, and GRPO |
+| **ToolSpec Registry** | [`registry/README.md`](registry/README.md) | 27 production ToolSpec YAML definitions, 16-field JSON schema, and multi-language loaders |
+| **ToolSpec SDK & Extensions** | [`sdk/README.md`](sdk/README.md) | CLI scaffolding generator, 7-Gate Conformance Engine, and certified third-party extensions |
+| **Audit Event Store** | [`events/README.md`](events/README.md) | 20-field SQLite schema, indexed timeline queries, finding cards, and forensic evidence artifacts |
+| **Session Gateway** | [`gateway/README.md`](gateway/README.md) | TypeScript WebSocket session multiplexer, token authorization, and real-time streaming |
+| **Claude Warm Dark UI** | [`ui/README.md`](ui/README.md) | Next.js 16 + React 19 web interface, Tauri desktop shell, and component catalog |
+| **Virtualization Sandbox** | [`vm/README.md`](vm/README.md) | Kali Linux VM worker agent, socket/HTTP RPC, resource caps, and automated snapshot rollback |
+| **Vulnerability Lab** | [`lab/README.md`](lab/README.md) | Docker Compose targets (Mini-DVWA, Mini-Metasploitable), benchmark tasks, and multi-model sweep history |
+| **Scripts & Tooling** | [`scripts/README.md`](scripts/README.md) | Chaos testing, automated UI screenshot capture, benchmark expansion, and stress harnesses |
+| **External Binaries** | [`tools/README.md`](tools/README.md) | Standalone utilities including Cloudflare Tunnel (`cloudflared`) |
 
 ---
 
@@ -85,14 +104,15 @@ Kairo is built on a modular monorepo architecture with clean separation between 
 ├── /ui           # Next.js 16 + React client (Chat, Event Inspector, DAG, Leaderboard, Curation)
 ├── /gateway      # TypeScript WebSocket & HTTP session gateway (Node.js / tsx)
 ├── /orchestrator # Agent loop, Planner DAG, Critic, Recovery, Evaluator (Python / FastAPI)
-├── /registry     # 16-field ToolSpec YAML blueprints & language loaders
+├── /registry     # 16-field ToolSpec YAML blueprints & language loaders (27 tools)
 ├── /events       # SQLite event database with strict 20-field audit schema
 ├── /sdk          # ToolSpec SDK: CLI generator, 7-Gate Conformance Engine & registry bridge
 ├── /training     # SFT, DPO, and GRPO fine-tuning pipelines, datasets & checkpoint storage
 ├── /lab          # Dockerized vulnerability targets (Mini-DVWA, Mini-Metasploitable) & history.json
 ├── /vm           # Headless Kali Linux VM worker agent & VirtualBox manager
-├── /scripts      # Utility, worker deployment, and toolspec creation scripts
-└── /tests        # Comprehensive test suites and fixtures (39 suites across all subsystems)
+├── /scripts      # Utility, chaos engineering, worker deployment, and toolspec creation scripts
+├── /tools        # System binaries & tunneling utilities (cloudflared)
+└── /tests        # Comprehensive test suites and fixtures (48 suites across all subsystems)
 ```
 
 ### End-to-End Service Boundary Flow

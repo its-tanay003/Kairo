@@ -180,9 +180,27 @@ WantedBy=multi-user.target
 
 ---
 
-## 7. Troubleshooting & Diagnostics
+## 8. Desktop Application Build via Tauri (`src-tauri`)
+
+Kairo can be run as a standalone native desktop app using Tauri v2:
+
+```bash
+# 1. Install Rust toolchain (if not already installed)
+curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
+
+# 2. Run Desktop UI in Development Mode
+npm --prefix ui run tauri dev
+
+# 3. Build Production Native Installer (.exe, .deb, or .dmg)
+npm --prefix ui run tauri build
+```
+
+---
+
+## 9. Troubleshooting & Diagnostics
 
 - **Port 3000 already in use**: Kill existing processes using `Get-Process -Id (Get-NetTCPConnection -LocalPort 3000).OwningProcess | Stop-Process -Force` (Windows) or `lsof -ti:3000 | xargs kill -9` (Linux).
 - **Gateway connection refused (`wsStatus: disconnected`)**: Ensure Gateway is running on port 4000 (`npm --prefix gateway run dev`).
 - **Orchestrator offline**: Verify FastAPI log: `python -m uvicorn orchestrator.server:app --port 8000`.
 - **Playwright Navigation Timeout**: In testing, use `wait_until="domcontentloaded"` rather than `networkidle` due to persistent WebSocket streams.
+- **Model Evolution Controller Startup**: Run `curl -X POST http://localhost:8000/evolution/start` to activate autonomous self-improvement.

@@ -171,3 +171,41 @@ The frontend is built on **Next.js 16** with Turbopack, following the **Anthropi
 - Collapsible Left Sidebar with `+ New session` and Operator profile.
 - Claude 3.7 Extended Thinking accordions (`✦ Thought for 1.4s ▾`).
 - Rich Claude Artifact tool cards with deep links into the Advanced Console drawer.
+
+---
+
+## 11. Model Training, Alignment & Reinforcement Learning (`/training`)
+
+Kairo houses a dedicated ML training pipeline engineered specifically for Small Language Models (SLMs) from 380M to 2.0B parameters:
+- **PyTorch Transformer (`training/model.py`)**: Custom decoder-only architecture with RMSNorm, RoPE, Grouped Query Attention (GQA), and SwiGLU activations.
+- **Supervised Fine-Tuning (`training/trl_sft.py`)**: Hugging Face TRL SFTTrainer with automated schema cleaning and XML tool-call parsing.
+- **Direct Preference Optimization (`training/dpo.py`)**: Aligns models on paired comparisons to eliminate hallucinated tool calls and unauthorized CIDR scanning.
+- **Group Relative Policy Optimization (`training/grpo.py`)**: Optimizes generation with verifiable rule-based rewards: Schema Validity (+1.0), Registry Existence (+1.0), Scope Adherence (+1.0), and Task Goal (+2.0).
+
+---
+
+## 12. Autonomous Model Evolution & Failover Routing
+
+Kairo continuously improves its own capabilities without human intervention:
+- **Evolution Controller (`orchestrator/model_evolution_controller.py`)**: Evaluates operational telemetry every 60s against [`orchestrator/evolution_policy.yaml`](file:///c:/New%20Volume%20(D)/dev/orchestrator/evolution_policy.yaml). Automatically triggers SFT training when $\ge 50$ new traces exist, scales parameter tiers upon accuracy plateaus, and rolls back if regression exceeds 2.5%.
+- **Failover Router (`orchestrator/failover_router.py`)**: High-availability inference router managing all model pairs in [`models.yaml`](file:///c:/New%20Volume%20(D)/dev/models.yaml). If a primary model encounters consecutive timeouts or schema errors, traffic seamlessly fails over to the designated fallback model.
+
+---
+
+## 13. Vulnerability Testbeds & Autonomous Benchmark Lab (`/lab`)
+
+Empirical verification relies on isolated local vulnerability targets:
+- **Docker Compose Testbeds**: Mini-DVWA (Web vulnerabilities) and Mini-Metasploitable (Network services).
+- **Benchmark Suites**: 50-task Golden benchmark (`lab/tasks.py`) and 120-task Full benchmark (`lab/extended_tasks.py`).
+- **Benchmark Sweeps**: Multi-model sequential sweep runner persisting evaluation runs and comparative scores to `lab/history.json`.
+
+---
+
+## 14. Master Verification & Testing Architecture (`/tests`)
+
+A comprehensive **48-suite test harness** certifies every service boundary:
+- Conformance testing for all 27 ToolSpecs.
+- Subsystem integration for DAG planner, cognitive self-healing loop, and evidence store.
+- Cryptographic HMAC verification and boundary fuzzing.
+- VirtualBox VM sandboxing and automated snapshot rollback.
+- Multi-client real-time synchronization and chaos testing.
