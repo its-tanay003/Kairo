@@ -513,6 +513,10 @@ class ModelEvolutionController:
         if not rule_cfg.get("enabled", True):
             return None
 
+        # Guard against spamming duplicate pending proposals for the same rule
+        if any(p.get("rule_name") == "sft_refresh" and p.get("status") == "PROPOSED" for p in self.proposals):
+            return None
+
         min_examples = int(rule_cfg.get("min_new_examples", 2000))
         min_pass_rate = float(rule_cfg.get("min_schema_pass_rate", 0.90))
         target_job_type = rule_cfg.get("target_job_type", "trl_sft")
@@ -585,6 +589,10 @@ class ModelEvolutionController:
         show < 1% accuracy gain on the benchmark sweep.
         """
         if not rule_cfg.get("enabled", True):
+            return None
+
+        # Guard against duplicate pending proposal
+        if any(p.get("rule_name") == "tier_scaling" and p.get("status") == "PROPOSED" for p in self.proposals):
             return None
 
         required_plateau_runs = int(rule_cfg.get("plateau_consecutive_runs", 3))
@@ -681,6 +689,10 @@ class ModelEvolutionController:
         NEVER propose a fresh retrain on regression.
         """
         if not rule_cfg.get("enabled", True):
+            return None
+
+        # Guard against duplicate pending proposal
+        if any(p.get("rule_name") == "regression_rollback" and p.get("status") == "PROPOSED" for p in self.proposals):
             return None
 
         max_tolerable_drop = float(rule_cfg.get("max_tolerable_regression_pct", 0.05))
@@ -828,7 +840,8 @@ class ModelEvolutionController:
         try:
             jobs = self.training_manager.get_training_jobs()
             for j in jobs:
-                if j.get("job_type", "").lower() in (job_type_clean, "sft" if job_type_clean == "trl_sft" else job_type_clean):
+                jt = (j.get("job_type") or "").lower()
+                if jt in (job_type_clean, "sft" if job_type_clean == "trl_sft" else job_type_clean):
                     if j.get("status") == "completed" and j.get("started_at") and j.get("finished_at"):
                         try:
                             start_dt = datetime.fromisoformat(j["started_at"])
@@ -845,7 +858,8 @@ class ModelEvolutionController:
         try:
             ckpts = self.training_manager.list_checkpoints()
             for c in ckpts:
-                if c.get("stage", "").lower() in (job_type_clean, "sft" if job_type_clean == "trl_sft" else job_type_clean):
+                st = (c.get("stage") or "").lower()
+                if st in (job_type_clean, "sft" if job_type_clean == "trl_sft" else job_type_clean):
                     runtime = c.get("train_runtime_s")
                     if runtime and float(runtime) > 0:
                         durations.append(float(runtime))

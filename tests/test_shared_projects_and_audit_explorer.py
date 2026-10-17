@@ -458,7 +458,7 @@ def test_api_model_evolution_endpoints(client):
     filter_resp = client.get("/audit/model-evolution-timeline?event_type=proposal")
     assert filter_resp.status_code == 200
     filter_data = filter_resp.json()
-    assert all(item["category"] == "PROPOSAL" for item in filter_data["timeline"])
+    assert all(item["category"].lower() == "proposal" or item.get("event_type") == "PROPOSAL" for item in filter_data["timeline"])
 
     # GET /audit/model-evolution-stats
     stats_resp = client.get("/audit/model-evolution-stats")

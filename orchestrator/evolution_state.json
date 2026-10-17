@@ -1,0 +1,14 @@
+{
+  "cycle_count": 11,
+  "last_cycle_timestamp": "2026-10-17T09:40:37.792257+00:00",
+  "last_run_example_count": 6153,
+  "last_known_good_checkpoint": "kairo-scale-1.2b",
+  "consecutive_plateau_runs": 0,
+  "evaluated_jobs": [
+    "job_sft_20261017_093820_5db9",
+    "job_sft_20261017_093933_8790",
+    "job_sft_20261017_094028_7433"
+  ],
+  "last_cycle_summary": "Cycle #11 finished. Evaluated 4 rules. Generated 0 proposal(s).",
+  "last_run_timestamp": "2026-10-17T09:40:28.764841+00:00"
+}
