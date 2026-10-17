@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useState, useEffect, useCallback } from "react";
+import ModelEvolutionPanel from "./ModelEvolutionPanel";
 
 interface DatasetStats {
   pipeline_version: string;
@@ -84,12 +85,16 @@ interface CheckpointItem {
 
 interface DatasetCurationPanelProps {
   apiBaseUrl?: string;
+  initialTab?: "explorer" | "training" | "checkpoints" | "evolution";
 }
 
 export default function DatasetCurationPanel({
   apiBaseUrl = "http://127.0.0.1:8000",
+  initialTab,
 }: DatasetCurationPanelProps) {
-  const [activeTab, setActiveTab] = useState<"explorer" | "training" | "checkpoints">("explorer");
+  const [activeTab, setActiveTab] = useState<"explorer" | "training" | "checkpoints" | "evolution">(
+    initialTab || "explorer"
+  );
   const [datasetType, setDatasetType] = useState<"sft" | "preference">("sft");
   const [stats, setStats] = useState<DatasetStats | null>(null);
   const [examples, setExamples] = useState<ExampleItem[]>([]);
@@ -393,6 +398,12 @@ export default function DatasetCurationPanel({
           onClick={() => setActiveTab("checkpoints")}
         >
           💾 Model Checkpoints ({checkpoints.length})
+        </button>
+        <button
+          className={`tab-btn ${activeTab === "evolution" ? "active" : ""}`}
+          onClick={() => setActiveTab("evolution")}
+        >
+          🧬 Model Evolution
         </button>
       </div>
 
@@ -905,6 +916,19 @@ export default function DatasetCurationPanel({
               ))
             )}
           </div>
+        </div>
+      )}
+
+      {/* TAB 4: MODEL EVOLUTION & HUMAN APPROVAL GATE */}
+      {activeTab === "evolution" && (
+        <div className="evolution-tab-view">
+          <ModelEvolutionPanel
+            apiBaseUrl={apiBaseUrl}
+            onJobDispatched={() => {
+              fetchJobsAndCheckpoints();
+              setActiveTab("training");
+            }}
+          />
         </div>
       )}
 

@@ -56,3 +56,21 @@ rules:
     action: "propose_rollback"
     fallback_checkpoint: "kairo-scale-1.2b"
     description: "Propose rollback to last known-good checkpoint if active model regresses by >5% on any critical metric."
+
+  # ----------------------------------------------------------------------------
+  # Auto-Evaluation & Auto-Promotion Rule (Task C.3)
+  # Automatically evaluates completed training jobs using Part A benchmark sweeps.
+  # Auto-promotes if every metric meets/beats baseline or is within tolerance on
+  # a single metric while improving on others. Never deletes any checkpoint.
+  # ----------------------------------------------------------------------------
+  auto_evaluation:
+    enabled: true
+    tolerance_pct: 0.01  # 1.0% allowable tolerance on single metric if others improve
+    tracked_metrics:
+      - "tool_accuracy_pct"
+      - "schema_pass_pct"
+      - "recovery_rate_pct"
+      - "composite_score"
+    require_overall_improvement: true
+    description: "Auto-evaluate finished jobs via benchmark sweep; auto-promote if quality improves without regression."
+

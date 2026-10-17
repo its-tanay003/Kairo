@@ -274,6 +274,21 @@ def get_model_center_status():
     return model_center.get_status(llama_url=agent.llama_client.base_url)
 
 
+class ModelSelectRequest(BaseModel):
+    model_id: str
+
+
+@app.post("/model-center/select")
+def select_model_endpoint(req: ModelSelectRequest):
+    """Activates a model checkpoint in Model Center."""
+    try:
+        updated = model_center.select_model(req.model_id)
+        return {"success": True, "active_model": updated}
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+
 @app.get("/execution-plane")
 def get_execution_plane_endpoint():
     """Reports detected local execution plane (Linux native, Windows WSL2, macOS Virtualization)."""
@@ -1898,6 +1913,50 @@ def stop_evolution_controller():
 def reload_evolution_policy():
     """Hot-reloads the evolution policy from evolution_policy.yaml."""
     return {"policy": evolution_controller.reload_policy()}
+
+
+class ProposalDecisionRequest(BaseModel):
+    operator: Optional[str] = "operator_secops"
+    reason: Optional[str] = None
+
+
+@app.post("/evolution/proposals/{proposal_id}/approve")
+def approve_evolution_proposal(proposal_id: str, req: Optional[ProposalDecisionRequest] = None):
+    """
+    HUMAN-IN-THE-LOOP CHECKPOINT:
+    Approves a pending proposal and triggers the corresponding training run.
+    The controller NEVER calls start_training_job directly from its background decision loop.
+    """
+    operator = req.operator if req and req.operator else "operator_secops"
+    res = evolution_controller.approve_proposal(proposal_id, operator=operator)
+    if not res.get("success"):
+        raise HTTPException(status_code=400, detail=res.get("error", "Failed to approve proposal"))
+    return res
+
+
+@app.post("/evolution/proposals/{proposal_id}/dismiss")
+def dismiss_evolution_proposal(proposal_id: str, req: Optional[ProposalDecisionRequest] = None):
+    """Dismisses a pending evolution proposal without triggering any training job."""
+    operator = req.operator if req and req.operator else "operator_secops"
+    reason = req.reason if req else None
+    res = evolution_controller.dismiss_proposal(proposal_id, operator=operator, reason=reason)
+    if not res.get("success"):
+        raise HTTPException(status_code=400, detail=res.get("error", "Failed to dismiss proposal"))
+    return res
+
+
+@app.get("/evolution/evaluations")
+def list_evolution_evaluations(limit: int = 50):
+    """Returns automated evaluation records and promotion notices for completed training runs (Task C.3)."""
+    return {"evaluations": evolution_controller.get_evaluations(limit=limit)}
+
+
+@app.post("/evolution/evaluate-jobs")
+def evaluate_completed_jobs_now():
+    """Triggers evaluation and auto-promotion/guarded rollback check on completed training jobs."""
+    results = evolution_controller.evaluate_completed_jobs()
+    return {"evaluations": results, "count": len(results)}
+
 
 
 

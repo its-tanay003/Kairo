@@ -7,6 +7,7 @@ import ScreenPanel from "./components/ScreenPanel";
 import AuditExplorer from "./components/AuditExplorer";
 import DatasetCurationPanel from "./components/DatasetCurationPanel";
 import BenchmarkLeaderboard from "./components/BenchmarkLeaderboard";
+import ModelEvolutionPanel from "./components/ModelEvolutionPanel";
 import ClaudeOutputCard, { ClaudeSynthesisPayload, ClaudeToolSelectionMeta } from "./components/ClaudeOutputCard";
 
 interface EventRecord {
@@ -175,7 +176,7 @@ export default function Home() {
   const [isAdvancedOpen, setIsAdvancedOpen] = useState<boolean>(false);
   const [isAdvancedWide, setIsAdvancedWide] = useState<boolean>(false);
   const [advancedTab, setAdvancedTab] = useState<
-    "system" | "events" | "terminal" | "screen" | "graph" | "benchmarks" | "audit" | "devtools"
+    "system" | "events" | "terminal" | "screen" | "graph" | "benchmarks" | "audit" | "devtools" | "evolution"
   >("system");
   const [isMobileSidebarOpen, setIsMobileSidebarOpen] = useState<boolean>(false);
   const [showStatusTooltip, setShowStatusTooltip] = useState<boolean>(false);
@@ -1034,7 +1035,7 @@ export default function Home() {
                   <span className="drawer-nav-badge">DAG</span>
                 </button>
 
-                <div className="drawer-nav-group-label">Security</div>
+                <div className="drawer-nav-group-label">Security &amp; Models</div>
                 <button
                   className={`drawer-nav-item ${advancedTab === "audit" ? "active" : ""}`}
                   onClick={() => setAdvancedTab("audit")}
@@ -1046,6 +1047,13 @@ export default function Home() {
                   onClick={() => setAdvancedTab("benchmarks")}
                 >
                   <span>Benchmarks</span>
+                </button>
+                <button
+                  className={`drawer-nav-item ${advancedTab === "evolution" ? "active" : ""}`}
+                  onClick={() => setAdvancedTab("evolution")}
+                >
+                  <span>Model Evolution</span>
+                  <span className="drawer-nav-badge">Gate</span>
                 </button>
 
                 <div className="drawer-nav-group-label">Testing</div>
@@ -1302,6 +1310,12 @@ export default function Home() {
                   <div style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
                     <BenchmarkLeaderboard />
                     <DatasetCurationPanel />
+                  </div>
+                )}
+
+                {advancedTab === "evolution" && (
+                  <div style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
+                    <ModelEvolutionPanel apiBaseUrl="http://127.0.0.1:8000" />
                   </div>
                 )}
 

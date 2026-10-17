@@ -1,0 +1,2177 @@
+[
+  {
+    "evaluation_id": "eval_20261016_193639_6bef",
+    "timestamp": "2026-10-16T19:36:39.983903+00:00",
+    "job_id": "job_trl_sft_hist_1",
+    "job_type": "trl_sft",
+    "preset": null,
+    "checkpoint_model_id": "kairo-sft-baseline",
+    "active_model_id": "kairo-dpo-aligned",
+    "decision": "PROMOTED",
+    "promoted": true,
+    "plain_language_notice": "Auto-promoted kairo-sft-baseline to active model: met or exceeded active baseline (kairo-dpo-aligned) across tracked metrics (Composite: 98.6 vs 91.9).",
+    "comparisons": {
+      "tool_accuracy_pct": {
+        "new_val": 99.4,
+        "active_val": 96.0,
+        "delta": 3.4,
+        "delta_pct": 3.54
+      },
+      "schema_pass_pct": {
+        "new_val": 100.0,
+        "active_val": 98.5,
+        "delta": 1.5,
+        "delta_pct": 1.52
+      },
+      "recovery_rate_pct": {
+        "new_val": 100.0,
+        "active_val": 100.0,
+        "delta": 0.0,
+        "delta_pct": 0.0
+      },
+      "composite_score": {
+        "new_val": 98.6,
+        "active_val": 91.9,
+        "delta": 6.7,
+        "delta_pct": 7.29
+      }
+    },
+    "new_checkpoint_metrics": {
+      "model_id": "kairo-sft-baseline",
+      "tool_accuracy_pct": 99.4,
+      "schema_pass_pct": 100.0,
+      "recovery_rate_pct": 100.0,
+      "composite_score": 98.6,
+      "timestamp": "2026-10-17T00:00:00+00:00"
+    },
+    "active_model_metrics": {
+      "name": "Kairo-DPO-1B (Ours)",
+      "version": "v1.0-dpo",
+      "badge": "DPO-1B",
+      "tier": "Preference-Tuned",
+      "role": "dpo-aligned",
+      "parameters": "1.0B",
+      "parameters_billions": 1.0,
+      "runtime": "transformers",
+      "quantization": "FP32",
+      "context_length": 8192,
+      "composite_score": 91.9,
+      "task_completion_pct": 100.0,
+      "tool_accuracy_pct": 96.0,
+      "schema_pass_pct": 98.5,
+      "recovery_rate_pct": 100.0,
+      "unnecessary_calls_rate_pct": 2.5,
+      "hallucinated_success_pct": 0.0,
+      "latency_p50_s": 0.25,
+      "latency_p95_s": 0.34,
+      "vram_footprint_mb": 1950,
+      "ram_footprint_mb": 3600
+    },
+    "regressions": [],
+    "improvements": [
+      {
+        "metric": "tool_accuracy_pct",
+        "gain": 3.4
+      },
+      {
+        "metric": "schema_pass_pct",
+        "gain": 1.5
+      },
+      {
+        "metric": "composite_score",
+        "gain": 6.7
+      }
+    ],
+    "tolerated_variance": 1.0
+  },
+  {
+    "evaluation_id": "eval_20261016_193640_7476",
+    "timestamp": "2026-10-16T19:36:40.018648+00:00",
+    "job_id": "job_trl_sft_hist_2",
+    "job_type": "trl_sft",
+    "preset": null,
+    "checkpoint_model_id": "kairo-sft-baseline",
+    "active_model_id": "kairo-dpo-aligned",
+    "decision": "PROMOTED",
+    "promoted": true,
+    "plain_language_notice": "Auto-promoted kairo-sft-baseline to active model: met or exceeded active baseline (kairo-dpo-aligned) across tracked metrics (Composite: 98.6 vs 91.9).",
+    "comparisons": {
+      "tool_accuracy_pct": {
+        "new_val": 99.4,
+        "active_val": 96.0,
+        "delta": 3.4,
+        "delta_pct": 3.54
+      },
+      "schema_pass_pct": {
+        "new_val": 100.0,
+        "active_val": 98.5,
+        "delta": 1.5,
+        "delta_pct": 1.52
+      },
+      "recovery_rate_pct": {
+        "new_val": 100.0,
+        "active_val": 100.0,
+        "delta": 0.0,
+        "delta_pct": 0.0
+      },
+      "composite_score": {
+        "new_val": 98.6,
+        "active_val": 91.9,
+        "delta": 6.7,
+        "delta_pct": 7.29
+      }
+    },
+    "new_checkpoint_metrics": {
+      "model_id": "kairo-sft-baseline",
+      "tool_accuracy_pct": 99.4,
+      "schema_pass_pct": 100.0,
+      "recovery_rate_pct": 100.0,
+      "composite_score": 98.6,
+      "timestamp": "2026-10-17T00:00:00+00:00"
+    },
+    "active_model_metrics": {
+      "name": "Kairo-DPO-1B (Ours)",
+      "version": "v1.0-dpo",
+      "badge": "DPO-1B",
+      "tier": "Preference-Tuned",
+      "role": "dpo-aligned",
+      "parameters": "1.0B",
+      "parameters_billions": 1.0,
+      "runtime": "transformers",
+      "quantization": "FP32",
+      "context_length": 8192,
+      "composite_score": 91.9,
+      "task_completion_pct": 100.0,
+      "tool_accuracy_pct": 96.0,
+      "schema_pass_pct": 98.5,
+      "recovery_rate_pct": 100.0,
+      "unnecessary_calls_rate_pct": 2.5,
+      "hallucinated_success_pct": 0.0,
+      "latency_p50_s": 0.25,
+      "latency_p95_s": 0.34,
+      "vram_footprint_mb": 1950,
+      "ram_footprint_mb": 3600
+    },
+    "regressions": [],
+    "improvements": [
+      {
+        "metric": "tool_accuracy_pct",
+        "gain": 3.4
+      },
+      {
+        "metric": "schema_pass_pct",
+        "gain": 1.5
+      },
+      {
+        "metric": "composite_score",
+        "gain": 6.7
+      }
+    ],
+    "tolerated_variance": 1.0
+  },
+  {
+    "evaluation_id": "eval_20261016_193640_4c78",
+    "timestamp": "2026-10-16T19:36:40.054691+00:00",
+    "job_id": "job_pretrain_hist_1",
+    "job_type": "pretrain_scale",
+    "preset": null,
+    "checkpoint_model_id": "kairo-scale-1.2b",
+    "active_model_id": "kairo-dpo-aligned",
+    "decision": "PROMOTED",
+    "promoted": true,
+    "plain_language_notice": "Auto-promoted kairo-scale-1.2b to active model: met or exceeded active baseline (kairo-dpo-aligned) across tracked metrics (Composite: 98.6 vs 91.9).",
+    "comparisons": {
+      "tool_accuracy_pct": {
+        "new_val": 99.4,
+        "active_val": 96.0,
+        "delta": 3.4,
+        "delta_pct": 3.54
+      },
+      "schema_pass_pct": {
+        "new_val": 100.0,
+        "active_val": 98.5,
+        "delta": 1.5,
+        "delta_pct": 1.52
+      },
+      "recovery_rate_pct": {
+        "new_val": 100.0,
+        "active_val": 100.0,
+        "delta": 0.0,
+        "delta_pct": 0.0
+      },
+      "composite_score": {
+        "new_val": 98.6,
+        "active_val": 91.9,
+        "delta": 6.7,
+        "delta_pct": 7.29
+      }
+    },
+    "new_checkpoint_metrics": {
+      "model_id": "kairo-scale-1.2b",
+      "tool_accuracy_pct": 99.4,
+      "schema_pass_pct": 100.0,
+      "recovery_rate_pct": 100.0,
+      "composite_score": 98.6,
+      "timestamp": "2026-10-17T00:00:00+00:00"
+    },
+    "active_model_metrics": {
+      "name": "Kairo-DPO-1B (Ours)",
+      "version": "v1.0-dpo",
+      "badge": "DPO-1B",
+      "tier": "Preference-Tuned",
+      "role": "dpo-aligned",
+      "parameters": "1.0B",
+      "parameters_billions": 1.0,
+      "runtime": "transformers",
+      "quantization": "FP32",
+      "context_length": 8192,
+      "composite_score": 91.9,
+      "task_completion_pct": 100.0,
+      "tool_accuracy_pct": 96.0,
+      "schema_pass_pct": 98.5,
+      "recovery_rate_pct": 100.0,
+      "unnecessary_calls_rate_pct": 2.5,
+      "hallucinated_success_pct": 0.0,
+      "latency_p50_s": 0.25,
+      "latency_p95_s": 0.34,
+      "vram_footprint_mb": 1950,
+      "ram_footprint_mb": 3600
+    },
+    "regressions": [],
+    "improvements": [
+      {
+        "metric": "tool_accuracy_pct",
+        "gain": 3.4
+      },
+      {
+        "metric": "schema_pass_pct",
+        "gain": 1.5
+      },
+      {
+        "metric": "composite_score",
+        "gain": 6.7
+      }
+    ],
+    "tolerated_variance": 1.0
+  },
+  {
+    "evaluation_id": "eval_20261016_193640_33fd",
+    "timestamp": "2026-10-16T19:36:40.131612+00:00",
+    "job_id": "job_trl_sft_hist_1",
+    "job_type": "trl_sft",
+    "preset": null,
+    "checkpoint_model_id": "kairo-sft-baseline",
+    "active_model_id": "kairo-scale-1.2b",
+    "decision": "PROMOTED",
+    "promoted": true,
+    "plain_language_notice": "Auto-promoted kairo-sft-baseline to active model: met or exceeded active baseline (kairo-scale-1.2b) across tracked metrics (Composite: 98.6 vs 96.4).",
+    "comparisons": {
+      "tool_accuracy_pct": {
+        "new_val": 99.4,
+        "active_val": 98.3,
+        "delta": 1.1,
+        "delta_pct": 1.12
+      },
+      "schema_pass_pct": {
+        "new_val": 100.0,
+        "active_val": 100.0,
+        "delta": 0.0,
+        "delta_pct": 0.0
+      },
+      "recovery_rate_pct": {
+        "new_val": 100.0,
+        "active_val": 100.0,
+        "delta": 0.0,
+        "delta_pct": 0.0
+      },
+      "composite_score": {
+        "new_val": 98.6,
+        "active_val": 96.4,
+        "delta": 2.2,
+        "delta_pct": 2.28
+      }
+    },
+    "new_checkpoint_metrics": {
+      "model_id": "kairo-sft-baseline",
+      "tool_accuracy_pct": 99.4,
+      "schema_pass_pct": 100.0,
+      "recovery_rate_pct": 100.0,
+      "composite_score": 98.6,
+      "timestamp": "2026-10-17T00:00:00+00:00"
+    },
+    "active_model_metrics": {
+      "model_id": "kairo-scale-1.2b",
+      "tool_accuracy_pct": 98.3,
+      "schema_pass_pct": 100.0,
+      "recovery_rate_pct": 100.0,
+      "composite_score": 96.4,
+      "timestamp": "2026-10-15T12:00:00+00:00"
+    },
+    "regressions": [],
+    "improvements": [
+      {
+        "metric": "tool_accuracy_pct",
+        "gain": 1.1
+      },
+      {
+        "metric": "composite_score",
+        "gain": 2.2
+      }
+    ],
+    "tolerated_variance": 1.0
+  },
+  {
+    "evaluation_id": "eval_20261016_193640_85ee",
+    "timestamp": "2026-10-16T19:36:40.173695+00:00",
+    "job_id": "job_trl_sft_hist_2",
+    "job_type": "trl_sft",
+    "preset": null,
+    "checkpoint_model_id": "kairo-sft-baseline",
+    "active_model_id": "kairo-scale-1.2b",
+    "decision": "PROMOTED",
+    "promoted": true,
+    "plain_language_notice": "Auto-promoted kairo-sft-baseline to active model: met or exceeded active baseline (kairo-scale-1.2b) across tracked metrics (Composite: 98.6 vs 96.4).",
+    "comparisons": {
+      "tool_accuracy_pct": {
+        "new_val": 99.4,
+        "active_val": 98.3,
+        "delta": 1.1,
+        "delta_pct": 1.12
+      },
+      "schema_pass_pct": {
+        "new_val": 100.0,
+        "active_val": 100.0,
+        "delta": 0.0,
+        "delta_pct": 0.0
+      },
+      "recovery_rate_pct": {
+        "new_val": 100.0,
+        "active_val": 100.0,
+        "delta": 0.0,
+        "delta_pct": 0.0
+      },
+      "composite_score": {
+        "new_val": 98.6,
+        "active_val": 96.4,
+        "delta": 2.2,
+        "delta_pct": 2.28
+      }
+    },
+    "new_checkpoint_metrics": {
+      "model_id": "kairo-sft-baseline",
+      "tool_accuracy_pct": 99.4,
+      "schema_pass_pct": 100.0,
+      "recovery_rate_pct": 100.0,
+      "composite_score": 98.6,
+      "timestamp": "2026-10-17T00:00:00+00:00"
+    },
+    "active_model_metrics": {
+      "model_id": "kairo-scale-1.2b",
+      "tool_accuracy_pct": 98.3,
+      "schema_pass_pct": 100.0,
+      "recovery_rate_pct": 100.0,
+      "composite_score": 96.4,
+      "timestamp": "2026-10-15T12:00:00+00:00"
+    },
+    "regressions": [],
+    "improvements": [
+      {
+        "metric": "tool_accuracy_pct",
+        "gain": 1.1
+      },
+      {
+        "metric": "composite_score",
+        "gain": 2.2
+      }
+    ],
+    "tolerated_variance": 1.0
+  },
+  {
+    "evaluation_id": "eval_20261016_193640_9276",
+    "timestamp": "2026-10-16T19:36:40.211547+00:00",
+    "job_id": "job_pretrain_hist_1",
+    "job_type": "pretrain_scale",
+    "preset": null,
+    "checkpoint_model_id": "kairo-scale-1.2b",
+    "active_model_id": "kairo-scale-1.2b",
+    "decision": "PROMOTED",
+    "promoted": true,
+    "plain_language_notice": "Auto-promoted kairo-scale-1.2b to active model: met or exceeded active baseline (kairo-scale-1.2b) across tracked metrics (Composite: 98.6 vs 96.4).",
+    "comparisons": {
+      "tool_accuracy_pct": {
+        "new_val": 99.4,
+        "active_val": 98.3,
+        "delta": 1.1,
+        "delta_pct": 1.12
+      },
+      "schema_pass_pct": {
+        "new_val": 100.0,
+        "active_val": 100.0,
+        "delta": 0.0,
+        "delta_pct": 0.0
+      },
+      "recovery_rate_pct": {
+        "new_val": 100.0,
+        "active_val": 100.0,
+        "delta": 0.0,
+        "delta_pct": 0.0
+      },
+      "composite_score": {
+        "new_val": 98.6,
+        "active_val": 96.4,
+        "delta": 2.2,
+        "delta_pct": 2.28
+      }
+    },
+    "new_checkpoint_metrics": {
+      "model_id": "kairo-scale-1.2b",
+      "tool_accuracy_pct": 99.4,
+      "schema_pass_pct": 100.0,
+      "recovery_rate_pct": 100.0,
+      "composite_score": 98.6,
+      "timestamp": "2026-10-17T00:00:00+00:00"
+    },
+    "active_model_metrics": {
+      "model_id": "kairo-scale-1.2b",
+      "tool_accuracy_pct": 98.3,
+      "schema_pass_pct": 100.0,
+      "recovery_rate_pct": 100.0,
+      "composite_score": 96.4,
+      "timestamp": "2026-10-15T12:00:00+00:00"
+    },
+    "regressions": [],
+    "improvements": [
+      {
+        "metric": "tool_accuracy_pct",
+        "gain": 1.1
+      },
+      {
+        "metric": "composite_score",
+        "gain": 2.2
+      }
+    ],
+    "tolerated_variance": 1.0
+  },
+  {
+    "evaluation_id": "eval_20261016_193640_5564",
+    "timestamp": "2026-10-16T19:36:40.282896+00:00",
+    "job_id": "job_trl_sft_hist_1",
+    "job_type": "trl_sft",
+    "preset": null,
+    "checkpoint_model_id": "kairo-sft-baseline",
+    "active_model_id": "kairo-scale-1.2b",
+    "decision": "PROMOTED",
+    "promoted": true,
+    "plain_language_notice": "Auto-promoted kairo-sft-baseline to active model: met or exceeded active baseline (kairo-scale-1.2b) across tracked metrics (Composite: 98.6 vs 93.8).",
+    "comparisons": {
+      "tool_accuracy_pct": {
+        "new_val": 99.4,
+        "active_val": 96.5,
+        "delta": 2.9,
+        "delta_pct": 3.01
+      },
+      "schema_pass_pct": {
+        "new_val": 100.0,
+        "active_val": 99.0,
+        "delta": 1.0,
+        "delta_pct": 1.01
+      },
+      "recovery_rate_pct": {
+        "new_val": 100.0,
+        "active_val": 95.0,
+        "delta": 5.0,
+        "delta_pct": 5.26
+      },
+      "composite_score": {
+        "new_val": 98.6,
+        "active_val": 93.8,
+        "delta": 4.8,
+        "delta_pct": 5.12
+      }
+    },
+    "new_checkpoint_metrics": {
+      "model_id": "kairo-sft-baseline",
+      "tool_accuracy_pct": 99.4,
+      "schema_pass_pct": 100.0,
+      "recovery_rate_pct": 100.0,
+      "composite_score": 98.6,
+      "timestamp": "2026-10-17T00:00:00+00:00"
+    },
+    "active_model_metrics": {
+      "name": "Kairo-Scale-1.2B (Ours)",
+      "version": "v1.2-scale",
+      "badge": "Scale-1.2B",
+      "tier": "Pretrained Scaled",
+      "role": "primary-custom-scaled",
+      "parameters": "1.2B",
+      "parameters_billions": 1.2,
+      "runtime": "transformers",
+      "quantization": "FP32",
+      "context_length": 8192,
+      "composite_score": 93.8,
+      "task_completion_pct": 100.0,
+      "tool_accuracy_pct": 96.5,
+      "schema_pass_pct": 99.0,
+      "recovery_rate_pct": 95.0,
+      "unnecessary_calls_rate_pct": 1.5,
+      "hallucinated_success_pct": 0.0,
+      "latency_p50_s": 0.29,
+      "latency_p95_s": 0.38,
+      "vram_footprint_mb": 2400,
+      "ram_footprint_mb": 4200
+    },
+    "regressions": [],
+    "improvements": [
+      {
+        "metric": "tool_accuracy_pct",
+        "gain": 2.9
+      },
+      {
+        "metric": "schema_pass_pct",
+        "gain": 1.0
+      },
+      {
+        "metric": "recovery_rate_pct",
+        "gain": 5.0
+      },
+      {
+        "metric": "composite_score",
+        "gain": 4.8
+      }
+    ],
+    "tolerated_variance": 1.0
+  },
+  {
+    "evaluation_id": "eval_20261016_193640_ec43",
+    "timestamp": "2026-10-16T19:36:40.323521+00:00",
+    "job_id": "job_trl_sft_hist_2",
+    "job_type": "trl_sft",
+    "preset": null,
+    "checkpoint_model_id": "kairo-sft-baseline",
+    "active_model_id": "kairo-scale-1.2b",
+    "decision": "PROMOTED",
+    "promoted": true,
+    "plain_language_notice": "Auto-promoted kairo-sft-baseline to active model: met or exceeded active baseline (kairo-scale-1.2b) across tracked metrics (Composite: 98.6 vs 93.8).",
+    "comparisons": {
+      "tool_accuracy_pct": {
+        "new_val": 99.4,
+        "active_val": 96.5,
+        "delta": 2.9,
+        "delta_pct": 3.01
+      },
+      "schema_pass_pct": {
+        "new_val": 100.0,
+        "active_val": 99.0,
+        "delta": 1.0,
+        "delta_pct": 1.01
+      },
+      "recovery_rate_pct": {
+        "new_val": 100.0,
+        "active_val": 95.0,
+        "delta": 5.0,
+        "delta_pct": 5.26
+      },
+      "composite_score": {
+        "new_val": 98.6,
+        "active_val": 93.8,
+        "delta": 4.8,
+        "delta_pct": 5.12
+      }
+    },
+    "new_checkpoint_metrics": {
+      "model_id": "kairo-sft-baseline",
+      "tool_accuracy_pct": 99.4,
+      "schema_pass_pct": 100.0,
+      "recovery_rate_pct": 100.0,
+      "composite_score": 98.6,
+      "timestamp": "2026-10-17T00:00:00+00:00"
+    },
+    "active_model_metrics": {
+      "name": "Kairo-Scale-1.2B (Ours)",
+      "version": "v1.2-scale",
+      "badge": "Scale-1.2B",
+      "tier": "Pretrained Scaled",
+      "role": "primary-custom-scaled",
+      "parameters": "1.2B",
+      "parameters_billions": 1.2,
+      "runtime": "transformers",
+      "quantization": "FP32",
+      "context_length": 8192,
+      "composite_score": 93.8,
+      "task_completion_pct": 100.0,
+      "tool_accuracy_pct": 96.5,
+      "schema_pass_pct": 99.0,
+      "recovery_rate_pct": 95.0,
+      "unnecessary_calls_rate_pct": 1.5,
+      "hallucinated_success_pct": 0.0,
+      "latency_p50_s": 0.29,
+      "latency_p95_s": 0.38,
+      "vram_footprint_mb": 2400,
+      "ram_footprint_mb": 4200
+    },
+    "regressions": [],
+    "improvements": [
+      {
+        "metric": "tool_accuracy_pct",
+        "gain": 2.9
+      },
+      {
+        "metric": "schema_pass_pct",
+        "gain": 1.0
+      },
+      {
+        "metric": "recovery_rate_pct",
+        "gain": 5.0
+      },
+      {
+        "metric": "composite_score",
+        "gain": 4.8
+      }
+    ],
+    "tolerated_variance": 1.0
+  },
+  {
+    "evaluation_id": "eval_20261016_193640_7b16",
+    "timestamp": "2026-10-16T19:36:40.361591+00:00",
+    "job_id": "job_pretrain_hist_1",
+    "job_type": "pretrain_scale",
+    "preset": null,
+    "checkpoint_model_id": "kairo-scale-1.2b",
+    "active_model_id": "kairo-scale-1.2b",
+    "decision": "PROMOTED",
+    "promoted": true,
+    "plain_language_notice": "Auto-promoted kairo-scale-1.2b to active model: met or exceeded active baseline (kairo-scale-1.2b) across tracked metrics (Composite: 98.6 vs 93.8).",
+    "comparisons": {
+      "tool_accuracy_pct": {
+        "new_val": 99.4,
+        "active_val": 96.5,
+        "delta": 2.9,
+        "delta_pct": 3.01
+      },
+      "schema_pass_pct": {
+        "new_val": 100.0,
+        "active_val": 99.0,
+        "delta": 1.0,
+        "delta_pct": 1.01
+      },
+      "recovery_rate_pct": {
+        "new_val": 100.0,
+        "active_val": 95.0,
+        "delta": 5.0,
+        "delta_pct": 5.26
+      },
+      "composite_score": {
+        "new_val": 98.6,
+        "active_val": 93.8,
+        "delta": 4.8,
+        "delta_pct": 5.12
+      }
+    },
+    "new_checkpoint_metrics": {
+      "model_id": "kairo-scale-1.2b",
+      "tool_accuracy_pct": 99.4,
+      "schema_pass_pct": 100.0,
+      "recovery_rate_pct": 100.0,
+      "composite_score": 98.6,
+      "timestamp": "2026-10-17T00:00:00+00:00"
+    },
+    "active_model_metrics": {
+      "name": "Kairo-Scale-1.2B (Ours)",
+      "version": "v1.2-scale",
+      "badge": "Scale-1.2B",
+      "tier": "Pretrained Scaled",
+      "role": "primary-custom-scaled",
+      "parameters": "1.2B",
+      "parameters_billions": 1.2,
+      "runtime": "transformers",
+      "quantization": "FP32",
+      "context_length": 8192,
+      "composite_score": 93.8,
+      "task_completion_pct": 100.0,
+      "tool_accuracy_pct": 96.5,
+      "schema_pass_pct": 99.0,
+      "recovery_rate_pct": 95.0,
+      "unnecessary_calls_rate_pct": 1.5,
+      "hallucinated_success_pct": 0.0,
+      "latency_p50_s": 0.29,
+      "latency_p95_s": 0.38,
+      "vram_footprint_mb": 2400,
+      "ram_footprint_mb": 4200
+    },
+    "regressions": [],
+    "improvements": [
+      {
+        "metric": "tool_accuracy_pct",
+        "gain": 2.9
+      },
+      {
+        "metric": "schema_pass_pct",
+        "gain": 1.0
+      },
+      {
+        "metric": "recovery_rate_pct",
+        "gain": 5.0
+      },
+      {
+        "metric": "composite_score",
+        "gain": 4.8
+      }
+    ],
+    "tolerated_variance": 1.0
+  },
+  {
+    "evaluation_id": "eval_20261016_193640_a2ca",
+    "timestamp": "2026-10-16T19:36:40.451265+00:00",
+    "job_id": "job_trl_sft_hist_1",
+    "job_type": "trl_sft",
+    "preset": null,
+    "checkpoint_model_id": "kairo-sft-baseline",
+    "active_model_id": "kairo-scale-1.2b",
+    "decision": "PROMOTED",
+    "promoted": true,
+    "plain_language_notice": "Auto-promoted kairo-sft-baseline to active model: met or exceeded active baseline (kairo-scale-1.2b) across tracked metrics (Composite: 98.6 vs 93.8).",
+    "comparisons": {
+      "tool_accuracy_pct": {
+        "new_val": 99.4,
+        "active_val": 96.5,
+        "delta": 2.9,
+        "delta_pct": 3.01
+      },
+      "schema_pass_pct": {
+        "new_val": 100.0,
+        "active_val": 99.0,
+        "delta": 1.0,
+        "delta_pct": 1.01
+      },
+      "recovery_rate_pct": {
+        "new_val": 100.0,
+        "active_val": 95.0,
+        "delta": 5.0,
+        "delta_pct": 5.26
+      },
+      "composite_score": {
+        "new_val": 98.6,
+        "active_val": 93.8,
+        "delta": 4.8,
+        "delta_pct": 5.12
+      }
+    },
+    "new_checkpoint_metrics": {
+      "model_id": "kairo-sft-baseline",
+      "tool_accuracy_pct": 99.4,
+      "schema_pass_pct": 100.0,
+      "recovery_rate_pct": 100.0,
+      "composite_score": 98.6,
+      "timestamp": "2026-10-17T00:00:00+00:00"
+    },
+    "active_model_metrics": {
+      "name": "Kairo-Scale-1.2B (Ours)",
+      "version": "v1.2-scale",
+      "badge": "Scale-1.2B",
+      "tier": "Pretrained Scaled",
+      "role": "primary-custom-scaled",
+      "parameters": "1.2B",
+      "parameters_billions": 1.2,
+      "runtime": "transformers",
+      "quantization": "FP32",
+      "context_length": 8192,
+      "composite_score": 93.8,
+      "task_completion_pct": 100.0,
+      "tool_accuracy_pct": 96.5,
+      "schema_pass_pct": 99.0,
+      "recovery_rate_pct": 95.0,
+      "unnecessary_calls_rate_pct": 1.5,
+      "hallucinated_success_pct": 0.0,
+      "latency_p50_s": 0.29,
+      "latency_p95_s": 0.38,
+      "vram_footprint_mb": 2400,
+      "ram_footprint_mb": 4200
+    },
+    "regressions": [],
+    "improvements": [
+      {
+        "metric": "tool_accuracy_pct",
+        "gain": 2.9
+      },
+      {
+        "metric": "schema_pass_pct",
+        "gain": 1.0
+      },
+      {
+        "metric": "recovery_rate_pct",
+        "gain": 5.0
+      },
+      {
+        "metric": "composite_score",
+        "gain": 4.8
+      }
+    ],
+    "tolerated_variance": 1.0
+  },
+  {
+    "evaluation_id": "eval_20261016_193640_8f3b",
+    "timestamp": "2026-10-16T19:36:40.493117+00:00",
+    "job_id": "job_trl_sft_hist_2",
+    "job_type": "trl_sft",
+    "preset": null,
+    "checkpoint_model_id": "kairo-sft-baseline",
+    "active_model_id": "kairo-scale-1.2b",
+    "decision": "PROMOTED",
+    "promoted": true,
+    "plain_language_notice": "Auto-promoted kairo-sft-baseline to active model: met or exceeded active baseline (kairo-scale-1.2b) across tracked metrics (Composite: 98.6 vs 93.8).",
+    "comparisons": {
+      "tool_accuracy_pct": {
+        "new_val": 99.4,
+        "active_val": 96.5,
+        "delta": 2.9,
+        "delta_pct": 3.01
+      },
+      "schema_pass_pct": {
+        "new_val": 100.0,
+        "active_val": 99.0,
+        "delta": 1.0,
+        "delta_pct": 1.01
+      },
+      "recovery_rate_pct": {
+        "new_val": 100.0,
+        "active_val": 95.0,
+        "delta": 5.0,
+        "delta_pct": 5.26
+      },
+      "composite_score": {
+        "new_val": 98.6,
+        "active_val": 93.8,
+        "delta": 4.8,
+        "delta_pct": 5.12
+      }
+    },
+    "new_checkpoint_metrics": {
+      "model_id": "kairo-sft-baseline",
+      "tool_accuracy_pct": 99.4,
+      "schema_pass_pct": 100.0,
+      "recovery_rate_pct": 100.0,
+      "composite_score": 98.6,
+      "timestamp": "2026-10-17T00:00:00+00:00"
+    },
+    "active_model_metrics": {
+      "name": "Kairo-Scale-1.2B (Ours)",
+      "version": "v1.2-scale",
+      "badge": "Scale-1.2B",
+      "tier": "Pretrained Scaled",
+      "role": "primary-custom-scaled",
+      "parameters": "1.2B",
+      "parameters_billions": 1.2,
+      "runtime": "transformers",
+      "quantization": "FP32",
+      "context_length": 8192,
+      "composite_score": 93.8,
+      "task_completion_pct": 100.0,
+      "tool_accuracy_pct": 96.5,
+      "schema_pass_pct": 99.0,
+      "recovery_rate_pct": 95.0,
+      "unnecessary_calls_rate_pct": 1.5,
+      "hallucinated_success_pct": 0.0,
+      "latency_p50_s": 0.29,
+      "latency_p95_s": 0.38,
+      "vram_footprint_mb": 2400,
+      "ram_footprint_mb": 4200
+    },
+    "regressions": [],
+    "improvements": [
+      {
+        "metric": "tool_accuracy_pct",
+        "gain": 2.9
+      },
+      {
+        "metric": "schema_pass_pct",
+        "gain": 1.0
+      },
+      {
+        "metric": "recovery_rate_pct",
+        "gain": 5.0
+      },
+      {
+        "metric": "composite_score",
+        "gain": 4.8
+      }
+    ],
+    "tolerated_variance": 1.0
+  },
+  {
+    "evaluation_id": "eval_20261016_193640_a63e",
+    "timestamp": "2026-10-16T19:36:40.536917+00:00",
+    "job_id": "job_pretrain_hist_1",
+    "job_type": "pretrain_scale",
+    "preset": null,
+    "checkpoint_model_id": "kairo-scale-1.2b",
+    "active_model_id": "kairo-scale-1.2b",
+    "decision": "PROMOTED",
+    "promoted": true,
+    "plain_language_notice": "Auto-promoted kairo-scale-1.2b to active model: met or exceeded active baseline (kairo-scale-1.2b) across tracked metrics (Composite: 98.6 vs 93.8).",
+    "comparisons": {
+      "tool_accuracy_pct": {
+        "new_val": 99.4,
+        "active_val": 96.5,
+        "delta": 2.9,
+        "delta_pct": 3.01
+      },
+      "schema_pass_pct": {
+        "new_val": 100.0,
+        "active_val": 99.0,
+        "delta": 1.0,
+        "delta_pct": 1.01
+      },
+      "recovery_rate_pct": {
+        "new_val": 100.0,
+        "active_val": 95.0,
+        "delta": 5.0,
+        "delta_pct": 5.26
+      },
+      "composite_score": {
+        "new_val": 98.6,
+        "active_val": 93.8,
+        "delta": 4.8,
+        "delta_pct": 5.12
+      }
+    },
+    "new_checkpoint_metrics": {
+      "model_id": "kairo-scale-1.2b",
+      "tool_accuracy_pct": 99.4,
+      "schema_pass_pct": 100.0,
+      "recovery_rate_pct": 100.0,
+      "composite_score": 98.6,
+      "timestamp": "2026-10-17T00:00:00+00:00"
+    },
+    "active_model_metrics": {
+      "name": "Kairo-Scale-1.2B (Ours)",
+      "version": "v1.2-scale",
+      "badge": "Scale-1.2B",
+      "tier": "Pretrained Scaled",
+      "role": "primary-custom-scaled",
+      "parameters": "1.2B",
+      "parameters_billions": 1.2,
+      "runtime": "transformers",
+      "quantization": "FP32",
+      "context_length": 8192,
+      "composite_score": 93.8,
+      "task_completion_pct": 100.0,
+      "tool_accuracy_pct": 96.5,
+      "schema_pass_pct": 99.0,
+      "recovery_rate_pct": 95.0,
+      "unnecessary_calls_rate_pct": 1.5,
+      "hallucinated_success_pct": 0.0,
+      "latency_p50_s": 0.29,
+      "latency_p95_s": 0.38,
+      "vram_footprint_mb": 2400,
+      "ram_footprint_mb": 4200
+    },
+    "regressions": [],
+    "improvements": [
+      {
+        "metric": "tool_accuracy_pct",
+        "gain": 2.9
+      },
+      {
+        "metric": "schema_pass_pct",
+        "gain": 1.0
+      },
+      {
+        "metric": "recovery_rate_pct",
+        "gain": 5.0
+      },
+      {
+        "metric": "composite_score",
+        "gain": 4.8
+      }
+    ],
+    "tolerated_variance": 1.0
+  },
+  {
+    "evaluation_id": "eval_20261016_193640_1826",
+    "timestamp": "2026-10-16T19:36:40.992606+00:00",
+    "job_id": "job_trl_sft_hist_1",
+    "job_type": "trl_sft",
+    "preset": null,
+    "checkpoint_model_id": "kairo-sft-baseline",
+    "active_model_id": "kairo-scale-1.2b",
+    "decision": "PROMOTED",
+    "promoted": true,
+    "plain_language_notice": "Auto-promoted kairo-sft-baseline to active model: met or exceeded active baseline (kairo-scale-1.2b) across tracked metrics (Composite: 98.6 vs 96.4).",
+    "comparisons": {
+      "tool_accuracy_pct": {
+        "new_val": 99.4,
+        "active_val": 98.3,
+        "delta": 1.1,
+        "delta_pct": 1.12
+      },
+      "schema_pass_pct": {
+        "new_val": 100.0,
+        "active_val": 100.0,
+        "delta": 0.0,
+        "delta_pct": 0.0
+      },
+      "recovery_rate_pct": {
+        "new_val": 100.0,
+        "active_val": 100.0,
+        "delta": 0.0,
+        "delta_pct": 0.0
+      },
+      "composite_score": {
+        "new_val": 98.6,
+        "active_val": 96.4,
+        "delta": 2.2,
+        "delta_pct": 2.28
+      }
+    },
+    "new_checkpoint_metrics": {
+      "model_id": "kairo-sft-baseline",
+      "tool_accuracy_pct": 99.4,
+      "schema_pass_pct": 100.0,
+      "recovery_rate_pct": 100.0,
+      "composite_score": 98.6,
+      "timestamp": "2026-10-17T00:00:00+00:00"
+    },
+    "active_model_metrics": {
+      "model_id": "kairo-scale-1.2b",
+      "tool_accuracy_pct": 98.3,
+      "schema_pass_pct": 100.0,
+      "recovery_rate_pct": 100.0,
+      "composite_score": 96.4,
+      "timestamp": "2026-10-15T12:00:00+00:00"
+    },
+    "regressions": [],
+    "improvements": [
+      {
+        "metric": "tool_accuracy_pct",
+        "gain": 1.1
+      },
+      {
+        "metric": "composite_score",
+        "gain": 2.2
+      }
+    ],
+    "tolerated_variance": 1.0
+  },
+  {
+    "evaluation_id": "eval_20261016_193641_38a1",
+    "timestamp": "2026-10-16T19:36:41.030204+00:00",
+    "job_id": "job_trl_sft_hist_2",
+    "job_type": "trl_sft",
+    "preset": null,
+    "checkpoint_model_id": "kairo-sft-baseline",
+    "active_model_id": "kairo-scale-1.2b",
+    "decision": "PROMOTED",
+    "promoted": true,
+    "plain_language_notice": "Auto-promoted kairo-sft-baseline to active model: met or exceeded active baseline (kairo-scale-1.2b) across tracked metrics (Composite: 98.6 vs 96.4).",
+    "comparisons": {
+      "tool_accuracy_pct": {
+        "new_val": 99.4,
+        "active_val": 98.3,
+        "delta": 1.1,
+        "delta_pct": 1.12
+      },
+      "schema_pass_pct": {
+        "new_val": 100.0,
+        "active_val": 100.0,
+        "delta": 0.0,
+        "delta_pct": 0.0
+      },
+      "recovery_rate_pct": {
+        "new_val": 100.0,
+        "active_val": 100.0,
+        "delta": 0.0,
+        "delta_pct": 0.0
+      },
+      "composite_score": {
+        "new_val": 98.6,
+        "active_val": 96.4,
+        "delta": 2.2,
+        "delta_pct": 2.28
+      }
+    },
+    "new_checkpoint_metrics": {
+      "model_id": "kairo-sft-baseline",
+      "tool_accuracy_pct": 99.4,
+      "schema_pass_pct": 100.0,
+      "recovery_rate_pct": 100.0,
+      "composite_score": 98.6,
+      "timestamp": "2026-10-17T00:00:00+00:00"
+    },
+    "active_model_metrics": {
+      "model_id": "kairo-scale-1.2b",
+      "tool_accuracy_pct": 98.3,
+      "schema_pass_pct": 100.0,
+      "recovery_rate_pct": 100.0,
+      "composite_score": 96.4,
+      "timestamp": "2026-10-15T12:00:00+00:00"
+    },
+    "regressions": [],
+    "improvements": [
+      {
+        "metric": "tool_accuracy_pct",
+        "gain": 1.1
+      },
+      {
+        "metric": "composite_score",
+        "gain": 2.2
+      }
+    ],
+    "tolerated_variance": 1.0
+  },
+  {
+    "evaluation_id": "eval_20261016_193641_b985",
+    "timestamp": "2026-10-16T19:36:41.068239+00:00",
+    "job_id": "job_pretrain_hist_1",
+    "job_type": "pretrain_scale",
+    "preset": null,
+    "checkpoint_model_id": "kairo-scale-1.2b",
+    "active_model_id": "kairo-scale-1.2b",
+    "decision": "PROMOTED",
+    "promoted": true,
+    "plain_language_notice": "Auto-promoted kairo-scale-1.2b to active model: met or exceeded active baseline (kairo-scale-1.2b) across tracked metrics (Composite: 98.6 vs 96.4).",
+    "comparisons": {
+      "tool_accuracy_pct": {
+        "new_val": 99.4,
+        "active_val": 98.3,
+        "delta": 1.1,
+        "delta_pct": 1.12
+      },
+      "schema_pass_pct": {
+        "new_val": 100.0,
+        "active_val": 100.0,
+        "delta": 0.0,
+        "delta_pct": 0.0
+      },
+      "recovery_rate_pct": {
+        "new_val": 100.0,
+        "active_val": 100.0,
+        "delta": 0.0,
+        "delta_pct": 0.0
+      },
+      "composite_score": {
+        "new_val": 98.6,
+        "active_val": 96.4,
+        "delta": 2.2,
+        "delta_pct": 2.28
+      }
+    },
+    "new_checkpoint_metrics": {
+      "model_id": "kairo-scale-1.2b",
+      "tool_accuracy_pct": 99.4,
+      "schema_pass_pct": 100.0,
+      "recovery_rate_pct": 100.0,
+      "composite_score": 98.6,
+      "timestamp": "2026-10-17T00:00:00+00:00"
+    },
+    "active_model_metrics": {
+      "model_id": "kairo-scale-1.2b",
+      "tool_accuracy_pct": 98.3,
+      "schema_pass_pct": 100.0,
+      "recovery_rate_pct": 100.0,
+      "composite_score": 96.4,
+      "timestamp": "2026-10-15T12:00:00+00:00"
+    },
+    "regressions": [],
+    "improvements": [
+      {
+        "metric": "tool_accuracy_pct",
+        "gain": 1.1
+      },
+      {
+        "metric": "composite_score",
+        "gain": 2.2
+      }
+    ],
+    "tolerated_variance": 1.0
+  },
+  {
+    "evaluation_id": "eval_20261016_193641_4bd1",
+    "timestamp": "2026-10-16T19:36:41.152878+00:00",
+    "job_id": "job_trl_sft_hist_1",
+    "job_type": "trl_sft",
+    "preset": null,
+    "checkpoint_model_id": "kairo-sft-baseline",
+    "active_model_id": "kairo-scale-1.2b",
+    "decision": "PROMOTED",
+    "promoted": true,
+    "plain_language_notice": "Auto-promoted kairo-sft-baseline to active model: met or exceeded active baseline (kairo-scale-1.2b) across tracked metrics (Composite: 98.6 vs 96.4).",
+    "comparisons": {
+      "tool_accuracy_pct": {
+        "new_val": 99.4,
+        "active_val": 98.3,
+        "delta": 1.1,
+        "delta_pct": 1.12
+      },
+      "schema_pass_pct": {
+        "new_val": 100.0,
+        "active_val": 100.0,
+        "delta": 0.0,
+        "delta_pct": 0.0
+      },
+      "recovery_rate_pct": {
+        "new_val": 100.0,
+        "active_val": 100.0,
+        "delta": 0.0,
+        "delta_pct": 0.0
+      },
+      "composite_score": {
+        "new_val": 98.6,
+        "active_val": 96.4,
+        "delta": 2.2,
+        "delta_pct": 2.28
+      }
+    },
+    "new_checkpoint_metrics": {
+      "model_id": "kairo-sft-baseline",
+      "tool_accuracy_pct": 99.4,
+      "schema_pass_pct": 100.0,
+      "recovery_rate_pct": 100.0,
+      "composite_score": 98.6,
+      "timestamp": "2026-10-17T00:00:00+00:00"
+    },
+    "active_model_metrics": {
+      "model_id": "kairo-scale-1.2b",
+      "tool_accuracy_pct": 98.3,
+      "schema_pass_pct": 100.0,
+      "recovery_rate_pct": 100.0,
+      "composite_score": 96.4,
+      "timestamp": "2026-10-15T12:00:00+00:00"
+    },
+    "regressions": [],
+    "improvements": [
+      {
+        "metric": "tool_accuracy_pct",
+        "gain": 1.1
+      },
+      {
+        "metric": "composite_score",
+        "gain": 2.2
+      }
+    ],
+    "tolerated_variance": 1.0
+  },
+  {
+    "evaluation_id": "eval_20261016_193641_2193",
+    "timestamp": "2026-10-16T19:36:41.196710+00:00",
+    "job_id": "job_trl_sft_hist_2",
+    "job_type": "trl_sft",
+    "preset": null,
+    "checkpoint_model_id": "kairo-sft-baseline",
+    "active_model_id": "kairo-scale-1.2b",
+    "decision": "PROMOTED",
+    "promoted": true,
+    "plain_language_notice": "Auto-promoted kairo-sft-baseline to active model: met or exceeded active baseline (kairo-scale-1.2b) across tracked metrics (Composite: 98.6 vs 96.4).",
+    "comparisons": {
+      "tool_accuracy_pct": {
+        "new_val": 99.4,
+        "active_val": 98.3,
+        "delta": 1.1,
+        "delta_pct": 1.12
+      },
+      "schema_pass_pct": {
+        "new_val": 100.0,
+        "active_val": 100.0,
+        "delta": 0.0,
+        "delta_pct": 0.0
+      },
+      "recovery_rate_pct": {
+        "new_val": 100.0,
+        "active_val": 100.0,
+        "delta": 0.0,
+        "delta_pct": 0.0
+      },
+      "composite_score": {
+        "new_val": 98.6,
+        "active_val": 96.4,
+        "delta": 2.2,
+        "delta_pct": 2.28
+      }
+    },
+    "new_checkpoint_metrics": {
+      "model_id": "kairo-sft-baseline",
+      "tool_accuracy_pct": 99.4,
+      "schema_pass_pct": 100.0,
+      "recovery_rate_pct": 100.0,
+      "composite_score": 98.6,
+      "timestamp": "2026-10-17T00:00:00+00:00"
+    },
+    "active_model_metrics": {
+      "model_id": "kairo-scale-1.2b",
+      "tool_accuracy_pct": 98.3,
+      "schema_pass_pct": 100.0,
+      "recovery_rate_pct": 100.0,
+      "composite_score": 96.4,
+      "timestamp": "2026-10-15T12:00:00+00:00"
+    },
+    "regressions": [],
+    "improvements": [
+      {
+        "metric": "tool_accuracy_pct",
+        "gain": 1.1
+      },
+      {
+        "metric": "composite_score",
+        "gain": 2.2
+      }
+    ],
+    "tolerated_variance": 1.0
+  },
+  {
+    "evaluation_id": "eval_20261016_193641_83e5",
+    "timestamp": "2026-10-16T19:36:41.233812+00:00",
+    "job_id": "job_pretrain_hist_1",
+    "job_type": "pretrain_scale",
+    "preset": null,
+    "checkpoint_model_id": "kairo-scale-1.2b",
+    "active_model_id": "kairo-scale-1.2b",
+    "decision": "PROMOTED",
+    "promoted": true,
+    "plain_language_notice": "Auto-promoted kairo-scale-1.2b to active model: met or exceeded active baseline (kairo-scale-1.2b) across tracked metrics (Composite: 98.6 vs 96.4).",
+    "comparisons": {
+      "tool_accuracy_pct": {
+        "new_val": 99.4,
+        "active_val": 98.3,
+        "delta": 1.1,
+        "delta_pct": 1.12
+      },
+      "schema_pass_pct": {
+        "new_val": 100.0,
+        "active_val": 100.0,
+        "delta": 0.0,
+        "delta_pct": 0.0
+      },
+      "recovery_rate_pct": {
+        "new_val": 100.0,
+        "active_val": 100.0,
+        "delta": 0.0,
+        "delta_pct": 0.0
+      },
+      "composite_score": {
+        "new_val": 98.6,
+        "active_val": 96.4,
+        "delta": 2.2,
+        "delta_pct": 2.28
+      }
+    },
+    "new_checkpoint_metrics": {
+      "model_id": "kairo-scale-1.2b",
+      "tool_accuracy_pct": 99.4,
+      "schema_pass_pct": 100.0,
+      "recovery_rate_pct": 100.0,
+      "composite_score": 98.6,
+      "timestamp": "2026-10-17T00:00:00+00:00"
+    },
+    "active_model_metrics": {
+      "model_id": "kairo-scale-1.2b",
+      "tool_accuracy_pct": 98.3,
+      "schema_pass_pct": 100.0,
+      "recovery_rate_pct": 100.0,
+      "composite_score": 96.4,
+      "timestamp": "2026-10-15T12:00:00+00:00"
+    },
+    "regressions": [],
+    "improvements": [
+      {
+        "metric": "tool_accuracy_pct",
+        "gain": 1.1
+      },
+      {
+        "metric": "composite_score",
+        "gain": 2.2
+      }
+    ],
+    "tolerated_variance": 1.0
+  },
+  {
+    "evaluation_id": "eval_20261016_193641_7d3e",
+    "timestamp": "2026-10-16T19:36:41.674546+00:00",
+    "job_id": "job_trl_sft_hist_1",
+    "job_type": "trl_sft",
+    "preset": null,
+    "checkpoint_model_id": "kairo-sft-baseline",
+    "active_model_id": "kairo-scale-1.2b",
+    "decision": "PROMOTED",
+    "promoted": true,
+    "plain_language_notice": "Auto-promoted kairo-sft-baseline to active model: met or exceeded active baseline (kairo-scale-1.2b) across tracked metrics (Composite: 98.6 vs 96.4).",
+    "comparisons": {
+      "tool_accuracy_pct": {
+        "new_val": 99.4,
+        "active_val": 98.3,
+        "delta": 1.1,
+        "delta_pct": 1.12
+      },
+      "schema_pass_pct": {
+        "new_val": 100.0,
+        "active_val": 100.0,
+        "delta": 0.0,
+        "delta_pct": 0.0
+      },
+      "recovery_rate_pct": {
+        "new_val": 100.0,
+        "active_val": 100.0,
+        "delta": 0.0,
+        "delta_pct": 0.0
+      },
+      "composite_score": {
+        "new_val": 98.6,
+        "active_val": 96.4,
+        "delta": 2.2,
+        "delta_pct": 2.28
+      }
+    },
+    "new_checkpoint_metrics": {
+      "model_id": "kairo-sft-baseline",
+      "tool_accuracy_pct": 99.4,
+      "schema_pass_pct": 100.0,
+      "recovery_rate_pct": 100.0,
+      "composite_score": 98.6,
+      "timestamp": "2026-10-17T00:00:00+00:00"
+    },
+    "active_model_metrics": {
+      "model_id": "kairo-scale-1.2b",
+      "tool_accuracy_pct": 98.3,
+      "schema_pass_pct": 100.0,
+      "recovery_rate_pct": 100.0,
+      "composite_score": 96.4,
+      "timestamp": "2026-10-15T12:00:00+00:00"
+    },
+    "regressions": [],
+    "improvements": [
+      {
+        "metric": "tool_accuracy_pct",
+        "gain": 1.1
+      },
+      {
+        "metric": "composite_score",
+        "gain": 2.2
+      }
+    ],
+    "tolerated_variance": 1.0
+  },
+  {
+    "evaluation_id": "eval_20261016_193641_8cb0",
+    "timestamp": "2026-10-16T19:36:41.709628+00:00",
+    "job_id": "job_trl_sft_hist_2",
+    "job_type": "trl_sft",
+    "preset": null,
+    "checkpoint_model_id": "kairo-sft-baseline",
+    "active_model_id": "kairo-scale-1.2b",
+    "decision": "PROMOTED",
+    "promoted": true,
+    "plain_language_notice": "Auto-promoted kairo-sft-baseline to active model: met or exceeded active baseline (kairo-scale-1.2b) across tracked metrics (Composite: 98.6 vs 96.4).",
+    "comparisons": {
+      "tool_accuracy_pct": {
+        "new_val": 99.4,
+        "active_val": 98.3,
+        "delta": 1.1,
+        "delta_pct": 1.12
+      },
+      "schema_pass_pct": {
+        "new_val": 100.0,
+        "active_val": 100.0,
+        "delta": 0.0,
+        "delta_pct": 0.0
+      },
+      "recovery_rate_pct": {
+        "new_val": 100.0,
+        "active_val": 100.0,
+        "delta": 0.0,
+        "delta_pct": 0.0
+      },
+      "composite_score": {
+        "new_val": 98.6,
+        "active_val": 96.4,
+        "delta": 2.2,
+        "delta_pct": 2.28
+      }
+    },
+    "new_checkpoint_metrics": {
+      "model_id": "kairo-sft-baseline",
+      "tool_accuracy_pct": 99.4,
+      "schema_pass_pct": 100.0,
+      "recovery_rate_pct": 100.0,
+      "composite_score": 98.6,
+      "timestamp": "2026-10-17T00:00:00+00:00"
+    },
+    "active_model_metrics": {
+      "model_id": "kairo-scale-1.2b",
+      "tool_accuracy_pct": 98.3,
+      "schema_pass_pct": 100.0,
+      "recovery_rate_pct": 100.0,
+      "composite_score": 96.4,
+      "timestamp": "2026-10-15T12:00:00+00:00"
+    },
+    "regressions": [],
+    "improvements": [
+      {
+        "metric": "tool_accuracy_pct",
+        "gain": 1.1
+      },
+      {
+        "metric": "composite_score",
+        "gain": 2.2
+      }
+    ],
+    "tolerated_variance": 1.0
+  },
+  {
+    "evaluation_id": "eval_20261016_193641_94f8",
+    "timestamp": "2026-10-16T19:36:41.742039+00:00",
+    "job_id": "job_pretrain_hist_1",
+    "job_type": "pretrain_scale",
+    "preset": null,
+    "checkpoint_model_id": "kairo-scale-1.2b",
+    "active_model_id": "kairo-scale-1.2b",
+    "decision": "PROMOTED",
+    "promoted": true,
+    "plain_language_notice": "Auto-promoted kairo-scale-1.2b to active model: met or exceeded active baseline (kairo-scale-1.2b) across tracked metrics (Composite: 98.6 vs 96.4).",
+    "comparisons": {
+      "tool_accuracy_pct": {
+        "new_val": 99.4,
+        "active_val": 98.3,
+        "delta": 1.1,
+        "delta_pct": 1.12
+      },
+      "schema_pass_pct": {
+        "new_val": 100.0,
+        "active_val": 100.0,
+        "delta": 0.0,
+        "delta_pct": 0.0
+      },
+      "recovery_rate_pct": {
+        "new_val": 100.0,
+        "active_val": 100.0,
+        "delta": 0.0,
+        "delta_pct": 0.0
+      },
+      "composite_score": {
+        "new_val": 98.6,
+        "active_val": 96.4,
+        "delta": 2.2,
+        "delta_pct": 2.28
+      }
+    },
+    "new_checkpoint_metrics": {
+      "model_id": "kairo-scale-1.2b",
+      "tool_accuracy_pct": 99.4,
+      "schema_pass_pct": 100.0,
+      "recovery_rate_pct": 100.0,
+      "composite_score": 98.6,
+      "timestamp": "2026-10-17T00:00:00+00:00"
+    },
+    "active_model_metrics": {
+      "model_id": "kairo-scale-1.2b",
+      "tool_accuracy_pct": 98.3,
+      "schema_pass_pct": 100.0,
+      "recovery_rate_pct": 100.0,
+      "composite_score": 96.4,
+      "timestamp": "2026-10-15T12:00:00+00:00"
+    },
+    "regressions": [],
+    "improvements": [
+      {
+        "metric": "tool_accuracy_pct",
+        "gain": 1.1
+      },
+      {
+        "metric": "composite_score",
+        "gain": 2.2
+      }
+    ],
+    "tolerated_variance": 1.0
+  },
+  {
+    "evaluation_id": "eval_20261016_193641_81d8",
+    "timestamp": "2026-10-16T19:36:41.810889+00:00",
+    "job_id": "job_trl_sft_hist_1",
+    "job_type": "trl_sft",
+    "preset": null,
+    "checkpoint_model_id": "kairo-sft-baseline",
+    "active_model_id": "kairo-scale-1.2b",
+    "decision": "PROMOTED",
+    "promoted": true,
+    "plain_language_notice": "Auto-promoted kairo-sft-baseline to active model: met or exceeded active baseline (kairo-scale-1.2b) across tracked metrics (Composite: 98.6 vs 96.4).",
+    "comparisons": {
+      "tool_accuracy_pct": {
+        "new_val": 99.4,
+        "active_val": 98.3,
+        "delta": 1.1,
+        "delta_pct": 1.12
+      },
+      "schema_pass_pct": {
+        "new_val": 100.0,
+        "active_val": 100.0,
+        "delta": 0.0,
+        "delta_pct": 0.0
+      },
+      "recovery_rate_pct": {
+        "new_val": 100.0,
+        "active_val": 100.0,
+        "delta": 0.0,
+        "delta_pct": 0.0
+      },
+      "composite_score": {
+        "new_val": 98.6,
+        "active_val": 96.4,
+        "delta": 2.2,
+        "delta_pct": 2.28
+      }
+    },
+    "new_checkpoint_metrics": {
+      "model_id": "kairo-sft-baseline",
+      "tool_accuracy_pct": 99.4,
+      "schema_pass_pct": 100.0,
+      "recovery_rate_pct": 100.0,
+      "composite_score": 98.6,
+      "timestamp": "2026-10-17T00:00:00+00:00"
+    },
+    "active_model_metrics": {
+      "model_id": "kairo-scale-1.2b",
+      "tool_accuracy_pct": 98.3,
+      "schema_pass_pct": 100.0,
+      "recovery_rate_pct": 100.0,
+      "composite_score": 96.4,
+      "timestamp": "2026-10-15T12:00:00+00:00"
+    },
+    "regressions": [],
+    "improvements": [
+      {
+        "metric": "tool_accuracy_pct",
+        "gain": 1.1
+      },
+      {
+        "metric": "composite_score",
+        "gain": 2.2
+      }
+    ],
+    "tolerated_variance": 1.0
+  },
+  {
+    "evaluation_id": "eval_20261016_193641_c0f7",
+    "timestamp": "2026-10-16T19:36:41.850000+00:00",
+    "job_id": "job_trl_sft_hist_2",
+    "job_type": "trl_sft",
+    "preset": null,
+    "checkpoint_model_id": "kairo-sft-baseline",
+    "active_model_id": "kairo-scale-1.2b",
+    "decision": "PROMOTED",
+    "promoted": true,
+    "plain_language_notice": "Auto-promoted kairo-sft-baseline to active model: met or exceeded active baseline (kairo-scale-1.2b) across tracked metrics (Composite: 98.6 vs 96.4).",
+    "comparisons": {
+      "tool_accuracy_pct": {
+        "new_val": 99.4,
+        "active_val": 98.3,
+        "delta": 1.1,
+        "delta_pct": 1.12
+      },
+      "schema_pass_pct": {
+        "new_val": 100.0,
+        "active_val": 100.0,
+        "delta": 0.0,
+        "delta_pct": 0.0
+      },
+      "recovery_rate_pct": {
+        "new_val": 100.0,
+        "active_val": 100.0,
+        "delta": 0.0,
+        "delta_pct": 0.0
+      },
+      "composite_score": {
+        "new_val": 98.6,
+        "active_val": 96.4,
+        "delta": 2.2,
+        "delta_pct": 2.28
+      }
+    },
+    "new_checkpoint_metrics": {
+      "model_id": "kairo-sft-baseline",
+      "tool_accuracy_pct": 99.4,
+      "schema_pass_pct": 100.0,
+      "recovery_rate_pct": 100.0,
+      "composite_score": 98.6,
+      "timestamp": "2026-10-17T00:00:00+00:00"
+    },
+    "active_model_metrics": {
+      "model_id": "kairo-scale-1.2b",
+      "tool_accuracy_pct": 98.3,
+      "schema_pass_pct": 100.0,
+      "recovery_rate_pct": 100.0,
+      "composite_score": 96.4,
+      "timestamp": "2026-10-15T12:00:00+00:00"
+    },
+    "regressions": [],
+    "improvements": [
+      {
+        "metric": "tool_accuracy_pct",
+        "gain": 1.1
+      },
+      {
+        "metric": "composite_score",
+        "gain": 2.2
+      }
+    ],
+    "tolerated_variance": 1.0
+  },
+  {
+    "evaluation_id": "eval_20261016_193641_f8a8",
+    "timestamp": "2026-10-16T19:36:41.890181+00:00",
+    "job_id": "job_pretrain_hist_1",
+    "job_type": "pretrain_scale",
+    "preset": null,
+    "checkpoint_model_id": "kairo-scale-1.2b",
+    "active_model_id": "kairo-scale-1.2b",
+    "decision": "PROMOTED",
+    "promoted": true,
+    "plain_language_notice": "Auto-promoted kairo-scale-1.2b to active model: met or exceeded active baseline (kairo-scale-1.2b) across tracked metrics (Composite: 98.6 vs 96.4).",
+    "comparisons": {
+      "tool_accuracy_pct": {
+        "new_val": 99.4,
+        "active_val": 98.3,
+        "delta": 1.1,
+        "delta_pct": 1.12
+      },
+      "schema_pass_pct": {
+        "new_val": 100.0,
+        "active_val": 100.0,
+        "delta": 0.0,
+        "delta_pct": 0.0
+      },
+      "recovery_rate_pct": {
+        "new_val": 100.0,
+        "active_val": 100.0,
+        "delta": 0.0,
+        "delta_pct": 0.0
+      },
+      "composite_score": {
+        "new_val": 98.6,
+        "active_val": 96.4,
+        "delta": 2.2,
+        "delta_pct": 2.28
+      }
+    },
+    "new_checkpoint_metrics": {
+      "model_id": "kairo-scale-1.2b",
+      "tool_accuracy_pct": 99.4,
+      "schema_pass_pct": 100.0,
+      "recovery_rate_pct": 100.0,
+      "composite_score": 98.6,
+      "timestamp": "2026-10-17T00:00:00+00:00"
+    },
+    "active_model_metrics": {
+      "model_id": "kairo-scale-1.2b",
+      "tool_accuracy_pct": 98.3,
+      "schema_pass_pct": 100.0,
+      "recovery_rate_pct": 100.0,
+      "composite_score": 96.4,
+      "timestamp": "2026-10-15T12:00:00+00:00"
+    },
+    "regressions": [],
+    "improvements": [
+      {
+        "metric": "tool_accuracy_pct",
+        "gain": 1.1
+      },
+      {
+        "metric": "composite_score",
+        "gain": 2.2
+      }
+    ],
+    "tolerated_variance": 1.0
+  },
+  {
+    "evaluation_id": "eval_20261016_193641_47c8",
+    "timestamp": "2026-10-16T19:36:41.988064+00:00",
+    "job_id": "job_trl_sft_hist_1",
+    "job_type": "trl_sft",
+    "preset": null,
+    "checkpoint_model_id": "kairo-sft-baseline",
+    "active_model_id": "kairo-scale-1.2b",
+    "decision": "PROMOTED",
+    "promoted": true,
+    "plain_language_notice": "Auto-promoted kairo-sft-baseline to active model: met or exceeded active baseline (kairo-scale-1.2b) across tracked metrics (Composite: 98.6 vs 96.4).",
+    "comparisons": {
+      "tool_accuracy_pct": {
+        "new_val": 99.4,
+        "active_val": 98.3,
+        "delta": 1.1,
+        "delta_pct": 1.12
+      },
+      "schema_pass_pct": {
+        "new_val": 100.0,
+        "active_val": 100.0,
+        "delta": 0.0,
+        "delta_pct": 0.0
+      },
+      "recovery_rate_pct": {
+        "new_val": 100.0,
+        "active_val": 100.0,
+        "delta": 0.0,
+        "delta_pct": 0.0
+      },
+      "composite_score": {
+        "new_val": 98.6,
+        "active_val": 96.4,
+        "delta": 2.2,
+        "delta_pct": 2.28
+      }
+    },
+    "new_checkpoint_metrics": {
+      "model_id": "kairo-sft-baseline",
+      "tool_accuracy_pct": 99.4,
+      "schema_pass_pct": 100.0,
+      "recovery_rate_pct": 100.0,
+      "composite_score": 98.6,
+      "timestamp": "2026-10-17T00:00:00+00:00"
+    },
+    "active_model_metrics": {
+      "model_id": "kairo-scale-1.2b",
+      "tool_accuracy_pct": 98.3,
+      "schema_pass_pct": 100.0,
+      "recovery_rate_pct": 100.0,
+      "composite_score": 96.4,
+      "timestamp": "2026-10-15T12:00:00+00:00"
+    },
+    "regressions": [],
+    "improvements": [
+      {
+        "metric": "tool_accuracy_pct",
+        "gain": 1.1
+      },
+      {
+        "metric": "composite_score",
+        "gain": 2.2
+      }
+    ],
+    "tolerated_variance": 1.0
+  },
+  {
+    "evaluation_id": "eval_20261016_193642_7839",
+    "timestamp": "2026-10-16T19:36:42.035283+00:00",
+    "job_id": "job_trl_sft_hist_2",
+    "job_type": "trl_sft",
+    "preset": null,
+    "checkpoint_model_id": "kairo-sft-baseline",
+    "active_model_id": "kairo-scale-1.2b",
+    "decision": "PROMOTED",
+    "promoted": true,
+    "plain_language_notice": "Auto-promoted kairo-sft-baseline to active model: met or exceeded active baseline (kairo-scale-1.2b) across tracked metrics (Composite: 98.6 vs 96.4).",
+    "comparisons": {
+      "tool_accuracy_pct": {
+        "new_val": 99.4,
+        "active_val": 98.3,
+        "delta": 1.1,
+        "delta_pct": 1.12
+      },
+      "schema_pass_pct": {
+        "new_val": 100.0,
+        "active_val": 100.0,
+        "delta": 0.0,
+        "delta_pct": 0.0
+      },
+      "recovery_rate_pct": {
+        "new_val": 100.0,
+        "active_val": 100.0,
+        "delta": 0.0,
+        "delta_pct": 0.0
+      },
+      "composite_score": {
+        "new_val": 98.6,
+        "active_val": 96.4,
+        "delta": 2.2,
+        "delta_pct": 2.28
+      }
+    },
+    "new_checkpoint_metrics": {
+      "model_id": "kairo-sft-baseline",
+      "tool_accuracy_pct": 99.4,
+      "schema_pass_pct": 100.0,
+      "recovery_rate_pct": 100.0,
+      "composite_score": 98.6,
+      "timestamp": "2026-10-17T00:00:00+00:00"
+    },
+    "active_model_metrics": {
+      "model_id": "kairo-scale-1.2b",
+      "tool_accuracy_pct": 98.3,
+      "schema_pass_pct": 100.0,
+      "recovery_rate_pct": 100.0,
+      "composite_score": 96.4,
+      "timestamp": "2026-10-15T12:00:00+00:00"
+    },
+    "regressions": [],
+    "improvements": [
+      {
+        "metric": "tool_accuracy_pct",
+        "gain": 1.1
+      },
+      {
+        "metric": "composite_score",
+        "gain": 2.2
+      }
+    ],
+    "tolerated_variance": 1.0
+  },
+  {
+    "evaluation_id": "eval_20261016_193642_cdb1",
+    "timestamp": "2026-10-16T19:36:42.080042+00:00",
+    "job_id": "job_pretrain_hist_1",
+    "job_type": "pretrain_scale",
+    "preset": null,
+    "checkpoint_model_id": "kairo-scale-1.2b",
+    "active_model_id": "kairo-scale-1.2b",
+    "decision": "PROMOTED",
+    "promoted": true,
+    "plain_language_notice": "Auto-promoted kairo-scale-1.2b to active model: met or exceeded active baseline (kairo-scale-1.2b) across tracked metrics (Composite: 98.6 vs 96.4).",
+    "comparisons": {
+      "tool_accuracy_pct": {
+        "new_val": 99.4,
+        "active_val": 98.3,
+        "delta": 1.1,
+        "delta_pct": 1.12
+      },
+      "schema_pass_pct": {
+        "new_val": 100.0,
+        "active_val": 100.0,
+        "delta": 0.0,
+        "delta_pct": 0.0
+      },
+      "recovery_rate_pct": {
+        "new_val": 100.0,
+        "active_val": 100.0,
+        "delta": 0.0,
+        "delta_pct": 0.0
+      },
+      "composite_score": {
+        "new_val": 98.6,
+        "active_val": 96.4,
+        "delta": 2.2,
+        "delta_pct": 2.28
+      }
+    },
+    "new_checkpoint_metrics": {
+      "model_id": "kairo-scale-1.2b",
+      "tool_accuracy_pct": 99.4,
+      "schema_pass_pct": 100.0,
+      "recovery_rate_pct": 100.0,
+      "composite_score": 98.6,
+      "timestamp": "2026-10-17T00:00:00+00:00"
+    },
+    "active_model_metrics": {
+      "model_id": "kairo-scale-1.2b",
+      "tool_accuracy_pct": 98.3,
+      "schema_pass_pct": 100.0,
+      "recovery_rate_pct": 100.0,
+      "composite_score": 96.4,
+      "timestamp": "2026-10-15T12:00:00+00:00"
+    },
+    "regressions": [],
+    "improvements": [
+      {
+        "metric": "tool_accuracy_pct",
+        "gain": 1.1
+      },
+      {
+        "metric": "composite_score",
+        "gain": 2.2
+      }
+    ],
+    "tolerated_variance": 1.0
+  },
+  {
+    "evaluation_id": "eval_20261016_193642_241c",
+    "timestamp": "2026-10-16T19:36:42.183410+00:00",
+    "job_id": "job_trl_sft_hist_1",
+    "job_type": "trl_sft",
+    "preset": null,
+    "checkpoint_model_id": "kairo-sft-baseline",
+    "active_model_id": "kairo-scale-1.2b",
+    "decision": "PROMOTED",
+    "promoted": true,
+    "plain_language_notice": "Auto-promoted kairo-sft-baseline to active model: met or exceeded active baseline (kairo-scale-1.2b) across tracked metrics (Composite: 98.6 vs 96.4).",
+    "comparisons": {
+      "tool_accuracy_pct": {
+        "new_val": 99.4,
+        "active_val": 98.3,
+        "delta": 1.1,
+        "delta_pct": 1.12
+      },
+      "schema_pass_pct": {
+        "new_val": 100.0,
+        "active_val": 100.0,
+        "delta": 0.0,
+        "delta_pct": 0.0
+      },
+      "recovery_rate_pct": {
+        "new_val": 100.0,
+        "active_val": 100.0,
+        "delta": 0.0,
+        "delta_pct": 0.0
+      },
+      "composite_score": {
+        "new_val": 98.6,
+        "active_val": 96.4,
+        "delta": 2.2,
+        "delta_pct": 2.28
+      }
+    },
+    "new_checkpoint_metrics": {
+      "model_id": "kairo-sft-baseline",
+      "tool_accuracy_pct": 99.4,
+      "schema_pass_pct": 100.0,
+      "recovery_rate_pct": 100.0,
+      "composite_score": 98.6,
+      "timestamp": "2026-10-17T00:00:00+00:00"
+    },
+    "active_model_metrics": {
+      "model_id": "kairo-scale-1.2b",
+      "tool_accuracy_pct": 98.3,
+      "schema_pass_pct": 100.0,
+      "recovery_rate_pct": 100.0,
+      "composite_score": 96.4,
+      "timestamp": "2026-10-15T12:00:00+00:00"
+    },
+    "regressions": [],
+    "improvements": [
+      {
+        "metric": "tool_accuracy_pct",
+        "gain": 1.1
+      },
+      {
+        "metric": "composite_score",
+        "gain": 2.2
+      }
+    ],
+    "tolerated_variance": 1.0
+  },
+  {
+    "evaluation_id": "eval_20261016_193642_6c5e",
+    "timestamp": "2026-10-16T19:36:42.232195+00:00",
+    "job_id": "job_trl_sft_hist_2",
+    "job_type": "trl_sft",
+    "preset": null,
+    "checkpoint_model_id": "kairo-sft-baseline",
+    "active_model_id": "kairo-scale-1.2b",
+    "decision": "PROMOTED",
+    "promoted": true,
+    "plain_language_notice": "Auto-promoted kairo-sft-baseline to active model: met or exceeded active baseline (kairo-scale-1.2b) across tracked metrics (Composite: 98.6 vs 96.4).",
+    "comparisons": {
+      "tool_accuracy_pct": {
+        "new_val": 99.4,
+        "active_val": 98.3,
+        "delta": 1.1,
+        "delta_pct": 1.12
+      },
+      "schema_pass_pct": {
+        "new_val": 100.0,
+        "active_val": 100.0,
+        "delta": 0.0,
+        "delta_pct": 0.0
+      },
+      "recovery_rate_pct": {
+        "new_val": 100.0,
+        "active_val": 100.0,
+        "delta": 0.0,
+        "delta_pct": 0.0
+      },
+      "composite_score": {
+        "new_val": 98.6,
+        "active_val": 96.4,
+        "delta": 2.2,
+        "delta_pct": 2.28
+      }
+    },
+    "new_checkpoint_metrics": {
+      "model_id": "kairo-sft-baseline",
+      "tool_accuracy_pct": 99.4,
+      "schema_pass_pct": 100.0,
+      "recovery_rate_pct": 100.0,
+      "composite_score": 98.6,
+      "timestamp": "2026-10-17T00:00:00+00:00"
+    },
+    "active_model_metrics": {
+      "model_id": "kairo-scale-1.2b",
+      "tool_accuracy_pct": 98.3,
+      "schema_pass_pct": 100.0,
+      "recovery_rate_pct": 100.0,
+      "composite_score": 96.4,
+      "timestamp": "2026-10-15T12:00:00+00:00"
+    },
+    "regressions": [],
+    "improvements": [
+      {
+        "metric": "tool_accuracy_pct",
+        "gain": 1.1
+      },
+      {
+        "metric": "composite_score",
+        "gain": 2.2
+      }
+    ],
+    "tolerated_variance": 1.0
+  },
+  {
+    "evaluation_id": "eval_20261016_193642_dd3e",
+    "timestamp": "2026-10-16T19:36:42.271992+00:00",
+    "job_id": "job_pretrain_hist_1",
+    "job_type": "pretrain_scale",
+    "preset": null,
+    "checkpoint_model_id": "kairo-scale-1.2b",
+    "active_model_id": "kairo-scale-1.2b",
+    "decision": "PROMOTED",
+    "promoted": true,
+    "plain_language_notice": "Auto-promoted kairo-scale-1.2b to active model: met or exceeded active baseline (kairo-scale-1.2b) across tracked metrics (Composite: 98.6 vs 96.4).",
+    "comparisons": {
+      "tool_accuracy_pct": {
+        "new_val": 99.4,
+        "active_val": 98.3,
+        "delta": 1.1,
+        "delta_pct": 1.12
+      },
+      "schema_pass_pct": {
+        "new_val": 100.0,
+        "active_val": 100.0,
+        "delta": 0.0,
+        "delta_pct": 0.0
+      },
+      "recovery_rate_pct": {
+        "new_val": 100.0,
+        "active_val": 100.0,
+        "delta": 0.0,
+        "delta_pct": 0.0
+      },
+      "composite_score": {
+        "new_val": 98.6,
+        "active_val": 96.4,
+        "delta": 2.2,
+        "delta_pct": 2.28
+      }
+    },
+    "new_checkpoint_metrics": {
+      "model_id": "kairo-scale-1.2b",
+      "tool_accuracy_pct": 99.4,
+      "schema_pass_pct": 100.0,
+      "recovery_rate_pct": 100.0,
+      "composite_score": 98.6,
+      "timestamp": "2026-10-17T00:00:00+00:00"
+    },
+    "active_model_metrics": {
+      "model_id": "kairo-scale-1.2b",
+      "tool_accuracy_pct": 98.3,
+      "schema_pass_pct": 100.0,
+      "recovery_rate_pct": 100.0,
+      "composite_score": 96.4,
+      "timestamp": "2026-10-15T12:00:00+00:00"
+    },
+    "regressions": [],
+    "improvements": [
+      {
+        "metric": "tool_accuracy_pct",
+        "gain": 1.1
+      },
+      {
+        "metric": "composite_score",
+        "gain": 2.2
+      }
+    ],
+    "tolerated_variance": 1.0
+  }
+]

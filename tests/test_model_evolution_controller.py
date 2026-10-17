@@ -71,6 +71,17 @@ def sample_policy_file(temp_dir):
                 "action": "propose_rollback",
                 "fallback_checkpoint": "kairo-scale-1.2b",
             },
+            "auto_evaluation": {
+                "enabled": True,
+                "tolerance_pct": 0.01,
+                "tracked_metrics": [
+                    "tool_accuracy_pct",
+                    "schema_pass_pct",
+                    "recovery_rate_pct",
+                    "composite_score",
+                ],
+                "require_overall_improvement": True,
+            },
         },
     }
     with open(policy_path, "w", encoding="utf-8") as f:
@@ -166,6 +177,52 @@ class MockBenchmarkManager:
 
     def get_sweep_comparison(self, sweep_id=None):
         return {"comparison": "mock_comparison"}
+
+    def trigger_benchmark_run(self, model_id, benchmark_type="golden"):
+        return {
+            "success": True,
+            "run": {
+                "model_id": model_id,
+                "tool_accuracy_pct": 99.4,
+                "schema_pass_pct": 100.0,
+                "recovery_rate_pct": 100.0,
+                "composite_score": 98.6,
+                "timestamp": "2026-10-17T00:00:00+00:00",
+            },
+        }
+
+
+class MockModelCenter:
+    """Mock ModelCenter tracking active model and set_active_model calls."""
+
+    def __init__(self, active_model_id="kairo-scale-1.2b"):
+        self.active_model_id = active_model_id
+        self.promotions = []
+        self.models = [
+            {"model_id": "kairo-scale-1.2b", "role": "primary-custom-scaled"},
+            {"model_id": "kairo-scale-2b-grpo", "role": "primary-custom-scaled-grpo"},
+            {"model_id": "kairo-scale-2b-sft", "role": "primary-custom-scaled-sft"},
+        ]
+
+    def get_active_model(self):
+        return {"model_id": self.active_model_id}
+
+    def get_model_by_id(self, model_id):
+        return next((m for m in self.models if m["model_id"] == model_id), None)
+
+    def set_active_model(self, model_id):
+        self.active_model_id = model_id
+        self.promotions.append(model_id)
+        return {"model_id": model_id, "status": "active"}
+
+    def load_config(self):
+        return {"active_model": self.active_model_id, "models": list(self.models)}
+
+    def save_config(self, cfg):
+        if "active_model" in cfg:
+            self.active_model_id = cfg["active_model"]
+        if "models" in cfg:
+            self.models = list(cfg["models"])
 
 
 # -----------------------------------------------------------------------------
@@ -452,3 +509,386 @@ def test_background_thread_lifecycle(sample_policy_file, temp_dir):
     assert stop_res["status"] == "stopping"
     time.sleep(0.2)
     assert not controller.is_running()
+
+
+def test_proposal_plain_language_summary(sample_policy_file, temp_dir):
+    """
+    Verifies that the generated proposal contains the plain-language summary
+    matching the required format:
+    'Propose: retrain kairo-scale-1.2b on 2,340 new examples (last run 11 days ago, validity 94%). Estimated time: ~3.5 hours on this hardware.'
+    """
+    mock_tm = MockTrainingManager(total_examples=5340, pass_rate=94.0)
+    mock_bm = MockBenchmarkManager()
+
+    controller = ModelEvolutionController(
+        training_manager=mock_tm,
+        benchmark_manager=mock_bm,
+        policy_path=sample_policy_file,
+        proposals_path=temp_dir / "proposals.json",
+        state_path=temp_dir / "state.json",
+    )
+    # 5340 - 3000 = 2340 new examples
+    controller.state["last_run_example_count"] = 3000
+    # Simulate last run 11 days ago
+    eleven_days_ago = time.time() - (11 * 86400)
+    import datetime as dt
+    controller.state["last_run_timestamp"] = dt.datetime.fromtimestamp(eleven_days_ago, dt.timezone.utc).isoformat()
+
+    res = controller.run_cycle()
+    proposals = res["proposals_generated"]
+    assert len(proposals) == 1
+
+    prop = proposals[0]
+    plain = prop.get("plain_language_summary", "")
+    assert "Propose: retrain" in plain
+    assert "2,340 new examples" in plain
+    assert "last run 11 days ago" in plain
+    assert "validity 94%" in plain
+    assert "Estimated time:" in plain
+
+
+def test_human_in_the_loop_approval_checkpoint(sample_policy_file, temp_dir):
+    """
+    CRITICAL HUMAN-IN-THE-LOOP CHECKPOINT:
+    1. The controller's decision loop (run_cycle) generates a proposal but NEVER calls start_training_job().
+    2. Only when the operator explicitly calls approve_proposal() is TrainingManager.start_training_job() called.
+    3. The proposal transitions to 'APPROVED' and state['last_run_example_count'] is updated.
+    4. An audit event is logged into the Event Store.
+    """
+    mock_tm = MockTrainingManager(total_examples=5500, pass_rate=95.0)
+    mock_bm = MockBenchmarkManager()
+
+    controller = ModelEvolutionController(
+        training_manager=mock_tm,
+        benchmark_manager=mock_bm,
+        policy_path=sample_policy_file,
+        proposals_path=temp_dir / "proposals.json",
+        state_path=temp_dir / "state.json",
+    )
+    controller.state["last_run_example_count"] = 3000
+
+    # 1. Run decision loop
+    res = controller.run_cycle()
+    proposals = res["proposals_generated"]
+    assert len(proposals) == 1
+    prop = proposals[0]
+    prop_id = prop["proposal_id"]
+
+    # Verify checkpoint: NEVER called by decision loop
+    assert mock_tm.started_job_count == 0
+    assert prop["status"] == "PROPOSED"
+
+    # 2. Operator calls approve_proposal
+    approve_res = controller.approve_proposal(prop_id, operator="admin_user")
+    assert approve_res["success"] is True
+    assert approve_res["proposal"]["status"] == "APPROVED"
+    assert approve_res["proposal"]["approved_by"] == "admin_user"
+
+    # Verify that now and ONLY now was start_training_job() called
+    assert mock_tm.started_job_count == 1
+
+    # 3. Baseline example count is updated to prevent immediate re-trigger
+    assert controller.state["last_run_example_count"] == 5500
+
+    # 4. Verify human approval event in Event Store
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute(
+        "SELECT actor, tool_id, result_summary FROM events WHERE task_id = ? AND actor = 'admin_user'",
+        (prop_id,),
+    )
+    row = cursor.fetchone()
+    conn.close()
+    assert row is not None
+    assert row[0] == "admin_user"
+    assert row[1] == "human_approval_gate"
+    assert "approved evolution proposal" in row[2]
+
+
+def test_dismiss_proposal_never_starts_job(sample_policy_file, temp_dir):
+    """
+    Dismissing a proposal transitions it to 'DISMISSED' and NEVER starts a training job.
+    """
+    mock_tm = MockTrainingManager(total_examples=5500, pass_rate=95.0)
+    mock_bm = MockBenchmarkManager()
+
+    controller = ModelEvolutionController(
+        training_manager=mock_tm,
+        benchmark_manager=mock_bm,
+        policy_path=sample_policy_file,
+        proposals_path=temp_dir / "proposals.json",
+        state_path=temp_dir / "state.json",
+    )
+    controller.state["last_run_example_count"] = 3000
+
+    res = controller.run_cycle()
+    prop_id = res["proposals_generated"][0]["proposal_id"]
+
+    # Dismiss proposal
+    dismiss_res = controller.dismiss_proposal(prop_id, operator="reviewer", reason="Compute budget reserved")
+    assert dismiss_res["success"] is True
+    assert dismiss_res["proposal"]["status"] == "DISMISSED"
+    assert dismiss_res["proposal"]["dismissed_by"] == "reviewer"
+    assert dismiss_res["proposal"]["dismiss_reason"] == "Compute budget reserved"
+
+    # Confirm training job was NEVER called
+    assert mock_tm.started_job_count == 0
+
+
+def test_approve_dismissed_or_approved_fails(sample_policy_file, temp_dir):
+    """Cannot re-approve an already approved or dismissed proposal."""
+    mock_tm = MockTrainingManager(total_examples=5500, pass_rate=95.0)
+    mock_bm = MockBenchmarkManager()
+
+    controller = ModelEvolutionController(
+        training_manager=mock_tm,
+        benchmark_manager=mock_bm,
+        policy_path=sample_policy_file,
+        proposals_path=temp_dir / "proposals.json",
+        state_path=temp_dir / "state.json",
+    )
+    controller.state["last_run_example_count"] = 3000
+
+    res = controller.run_cycle()
+    prop_id = res["proposals_generated"][0]["proposal_id"]
+
+    # Dismiss first
+    controller.dismiss_proposal(prop_id, operator="admin")
+
+    # Attempt approve
+    err_res = controller.approve_proposal(prop_id, operator="admin")
+    assert err_res["success"] is False
+    assert "already DISMISSED" in err_res["error"]
+    assert mock_tm.started_job_count == 0
+
+
+def test_auto_evaluation_promotes_when_all_metrics_meet_or_beat(sample_policy_file, temp_dir):
+    """
+    Task C.3: Evaluating a completed job auto-promotes when every tracked metric
+    meets or beats the currently active model's last sweep.
+    """
+    mock_tm = MockTrainingManager()
+    # Simulate a completed training job that produced checkpoint 'kairo-scale-2b-grpo'
+    mock_tm.jobs = [
+        {
+            "id": "job_completed_grpo_101",
+            "job_type": "grpo",
+            "preset": "kairo-scale-2b",
+            "status": "completed",
+            "output_dir": "training/checkpoints/grpo/v2",
+        }
+    ]
+    # Active model baseline in leaderboard: 98.3% accuracy, 96.4% composite
+    mock_bm = MockBenchmarkManager()
+    mock_mc = MockModelCenter(active_model_id="kairo-scale-1.2b")
+
+    controller = ModelEvolutionController(
+        training_manager=mock_tm,
+        benchmark_manager=mock_bm,
+        model_center=mock_mc,
+        policy_path=sample_policy_file,
+        proposals_path=temp_dir / "proposals.json",
+        state_path=temp_dir / "state.json",
+        evaluations_path=temp_dir / "evaluations.json",
+    )
+
+    # Sweep for new checkpoint: 99.5% accuracy, 100% schema, 100% recovery, 98.8% composite (beats all!)
+    new_checkpoint_sweep = {
+        "model_id": "kairo-scale-2b-grpo",
+        "tool_accuracy_pct": 99.5,
+        "schema_pass_pct": 100.0,
+        "recovery_rate_pct": 100.0,
+        "composite_score": 98.8,
+    }
+
+    evals = controller.evaluate_completed_jobs(
+        jobs_override=mock_tm.jobs,
+        active_model_override="kairo-scale-1.2b",
+        benchmark_run_override=new_checkpoint_sweep,
+    )
+
+    assert len(evals) == 1
+    ev = evals[0]
+    assert ev["decision"] == "PROMOTED"
+    assert ev["promoted"] is True
+    assert ev["checkpoint_model_id"] == "kairo-scale-2b-grpo"
+    assert "Auto-promoted kairo-scale-2b-grpo to active model" in ev["plain_language_notice"]
+
+    # Verify ModelCenter.set_active_model was called!
+    assert mock_mc.active_model_id == "kairo-scale-2b-grpo"
+    assert "kairo-scale-2b-grpo" in mock_mc.promotions
+
+    # Verify job marked as evaluated so it won't re-run
+    assert "job_completed_grpo_101" in controller.state["evaluated_jobs"]
+
+    # Verify event logged in Event Store
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute(
+        "SELECT actor, tool_id, result_summary FROM events WHERE task_id = 'eval_job_completed_grpo_101'"
+    )
+    row = cursor.fetchone()
+    conn.close()
+    assert row is not None
+    assert row[0] == "ModelEvolutionController"
+    assert row[1] == "auto_promotion_gate"
+    assert "Auto-promoted" in row[2]
+
+
+def test_auto_evaluation_promotes_within_tolerance_with_improvements(sample_policy_file, temp_dir):
+    """
+    Task C.3: Auto-promotes when single metric is within configured tolerance
+    (e.g., 0.2% drop <= 1.0% tolerance) while clearly improving on others.
+    """
+    mock_tm = MockTrainingManager()
+    mock_tm.jobs = [
+        {
+            "id": "job_completed_scale_202",
+            "job_type": "pretrain_scale",
+            "preset": "kairo-scale-2b",
+            "status": "completed",
+        }
+    ]
+    # Active baseline: 98.3% accuracy, 100% schema, 96.4% composite
+    mock_bm = MockBenchmarkManager()
+    mock_mc = MockModelCenter(active_model_id="kairo-scale-1.2b")
+
+    controller = ModelEvolutionController(
+        training_manager=mock_tm,
+        benchmark_manager=mock_bm,
+        model_center=mock_mc,
+        policy_path=sample_policy_file,
+        proposals_path=temp_dir / "proposals.json",
+        state_path=temp_dir / "state.json",
+        evaluations_path=temp_dir / "evaluations.json",
+    )
+
+    # Tool accuracy dropped 0.2% (98.1 vs 98.3 - within 1% tolerance), but composite gained (+1.6%)
+    sweep = {
+        "model_id": "kairo-scale-2b-grpo",
+        "tool_accuracy_pct": 98.1,
+        "schema_pass_pct": 100.0,
+        "recovery_rate_pct": 100.0,
+        "composite_score": 98.0,
+    }
+
+    evals = controller.evaluate_completed_jobs(
+        jobs_override=mock_tm.jobs,
+        active_model_override="kairo-scale-1.2b",
+        benchmark_run_override=sweep,
+    )
+
+    assert len(evals) == 1
+    assert evals[0]["decision"] == "PROMOTED"
+    assert mock_mc.active_model_id == "kairo-scale-2b-grpo"
+
+
+def test_auto_evaluation_guards_rollback_on_regression_never_deletes(sample_policy_file, temp_dir):
+    """
+    Task C.3: If any metric regresses beyond tolerance:
+    - Do NOT promote (leaves previous model active).
+    - NEVER delete the completed checkpoint.
+    - Surface plain-language notice:
+      "New checkpoint trained but not promoted — regressed on <metric> by <amount>. Still available in Model Center if you want to activate it manually."
+    """
+    mock_tm = MockTrainingManager()
+    mock_tm.jobs = [
+        {
+            "id": "job_regressed_run_303",
+            "job_type": "sft",
+            "preset": "kairo-scale-2b",
+            "status": "completed",
+            "output_dir": "training/checkpoints/trl_sft/v2",
+        }
+    ]
+    # Active baseline is at 98.3% accuracy, 100% recovery
+    mock_bm = MockBenchmarkManager()
+    mock_mc = MockModelCenter(active_model_id="kairo-scale-1.2b")
+
+    controller = ModelEvolutionController(
+        training_manager=mock_tm,
+        benchmark_manager=mock_bm,
+        model_center=mock_mc,
+        policy_path=sample_policy_file,
+        proposals_path=temp_dir / "proposals.json",
+        state_path=temp_dir / "state.json",
+        evaluations_path=temp_dir / "evaluations.json",
+    )
+
+    # Regressed on tool_accuracy_pct: 94.0% vs 98.3% (4.3% regression > 1% tolerance)
+    regressed_sweep = {
+        "model_id": "kairo-scale-2b-sft",
+        "tool_accuracy_pct": 94.0,
+        "schema_pass_pct": 99.0,
+        "recovery_rate_pct": 95.0,
+        "composite_score": 92.5,
+    }
+
+    evals = controller.evaluate_completed_jobs(
+        jobs_override=mock_tm.jobs,
+        active_model_override="kairo-scale-1.2b",
+        benchmark_run_override=regressed_sweep,
+    )
+
+    assert len(evals) == 1
+    ev = evals[0]
+    assert ev["decision"] == "NOT_PROMOTED"
+    assert ev["promoted"] is False
+
+    # Previous model remains active — no promotion call
+    assert mock_mc.active_model_id == "kairo-scale-1.2b"
+    assert len(mock_mc.promotions) == 0
+
+    # Plain language notice matches exact requirement:
+    notice = ev["plain_language_notice"]
+    assert "New checkpoint trained but not promoted" in notice
+    assert "regressed on tool_accuracy_pct by 4.3%" in notice
+    assert "Still available in Model Center if you want to activate it manually." in notice
+
+    # Event logged into Event Store
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute(
+        "SELECT tool_id, result_summary FROM events WHERE task_id = 'eval_job_regressed_run_303'"
+    )
+    row = cursor.fetchone()
+    conn.close()
+    assert row is not None
+    assert row[0] == "auto_promotion_gate"
+    assert "New checkpoint trained but not promoted" in row[1]
+
+
+def test_auto_evaluation_runs_in_controller_cycle(sample_policy_file, temp_dir):
+    """Verifies that run_cycle automatically evaluates finished jobs without human trigger."""
+    mock_tm = MockTrainingManager(total_examples=3000, pass_rate=95.0)
+    mock_bm = MockBenchmarkManager()
+    mock_mc = MockModelCenter(active_model_id="kairo-scale-1.2b")
+
+    controller = ModelEvolutionController(
+        training_manager=mock_tm,
+        benchmark_manager=mock_bm,
+        model_center=mock_mc,
+        policy_path=sample_policy_file,
+        proposals_path=temp_dir / "proposals.json",
+        state_path=temp_dir / "state.json",
+        evaluations_path=temp_dir / "evaluations.json",
+    )
+    controller.state["last_run_example_count"] = 3000
+
+    # Add newly completed job that finishes while controller is running
+    mock_tm.jobs.append({
+        "id": "job_auto_cycle_404",
+        "job_type": "grpo",
+        "preset": "kairo-scale-2b",
+        "status": "completed",
+    })
+
+    cycle_res = controller.run_cycle()
+    assert "evaluations_performed" in cycle_res
+    assert len(cycle_res["evaluations_performed"]) == 1
+    eval_rec = cycle_res["evaluations_performed"][0]
+    assert eval_rec["job_id"] == "job_auto_cycle_404"
+    assert eval_rec["decision"] == "PROMOTED"
+    assert mock_mc.active_model_id == "kairo-scale-2b-grpo"
+
+
