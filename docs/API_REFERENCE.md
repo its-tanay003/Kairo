@@ -50,6 +50,7 @@ Upon establishing a WebSocket connection to `ws://localhost:4000`, the Gateway r
 ### 1.2 Client-to-Server Messages
 
 #### `chat` (Submit Directive)
+
 Submits a user prompt or operational command to the autonomous agent loop:
 
 ```json
@@ -62,6 +63,7 @@ Submits a user prompt or operational command to the autonomous agent loop:
 ```
 
 #### `tool_call` (Direct Sandbox Invocation)
+
 Bypasses the LLM agent loop to execute a specific ToolSpec directly in the Kali worker sandbox:
 
 ```json
@@ -78,6 +80,7 @@ Bypasses the LLM agent loop to execute a specific ToolSpec directly in the Kali 
 ```
 
 #### `subscribe_terminal` (Stream Output)
+
 Subscribes to live ANSI terminal output chunks emitted by an active process supervisor:
 
 ```json
@@ -88,6 +91,7 @@ Subscribes to live ANSI terminal output chunks emitted by an active process supe
 ```
 
 #### `presence_heartbeat` (Multi-User Collaboration)
+
 Broadcasts operator focus, cursor position, and active tab:
 
 ```json
@@ -104,6 +108,7 @@ Broadcasts operator focus, cursor position, and active tab:
 ### 1.3 Server-to-Client Messages
 
 #### `agent_thought` (Extended Thinking Accordion)
+
 Emits cognitive reasoning traces in real time:
 
 ```json
@@ -115,6 +120,7 @@ Emits cognitive reasoning traces in real time:
 ```
 
 #### `agent_response` (Agent Completion)
+
 Returned when the agent loop completes a thinking/execution turn:
 
 ```json

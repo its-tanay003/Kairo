@@ -15,27 +15,28 @@ Defined in [`schema.sql`](schema.sql) and implemented in [`db.py`](db.py):
 | 3 | `timestamp` | `TEXT` | `NOT NULL` | UTC ISO-8601 creation timestamp. |
 | 4 | `actor` | `TEXT` | `NOT NULL` | Initiator: `user`, `orchestrator`, `agent`, or `recovery_agent`. |
 | 5 | `tool_id` | `TEXT` | Nullable | ToolSpec identifier (e.g. `nmap.scan.v1`, `shell.run.v1`). |
-| 6 | `tool_version`| `TEXT` | Nullable | Semantic version of the tool invoked (e.g. `1.0.0`). |
-| 7 | `requested_args`| `TEXT` | Nullable | Raw input arguments received from operator or LLM. |
-| 8 | `normalized_args`| `TEXT`| Nullable | Sanitized, validated arguments compiled by the adapter. |
+| 6 | `tool_version` | `TEXT` | Nullable | Semantic version of the tool invoked (e.g. `1.0.0`). |
+| 7 | `requested_args` | `TEXT` | Nullable | Raw input arguments received from operator or LLM. |
+| 8 | `normalized_args` | `TEXT` | Nullable | Sanitized, validated arguments compiled by the adapter. |
 | 9 | `process_id` | `INTEGER` | Nullable | OS PID assigned by the Process Supervisor or VM worker. |
 | 10 | `start_time` | `TEXT` | Nullable | UTC execution start timestamp. |
 | 11 | `end_time` | `TEXT` | Nullable | UTC execution completion timestamp. |
 | 12 | `exit_code` | `INTEGER` | Nullable | Return code ($0$ for success, non-zero for failure). |
 | 13 | `stdout_ref` | `TEXT` | Nullable | File URI or pointer to full captured stdout. |
 | 14 | `stderr_ref` | `TEXT` | Nullable | File URI or pointer to captured stderr. |
-| 15 | `artifact_refs`| `TEXT` | Nullable | JSON array of produced artifact paths (dumps, reports, logs). |
+| 15 | `artifact_refs` | `TEXT` | Nullable | JSON array of produced artifact paths (dumps, reports, logs). |
 | 16 | `screenshots` | `TEXT` | Nullable | JSON array of GUI / browser screenshot image paths. |
-| 17 | `network_context`| `TEXT`| Nullable | Network details: host IP, VM proxy, CIDR scope status. |
-| 18 | `result_summary`| `TEXT` | Nullable | Textual summary synthesized by the Observer. |
+| 17 | `network_context` | `TEXT` | Nullable | Network details: host IP, VM proxy, CIDR scope status. |
+| 18 | `result_summary` | `TEXT` | Nullable | Textual summary synthesized by the Observer. |
 | 19 | `confidence` | `REAL` | Nullable | Execution confidence score in range $[0.0, 1.0]$. |
-| 20 | `parent_event`| `TEXT` | Nullable | Lineage pointer to parent event ID for causal reconstruction. |
+| 20 | `parent_event` | `TEXT` | Nullable | Lineage pointer to parent event ID for causal reconstruction. |
 
 ---
 
 ## Supporting Tables in `events.db`
 
 In addition to the primary `events` table, `events.db` manages:
+
 1. `plans` & `plan_nodes`: Hierarchical DAG task plans and execution dependencies.
 2. `scope_contracts`: Active and historical cryptographic scope agreements with HMAC signatures.
 3. `projects` & `project_collaborators`: Multi-operator workspace states and live presence.

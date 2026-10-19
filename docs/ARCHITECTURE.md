@@ -99,6 +99,7 @@ sequenceDiagram
 ## 4. Session Gateway Architecture (`/gateway`)
 
 The Session Gateway acts as a high-concurrency, stateful multiplexer between browser sessions and the underlying agent processes:
+
 - **WebSocket Multiplexing**: Connects to `ws://localhost:4000`, tracks active client heartbeats, and routes messages based on `sessionId`.
 - **Message Types**:
   - `chat`: User prompt directives sent to the Orchestrator loop.
@@ -112,6 +113,7 @@ The Session Gateway acts as a high-concurrency, stateful multiplexer between bro
 ## 5. Autonomous Orchestrator & Cognitive Loop (`/orchestrator`)
 
 The Orchestrator implements an autonomous **Observer-Critic-Recovery** loop:
+
 1. **Observer Phase**: Inspects recent outputs, exit codes, and network artifacts from previous executions.
 2. **Evaluator & Tool Selector**: Matches goal criteria against declarative ToolSpecs using semantic affinity, environment compatibility, and historical reliability scoring.
 3. **Critic Phase**: Evaluates generated parameters against GBNF grammar rules and verifies compliance with the active cryptographic Scope Contract.
@@ -122,6 +124,7 @@ The Orchestrator implements an autonomous **Observer-Critic-Recovery** loop:
 ## 6. ToolSpec Registry & 7-Gate Conformance Engine (`/registry`, `/sdk`)
 
 All platform capabilities are codified in strict **16-field YAML ToolSpecs**:
+
 - **Metadata**: Name, version, description, category, author, license.
 - **Safety**: Privilege tier (`Tier 1`: Safe Read-Only, `Tier 2`: Active CLI, `Tier 3`: Interactive GUI), timeout seconds, memory cap.
 - **Schema**: JSON Schema definition of inputs and typed outputs.
@@ -139,6 +142,7 @@ All platform capabilities are codified in strict **16-field YAML ToolSpecs**:
 ## 7. Cryptographic Scope Boundary & Security Gate
 
 To guarantee safety during autonomous red-teaming:
+
 - Operators define an authorized **Scope Contract** specifying allowed CIDR blocks (e.g. `192.168.1.0/24`), excluded critical hosts (e.g. default gateways), and max permitted tool tier.
 - Every tool parameter targeting an IP or domain is parsed and verified by the HMAC-SHA256 signature gate prior to process creation.
 - Any attempt to interact with an out-of-scope host immediately aborts the task with a security violation event.
@@ -148,6 +152,7 @@ To guarantee safety during autonomous red-teaming:
 ## 8. Disposable Kali Linux Virtualization Sandbox (`/vm`)
 
 All active security tools run inside an isolated virtual machine:
+
 - Headless Kali Linux VM running under VirtualBox or QEMU.
 - Configured with a dedicated worker REST API listening on host-only interface `192.168.56.x:9999`.
 - **Snapshot Rollback**: Prior to running risky operations, an automatic snapshot is committed. If a task compromises stability or leaves residual state, the VM worker reverts to the pristine snapshot automatically.
@@ -157,6 +162,7 @@ All active security tools run inside an isolated virtual machine:
 ## 9. Immutable 20-Field SQLite Audit Event Store (`/events`)
 
 Every platform action creates an immutable forensic record in `events/events.db`:
+
 - Columns: `id`, `session_id`, `task_id`, `timestamp`, `actor`, `tool_id`, `tool_version`, `requested_args`, `normalized_args`, `process_id`, `start_time`, `end_time`, `exit_code`, `stdout_ref`, `stderr_ref`, `artifact_refs`, `screenshots`, `network_context`, `result_summary`, `confidence`, `parent_event`.
 - Indexed for real-time sub-millisecond full-text search and filtering in the UI Event Log.
 
@@ -165,6 +171,7 @@ Every platform action creates an immutable forensic record in `events/events.db`
 ## 10. Client Interface Layer (`/ui`) & Claude Aesthetics
 
 The frontend is built on **Next.js 16** with Turbopack, following the **Anthropic Claude UI archetype**:
+
 - Warm Slate & Obsidian dark theme (`#181816`, `#141413`).
 - Signature Anthropic Terracotta Coral accents (`#d97757`).
 - Newsreader editorial serif headings & Inter modern sans body.
@@ -177,6 +184,7 @@ The frontend is built on **Next.js 16** with Turbopack, following the **Anthropi
 ## 11. Model Training, Alignment & Reinforcement Learning (`/training`)
 
 Kairo houses a dedicated ML training pipeline engineered specifically for Small Language Models (SLMs) from 380M to 2.0B parameters:
+
 - **PyTorch Transformer (`training/model.py`)**: Custom decoder-only architecture with RMSNorm, RoPE, Grouped Query Attention (GQA), and SwiGLU activations.
 - **Supervised Fine-Tuning (`training/trl_sft.py`)**: Hugging Face TRL SFTTrainer with automated schema cleaning and XML tool-call parsing.
 - **Direct Preference Optimization (`training/dpo.py`)**: Aligns models on paired comparisons to eliminate hallucinated tool calls and unauthorized CIDR scanning.
@@ -187,6 +195,7 @@ Kairo houses a dedicated ML training pipeline engineered specifically for Small 
 ## 12. Autonomous Model Evolution & Failover Routing
 
 Kairo continuously improves its own capabilities without human intervention:
+
 - **Evolution Controller (`orchestrator/model_evolution_controller.py`)**: Evaluates operational telemetry every 60s against [`orchestrator/evolution_policy.yaml`](file:///c:/New%20Volume%20(D)/dev/orchestrator/evolution_policy.yaml). Automatically triggers SFT training when $\ge 50$ new traces exist, scales parameter tiers upon accuracy plateaus, and rolls back if regression exceeds 2.5%.
 - **Failover Router (`orchestrator/failover_router.py`)**: High-availability inference router managing all model pairs in [`models.yaml`](file:///c:/New%20Volume%20(D)/dev/models.yaml). If a primary model encounters consecutive timeouts or schema errors, traffic seamlessly fails over to the designated fallback model.
 
@@ -195,6 +204,7 @@ Kairo continuously improves its own capabilities without human intervention:
 ## 13. Vulnerability Testbeds & Autonomous Benchmark Lab (`/lab`)
 
 Empirical verification relies on isolated local vulnerability targets:
+
 - **Docker Compose Testbeds**: Mini-DVWA (Web vulnerabilities) and Mini-Metasploitable (Network services).
 - **Benchmark Suites**: 50-task Golden benchmark (`lab/tasks.py`) and 120-task Full benchmark (`lab/extended_tasks.py`).
 - **Benchmark Sweeps**: Multi-model sequential sweep runner persisting evaluation runs and comparative scores to `lab/history.json`.
@@ -204,6 +214,7 @@ Empirical verification relies on isolated local vulnerability targets:
 ## 14. Master Verification & Testing Architecture (`/tests`)
 
 A comprehensive **48-suite test harness** certifies every service boundary:
+
 - Conformance testing for all 27 ToolSpecs.
 - Subsystem integration for DAG planner, cognitive self-healing loop, and evidence store.
 - Cryptographic HMAC verification and boundary fuzzing.

@@ -7,7 +7,7 @@
 
 ## 1. Testing Philosophy & Guarantees
 
-In autonomous cybersecurity platforms, software bugs and runtime hallucinations can lead to catastrophic side-effects, such as scanning unauthorized corporate networks or triggering unplanned outages. Kairo enforces a **zero-trust testing philosophy** underpinned by:
+In autonomous cybersecurity platforms, software bugs and runtime hallucinations can lead to catastrophic side-effects, such as scanning unauthorized corporate networks or triggering unplanned outages. Kairo enforces a **rigorous testing and validation framework** underpinned by:
 
 1. **Deterministic Conformance**: Every tool must pass a 7-gate automated conformance engine before admission to the trusted registry.
 2. **Cryptographic Containment**: Cryptographic verification tests ensure no action executes without a valid HMAC-signed Scope Contract.
@@ -63,13 +63,17 @@ flowchart LR
 Kairo includes purpose-built chaos engineering scripts in `/scripts`:
 
 ### 1. WebSocket Stream Chaos (`scripts/break_website_chaos.py`)
+
 Simulates hostile network environments:
+
 - **Packet Drop Simulation**: Randomly drops 15% of inbound/outbound WebSocket messages.
 - **Malformed Payloads**: Injects corrupted JSON, null fields, and out-of-spec event numbers.
 - **Latency Spikes**: Introduces artificial jitter (200ms - 2000ms) to test UI optimism and loader states.
 
 ### 2. Extreme Operator Simulation (`scripts/test_extreme_user_simulation.py`)
+
 Simulates erratic human operator behavior:
+
 - Rapid clicking on drawer tabs and action buttons (< 50ms interval).
 - Simultaneous prompt submissions across multiple browser tabs.
 - Hot-swapping model selectors while tasks are actively executing.

@@ -14,7 +14,7 @@ Kairo operates a tiered multi-model architecture combining fast edge triage, hig
 | **`kairo-scale-1.2b`** | Transformers | FP32 / BF16 | 8,192 tokens | 1.18 Billion | Intermediate Scaled SLM | `training/checkpoints/pretrain/kairo-1.2b_pretrained.pt` |
 | **`kairo-custom-model`** | Transformers | FP32 | 8,192 tokens | 490 Million | Tool Selector & Linter | `training/checkpoints/trl_sft/final_model` |
 | **`Qwen3-Coder-30B-A3B`** | `llama.cpp` | Q4_K_M | 32,768 tokens | 30B (3.3B active MoE) | Primary Complex Reasoning | `models/Qwen3-Coder-30B-A3B-Instruct-Q4_K_M.gguf` |
-| **`Qwen2.5-0.5B-Instruct`**| `llama.cpp` | Q4_K_M | 4,096 tokens | 490 Million | Low-Latency Fallback | `models/qwen2.5-0.5b-instruct-q4_k_m.gguf` |
+| **`Qwen2.5-0.5B-Instruct`** | `llama.cpp` | Q4_K_M | 4,096 tokens | 490 Million | Low-Latency Fallback | `models/qwen2.5-0.5b-instruct-q4_k_m.gguf` |
 
 ---
 
@@ -23,12 +23,14 @@ Kairo operates a tiered multi-model architecture combining fast edge triage, hig
 For local execution via `llama-server`:
 
 ### 1. Ultra-Low Latency Fallback Model (Qwen2.5-0.5B)
+
 ```bash
 curl -L "https://huggingface.co/Qwen/Qwen2.5-0.5B-Instruct-GGUF/resolve/main/qwen2.5-0.5b-instruct-q4_k_m.gguf" \
   -o "models/qwen2.5-0.5b-instruct-q4_k_m.gguf"
 ```
 
 ### 2. High-Capacity Primary Baseline (Qwen3-Coder-30B-A3B)
+
 ```bash
 curl -L "https://huggingface.co/unsloth/Qwen3-Coder-30B-A3B-Instruct-GGUF/resolve/main/Qwen3-Coder-30B-A3B-Instruct-Q4_K_M.gguf" \
   -o "models/Qwen3-Coder-30B-A3B-Instruct-Q4_K_M.gguf"

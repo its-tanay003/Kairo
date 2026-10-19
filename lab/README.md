@@ -69,17 +69,21 @@ $$S = 0.35 A_{\text{task}} + 0.25 A_{\text{tool}} + 0.20 S_{\text{schema}} + 0.1
 ## Running Benchmarks
 
 ### 1. Launch Docker Vulnerability Targets
+
 ```bash
 docker compose -f lab/docker-compose.yml up -d
 ```
 
 ### 2. Execute Golden Benchmark (50 Tasks)
+
 ```bash
 python -m lab.runner --suite golden --model kairo-scale-2b
 ```
 
 ### 3. Execute Full Multi-Model Sweep (120 Tasks)
+
 ```bash
 python -m lab.runner --suite full --sweep --models kairo-scale-2b,kairo-scale-1.2b,kairo-custom-model,Qwen3-Coder-30B-A3B-Instruct
 ```
+
 Results will append to [`history.json`](history.json) and stream to the UI Benchmark Leaderboard.

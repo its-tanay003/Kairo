@@ -7,6 +7,7 @@ The `/tests` directory contains Kairo's verification matrix comprising **48 comp
 ## Subsystem Test Coverage Matrix
 
 ### 1. ToolSpec Engine & SDK Conformance
+
 | Test File | Focus & Verification Criteria |
 | :--- | :--- |
 | [`test_toolspec_registry.py`](test_toolspec_registry.py) | Schema validation against `toolspec.schema.json`; fail-fast startup on missing blueprint fields or invalid privilege enums. |
@@ -15,6 +16,7 @@ The `/tests` directory contains Kairo's verification matrix comprising **48 comp
 | [`test_registry_ts.ts`](test_registry_ts.ts) | TypeScript loader conformance in Node.js/Gateway runtime. |
 
 ### 2. Execution Plane, Adapters & Process Supervision
+
 | Test File | Focus & Verification Criteria |
 | :--- | :--- |
 | [`test_adapter.py`](test_adapter.py) | Process supervisor lifecycle for `shell.run.v1`: argument compilation, stdout/stderr capture, hard timeout enforcement, and SIGKILL termination. |
@@ -23,6 +25,7 @@ The `/tests` directory contains Kairo's verification matrix comprising **48 comp
 | [`test_terminal_stream_supervisor.py`](test_terminal_stream_supervisor.py) | Real-time ANSI/VT100 terminal output streaming via WebSocket. |
 
 ### 3. GUI Tools, Browser Security & Screen Streaming
+
 | Test File | Focus & Verification Criteria |
 | :--- | :--- |
 | [`test_gui_adapters.py`](test_gui_adapters.py) | Tier 3 GUI tools (Burp Suite, Wireshark, OWASP ZAP) executed in headless X11 with window tracking. |
@@ -30,6 +33,7 @@ The `/tests` directory contains Kairo's verification matrix comprising **48 comp
 | [`test_screen_streaming.py`](test_screen_streaming.py) | RFB / noVNC WebSocket bridge streaming Kali virtual display to the UI at low latency. |
 
 ### 4. Planning, Tool Selection & Cognitive Healing
+
 | Test File | Focus & Verification Criteria |
 | :--- | :--- |
 | [`test_planner.py`](test_planner.py) | DAG task decomposition, cycle detection, dependency topological sorting, and parallel execution. |
@@ -38,12 +42,14 @@ The `/tests` directory contains Kairo's verification matrix comprising **48 comp
 | [`test_reporter_failure_aware.py`](test_reporter_failure_aware.py) | Generates executive audit reports highlighting failure chains, causal ancestors, and recovery narratives. |
 
 ### 5. Security & Scope Boundaries
+
 | Test File | Focus & Verification Criteria |
 | :--- | :--- |
 | [`test_scope_contract.py`](test_scope_contract.py) | HMAC-SHA256 signature verification, tamper detection, CIDR IP validation, and out-of-scope rejection. |
 | [`test_workspace_and_auth_gateway.py`](test_workspace_and_auth_gateway.py) | Multi-client authentication tokens, desktop vs mobile scopes, token revocation, and session isolation. |
 
 ### 6. Virtualization Sandbox & Forensics
+
 | Test File | Focus & Verification Criteria |
 | :--- | :--- |
 | [`test_vm_sandbox.py`](test_vm_sandbox.py) | VirtualBox headless VM lifecycle, socket RPC, and isolated guest command execution. |
@@ -53,6 +59,7 @@ The `/tests` directory contains Kairo's verification matrix comprising **48 comp
 | [`test_resource_limits.py`](test_resource_limits.py) | Host resource exhaustion prevention under extreme workloads. |
 
 ### 7. Model Center, Failover & Evolution
+
 | Test File | Focus & Verification Criteria |
 | :--- | :--- |
 | [`test_model_center.py`](test_model_center.py) | Hot-swapping local LLM backends via `/api/models/switch` and real-time hardware telemetry. |
@@ -60,6 +67,7 @@ The `/tests` directory contains Kairo's verification matrix comprising **48 comp
 | [`test_model_evolution_controller.py`](test_model_evolution_controller.py) | Autonomous self-improvement loop: SFT refresh on data threshold, tier scaling on plateau, and rollback on regression. |
 
 ### 8. Model Training, Alignment & Reinforcement Learning
+
 | Test File | Focus & Verification Criteria |
 | :--- | :--- |
 | [`test_model_and_training.py`](test_model_and_training.py) | PyTorch Transformer architecture, RoPE positional encoding, RMSNorm, and GQA attention heads. |
@@ -71,6 +79,7 @@ The `/tests` directory contains Kairo's verification matrix comprising **48 comp
 | [`test_pretrain_scale_job.py`](test_pretrain_scale_job.py) | Domain pre-training execution, loss telemetry, and checkpoint emission for Kairo-Scale-2B. |
 
 ### 9. Evidence Store, Collaboration & Benchmarks
+
 | Test File | Focus & Verification Criteria |
 | :--- | :--- |
 | [`test_evidence_store_and_reporter.py`](test_evidence_store_and_reporter.py) | 6 artifact classes (raw output, normalized facts, screenshots, network traces, finding cards, reports). |
@@ -82,6 +91,7 @@ The `/tests` directory contains Kairo's verification matrix comprising **48 comp
 | [`test_dataset_curation_and_benchmark_leaderboard.py`](test_dataset_curation_and_benchmark_leaderboard.py) | Dataset curation panel, benchmark leaderboard history, and public cryptographic score cards. |
 
 ### 10. Boundary, Stress & Cross-Platform
+
 | Test File | Focus & Verification Criteria |
 | :--- | :--- |
 | [`test_boundary.py`](test_boundary.py) | End-to-end service boundary integration (`llama.cpp` $\to$ Orchestrator $\to$ Gateway $\to$ SQLite). |
@@ -95,11 +105,13 @@ The `/tests` directory contains Kairo's verification matrix comprising **48 comp
 ## Running Tests
 
 ### Run Full Test Suite
+
 ```bash
 python -m pytest -v
 ```
 
 ### Run Specific Subsystem Tests
+
 ```bash
 # Scope Contract & Security
 python -m pytest tests/test_scope_contract.py -v

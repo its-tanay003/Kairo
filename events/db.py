@@ -1291,6 +1291,32 @@ def validate_scope_request(
             "tool_tier": tier,
         }
 
+    # Verify target boundary
+    if target and str(target).strip().lower() not in ("none", "null", ""):
+        if not is_target_in_scope(target, contract.get("targets", [])):
+            return {
+                "authorized": False,
+                "reason": f"OUT_OF_SCOPE_TARGET: Target '{target}' is not permitted by active Scope Contract {contract.get('contract_id')}.",
+                "scope_contract_id": contract.get("contract_id"),
+                "active_contract": contract,
+                "target": target,
+                "tool_id": tool_id,
+                "tool_tier": tier,
+            }
+
+    # Verify tool tier
+    allowed_tiers = contract.get("allowed_tool_tiers") or [1]
+    if tier not in allowed_tiers:
+        return {
+            "authorized": False,
+            "reason": f"TOOL_TIER_EXCEEDED: Tool tier {tier} exceeds permitted tiers {allowed_tiers} in active Scope Contract {contract.get('contract_id')}.",
+            "scope_contract_id": contract.get("contract_id"),
+            "active_contract": contract,
+            "target": target,
+            "tool_id": tool_id,
+            "tool_tier": tier,
+        }
+
     return {
         "authorized": True,
         "reason": f"Authorized under Scope Contract {contract.get('contract_id')}.",

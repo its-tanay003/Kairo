@@ -64,7 +64,7 @@ The `/training` subsystem implements the specialized machine learning lifecycle 
 | File | Purpose & Responsibilities |
 | :--- | :--- |
 | [`model.py`](model.py) | Custom PyTorch Decoder-Only Transformer architecture. Implements RMSNorm, Rotary Positional Embeddings (RoPE), Grouped Query Attention (GQA), and SwiGLU activation. |
-| [`tokenizer.py`](tokenizer.py) | Open Byte-level BPE tokenizer supporting specialized tool delimiters (`<|tool_call|>`, `</|tool_call|>`, `<|thought|>`, `<|observation|>`). |
+| [`tokenizer.py`](tokenizer.py) | Open Byte-level BPE tokenizer supporting specialized tool delimiters (`<tool_call>`, `</tool_call>`, `<thought>`, `<observation>`). |
 | [`pretrain.py`](pretrain.py) | Autoregressive domain pre-training engine with cosine learning rate schedule, gradient accumulation, and loss checkpointing. |
 | [`trl_sft.py`](trl_sft.py) | Supervised Fine-Tuning pipeline using Hugging Face TRL `SFTTrainer` and dataset collator with automated schema validation. |
 | [`dpo.py`](dpo.py) | Direct Preference Optimization loop aligning models against negative preferences (e.g., unauthorized scanning, syntax errors). |
@@ -96,6 +96,7 @@ Defined in [`model.py`](model.py) and configured via [`models.yaml`](../models.y
 ## Operational Workflows
 
 ### 1. Generating Training Data from Telemetry
+
 ```bash
 # Harvest real execution traces and successful recovery loops from SQLite
 python -m training.harvest --db events/events.db --output training/data/harvested_sft.jsonl
@@ -105,6 +106,7 @@ python -m training.dataset_expansion --count 5000 --output training/data/train_c
 ```
 
 ### 2. Running Supervised Fine-Tuning (SFT)
+
 ```bash
 python -m training.trl_sft \
   --train_file training/data/train_cleaned.jsonl \
@@ -116,6 +118,7 @@ python -m training.trl_sft \
 ```
 
 ### 3. Running Preference Tuning (DPO)
+
 ```bash
 python -m training.dpo \
   --model_path training/checkpoints/trl_sft/v2 \
@@ -125,6 +128,7 @@ python -m training.dpo \
 ```
 
 ### 4. Running Reinforcement Learning (GRPO)
+
 ```bash
 python -m training.grpo \
   --model_path training/checkpoints/dpo/v2 \

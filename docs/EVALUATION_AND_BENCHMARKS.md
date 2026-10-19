@@ -12,7 +12,7 @@
 3. [The 5 Scoring Dimensions](#3-the-5-scoring-dimensions)
 4. [Running Automated Benchmarks via CLI](#4-running-automated-benchmarks-via-cli)
 5. [Public Leaderboard & Model Score History](#5-public-leaderboard--model-score-history)
-6. [Comparative Research: Custom SFT vs Foundation Fallback](#6-comparative-research-custom-sft-vs-foundation-fallback)
+6. [Comparative Research & Verifiable Public Cards](#6-comparative-research--verifiable-public-cards)
 
 ---
 
@@ -27,14 +27,18 @@ KAIRO's evaluation pipeline runs against real, containerized targets in [`lab/`]
 ## 2. Benchmark Suites: Golden (50-Task) & Full (120-Task)
 
 ### 2.1 50-Task Golden Benchmark (`lab/golden_benchmark.json`)
+
 A curated, high-precision test suite designed for continuous integration (CI):
+
 - **Reconnaissance (15 Tasks)**: Subnet discovery, port filtering, DNS records, banner grabs.
 - **Web Assessment (15 Tasks)**: SQL injection detection, XSS verification, directory enumeration.
 - **Network & Credential Auditing (10 Tasks)**: Weak SSH keys, anonymous FTP, SMB enumeration.
 - **Recovery & Edge Cases (10 Tasks)**: Handling hung sockets, expired scopes, invalid ports.
 
 ### 2.2 120-Task Full Benchmark (`lab/full_benchmark.json`)
+
 A comprehensive battery used for pre-release certification and fine-tuning checkpoint grading:
+
 - Covers advanced multi-step lateral movement, authenticated API fuzzing, and cryptographic hash correlation.
 
 ---
@@ -86,6 +90,7 @@ The Benchmark Leaderboard in [`ui/src/app/components/BenchmarkLeaderboard.tsx`](
 ## 6. Comparative Research & Verifiable Public Cards
 
 Detailed research reports are documented in:
+
 - [`docs/research/model_comparison_qwen3_vs_custom.md`](file:///c:/New%20Volume%20(D)/dev/docs/research/model_comparison_qwen3_vs_custom.md)
 - [`docs/research/gap_analysis_custom_vs_fallback.md`](file:///c:/New%20Volume%20(D)/dev/docs/research/gap_analysis_custom_vs_fallback.md)
 

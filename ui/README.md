@@ -48,6 +48,7 @@ The `/ui` subsystem is Kairo's executive frontend interface. Built on **Next.js 
 ## Desktop Packaging via Tauri (`src-tauri/`)
 
 Kairo packages into a lightweight, native cross-platform desktop application using Tauri v2:
+
 - Native window chrome and menu integration.
 - Hardware-accelerated WebKit/WebView2 rendering.
 - Rust IPC layer for local execution plane discovery (WSL2 on Windows, native Linux sockets, macOS virtualization).
@@ -57,6 +58,7 @@ Kairo packages into a lightweight, native cross-platform desktop application usi
 ## Running & Developing the UI
 
 ### Web Mode (Next.js)
+
 ```bash
 cd ui
 npm install
@@ -65,6 +67,7 @@ npm run dev
 ```
 
 ### Desktop Mode (Tauri)
+
 ```bash
 cd ui
 npm run tauri dev

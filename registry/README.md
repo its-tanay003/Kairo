@@ -32,6 +32,7 @@ version_compatibility: obj    # Supported agent versions and OS matrix
 ## Tool Catalog (27 Production Tools)
 
 ### 1. Network & Domain Reconnaissance (Tier 1 & Tier 2)
+
 - [`nmap_scan_v1.yaml`](tools/nmap_scan_v1.yaml): Host discovery, port scanning, OS fingerprinting, and NSE scripts.
 - [`subfinder_enum_v1.yaml`](tools/subfinder_enum_v1.yaml): Passive subdomain enumeration across open data sources.
 - [`dnsrecon_enum_v1.yaml`](tools/dnsrecon_enum_v1.yaml): Comprehensive DNS record enumeration and zone transfers.
@@ -40,6 +41,7 @@ version_compatibility: obj    # Supported agent versions and OS matrix
 - [`whois_lookup_v1.yaml`](tools/whois_lookup_v1.yaml): Domain registration, registrar, and IP ownership lookup.
 
 ### 2. Web Application Security & Fuzzing (Tier 2)
+
 - [`nikto_scan_v1.yaml`](tools/nikto_scan_v1.yaml): Web server vulnerability and misconfiguration scanning.
 - [`gobuster_dir_v1.yaml`](tools/gobuster_dir_v1.yaml): High-speed directory and file path discovery.
 - [`ffuf_fuzz_v1.yaml`](tools/ffuf_fuzz_v1.yaml): Ultra-fast web fuzzer for endpoints, headers, and parameters.
@@ -48,6 +50,7 @@ version_compatibility: obj    # Supported agent versions and OS matrix
 - [`sqlmap_scan_v1.yaml`](tools/sqlmap_scan_v1.yaml): Automated SQL injection detection and database takeover.
 
 ### 3. Vulnerability Scanning, Exploitation & Credentials (Tier 2)
+
 - [`trivy_fs_v1.yaml`](tools/trivy_fs_v1.yaml): Filesystem vulnerability and misconfiguration scanner.
 - [`searchsploit_search_v1.yaml`](tools/searchsploit_search_v1.yaml): Offline Exploit-DB search and exploit locator.
 - [`metasploit_rpc_v1.yaml`](tools/metasploit_rpc_v1.yaml): Metasploit Framework RPC integration for verified exploit payloads.
@@ -57,11 +60,13 @@ version_compatibility: obj    # Supported agent versions and OS matrix
 - [`tcpdump_capture_v1.yaml`](tools/tcpdump_capture_v1.yaml): Network packet capture and protocol analysis.
 
 ### 4. Interactive Desktop GUI Security Tools (Tier 3)
+
 - [`burpsuite_gui_v1.yaml`](tools/burpsuite_gui_v1.yaml): Burp Suite Professional / Community interactive web proxy.
 - [`wireshark_gui_v1.yaml`](tools/wireshark_gui_v1.yaml): Wireshark interactive packet capture and deep inspection.
 - [`zap_gui_v1.yaml`](tools/zap_gui_v1.yaml): OWASP ZAP interactive proxy and vulnerability scanner.
 
 ### 5. Automated Security Browser & Execution Utilities
+
 - [`browser_security_v1.yaml`](tools/browser_security_v1.yaml): Playwright-driven security browser for automated web auditing.
 - [`shell_run_v1.yaml`](tools/shell_run_v1.yaml): Supervised local host command execution with process limits.
 - [`kali_exec_v1.yaml`](tools/kali_exec_v1.yaml): Isolated Kali Linux VM remote execution.
@@ -73,17 +78,23 @@ version_compatibility: obj    # Supported agent versions and OS matrix
 ## Load-Time Verification
 
 Both Python and TypeScript loaders enforce fail-fast startup:
-- **Python**:
-  ```python
-  from registry.loader import ToolRegistry
-  registry = ToolRegistry() # Validates all YAML specs against JSON schema
-  ```
-- **TypeScript**:
-  ```typescript
-  import { ToolRegistry } from "./registry/loader";
-  const registry = new ToolRegistry();
-  ```
-- **Test Command**:
-  ```bash
-  python -m pytest tests/test_toolspec_registry.py -v
-  ```
+
+**Python (`registry/loader.py`)**:
+
+```python
+from registry.loader import ToolRegistry
+registry = ToolRegistry() # Validates all YAML specs against JSON schema
+```
+
+**TypeScript (`registry/loader.ts`)**:
+
+```typescript
+import { ToolRegistry } from "./registry/loader";
+const registry = new ToolRegistry();
+```
+
+**Test Command**:
+
+```bash
+python -m pytest tests/test_toolspec_registry.py -v
+```

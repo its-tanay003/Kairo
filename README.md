@@ -7,6 +7,7 @@ An enterprise-grade, local-first autonomous agent platform engineered for defens
 ## Complete Documentation Suite
 
 ### Core Architecture & System Guides
+
 | Document | Path | Scope & Focus |
 | :--- | :--- | :--- |
 | **System Architecture** | [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) | Monorepo service topology, boundaries, process execution lifecycle, IPC protocols, and fault recovery |
@@ -22,6 +23,7 @@ An enterprise-grade, local-first autonomous agent platform engineered for defens
 | **Contributing Guide** | [`docs/CONTRIBUTING.md`](docs/CONTRIBUTING.md) | Code style, commit standards, test requirements, 7-gate certification workflow, and pull request checklist |
 
 ### Subsystem Technical References
+
 | Subsystem | Path | Description |
 | :--- | :--- | :--- |
 | **Agent Orchestrator** | [`orchestrator/README.md`](orchestrator/README.md) | Cognitive loop, DAG planner, critic, recovery agent, failover router, model evolution controller, and process supervisor |
@@ -255,6 +257,7 @@ models:
 ```
 
 The endpoint `GET /model-center` reports:
+
 - Currently loaded model and active role
 - Context window token utilization
 - GPU VRAM metrics (`total_mb`, `used_mb`, `free_mb`, `utilization_pct`) via `nvidia-smi`
@@ -372,6 +375,7 @@ graph TD
 ### DAG Node Lifecycle
 
 Nodes transition through deterministic states:
+
 - `PENDING`: Awaiting predecessor completion.
 - `RUNNING`: Actively executing tool in sandbox.
 - `COMPLETED`: Observation confirmed successful by Critic.
@@ -391,6 +395,7 @@ The Tool Selector ([`orchestrator/tool_selector.py`](file:///c:/New%20Volume%20(
 $$S(t) = w_{emb} \cdot S_{emb}(t) + w_{cap} \cdot S_{cap}(t) + w_{hist} \cdot S_{hist}(t) + w_{risk} \cdot S_{risk}(t) + w_{obs} \cdot S_{obs}(t)$$
 
 Where:
+
 - $S_{emb}$: Semantic similarity between goal and tool docs.
 - $S_{cap}$: Capability match ratio.
 - $S_{hist}$: Historical success rate from tool memory.
@@ -444,16 +449,20 @@ graph LR
 ```
 
 ### 1. Observer ([`orchestrator/observer.py`](file:///c:/New%20Volume%20(D)/dev/orchestrator/observer.py))
+
 Extracts structured observation facts (`hosts`, `open_ports`, `technologies`, `vulnerabilities`, `credentials`) from tool stdout/stderr.
 
 ### 2. Critic ([`orchestrator/critic.py`](file:///c:/New%20Volume%20(D)/dev/orchestrator/critic.py))
+
 Evaluates observation quality against the goal:
+
 - `success`: Goal satisfied with actionable findings.
 - `partial`: Progress made, requires follow-up probing.
 - `failed`: Command crashed, timed out, or returned zero data.
 - `blocked`: Blocked by network or Scope Contract.
 
 ### 3. Recovery Agent ([`orchestrator/recovery_agent.py`](file:///c:/New%20Volume%20(D)/dev/orchestrator/recovery_agent.py))
+
 Autonomous remediation strategies:
 
 | Error Category | Diagnostic Cause | Self-Healing Strategy |
@@ -473,6 +482,7 @@ An anti-looping circuit breaker caps recovery attempts at 3 per task.
 ### 6 Blueprint Artifact Classes
 
 Every piece of evidence collected is tagged with one of six artifact classes:
+
 1. `Network Traffic`: PCAP files, tcpdump traces, DNS query logs.
 2. `Terminal Logs`: Raw stdout/stderr recordings, exit codes, process execution timings.
 3. `Screenshots`: Desktop and browser PNG captures.
@@ -583,6 +593,7 @@ python -m sdk create-toolspec dnsrecon.enum.v1 --category recon --binary dnsreco
 ```
 
 Generates:
+
 - `registry/tools/dnsrecon_enum_v1.yaml` (16-field blueprint)
 - `sdk/tools/dnsrecon_enum_v1/dnsrecon_enum_v1_adapter.py` (adapter class)
 - `sdk/tools/dnsrecon_enum_v1/dnsrecon_enum_v1_parser.py` (output parser)
@@ -609,6 +620,7 @@ python -m sdk verify-toolspec registry/tools/subfinder_enum_v1.yaml
 ### 3. Certified Working Example: `subfinder.enum.v1`
 
 A third-party tool authored solely through the SDK framework:
+
 - **Specification**: [`registry/tools/subfinder_enum_v1.yaml`](file:///c:/New%20Volume%20(D)/dev/registry/tools/subfinder_enum_v1.yaml)
 - **Adapter**: [`sdk/tools/subfinder_enum_v1/subfinder_enum_v1_adapter.py`](file:///c:/New%20Volume%20(D)/dev/sdk/tools/subfinder_enum_v1/subfinder_enum_v1_adapter.py)
 - **Parser**: [`sdk/tools/subfinder_enum_v1/subfinder_enum_v1_parser.py`](file:///c:/New%20Volume%20(D)/dev/sdk/tools/subfinder_enum_v1/subfinder_enum_v1_parser.py)
@@ -635,12 +647,14 @@ To refute closed-source benchmark claims, Kairo publishes an empirical benchmark
 ### 2. Multi-Model Version Score History
 
 The leaderboard tracks real score progression across model iterations:
+
 - **`Kairo-GRPO-1.5B`**: Peak score **96.4**, 98.3% accuracy, 100.0% recovery.
 - **`Kairo-DPO-1B`**: Peak score **92.1**, 96.0% accuracy, 100.0% recovery.
 - **`Kairo-SFT-1B`**: Peak score **89.5**, 88.0% accuracy, 83.3% recovery.
 - **`Kairo-Base-380M`**: Peak score **71.2**, 70.0% accuracy, 33.3% recovery.
 
-#### Leaderboard UI Features:
+#### Leaderboard UI Features
+
 - **Side-by-Side Model Score History Cards**: Visual comparison of mean score, peak score, accuracy, and recovery rate with chronological run dots.
 - **Model Version Filtering**: Filter the evaluation stream in Tab 4 by model version (`All Versions`, `DPO-1B`, `SFT-1B`, `GRPO-1.5B`).
 - **Cryptographic Verification Card**: Immutable SHA-256 digest certifying benchmark results, test parameters, and commit state with a reproducible Docker command.

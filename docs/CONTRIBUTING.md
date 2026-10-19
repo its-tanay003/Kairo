@@ -22,6 +22,7 @@
 ## 1. Safety & Responsible Disclosure Guidelines
 
 KAIRO is an autonomous security auditing framework designed strictly for defensive analysis, security education, authorized penetration testing, and red-team operations on infrastructure you own or have explicit written permission to test.
+
 - **Never hardcode production targets, live credentials, or unauthorized exploits.**
 - **All new tools must enforce strict CIDR scope validation and declare appropriate privilege tiers.**
 - **Adhere to the Zero-Trust safety architecture at all times.**
@@ -31,11 +32,13 @@ KAIRO is an autonomous security auditing framework designed strictly for defensi
 ## 2. Development Environment Setup
 
 Ensure you have completed the prerequisites in [`docs/DEPLOYMENT_AND_SETUP.md`](file:///c:/New%20Volume%20(D)/dev/docs/DEPLOYMENT_AND_SETUP.md):
+
 - Python 3.11+
 - Node.js 18+ with `npm`
 - Git
 
 Verify your environment by running:
+
 ```bash
 python tests/test_boundary.py
 ```
@@ -45,17 +48,20 @@ python tests/test_boundary.py
 ## 3. Monorepo Coding Standards
 
 ### 3.1 Python Backend (`/orchestrator`, `/sdk`, `/lab`)
+
 - Use explicit type annotations on all function signatures (`typing.Dict`, `typing.Optional`, `pydantic.BaseModel`).
 - Format with `black` (line length 100).
 - Docstrings required for all public methods following Google docstring conventions.
 - Never use bare `except:` blocks; capture specific exceptions and log failure narratives.
 
 ### 3.2 TypeScript Gateway (`/gateway`)
+
 - Strict TypeScript configuration (`noImplicitAny: true`, `strictNullChecks: true`).
 - All incoming WebSocket payloads must be validated against runtime schemas before routing.
 - Keep event handlers lightweight and asynchronous.
 
 ### 3.3 Next.js & React UI (`/ui`)
+
 - Follow the **Anthropic Claude UI archetype** strictly:
   - Use centralized CSS custom properties in `globals.css` (`--bg-app: #181816`, `--accent: #d97757`).
   - Never introduce ad-hoc bright gradients, fluorescent blues, or arbitrary inline hex colors.

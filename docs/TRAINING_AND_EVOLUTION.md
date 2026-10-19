@@ -84,6 +84,7 @@ evolution_policy:
 ```
 
 ### Policy Execution Rules
+
 1. **Rule 1 (Continuous SFT Refresh)**: When the event store records $\ge 50$ newly curated, verified execution traces, an incremental SFT job is spawned asynchronously.
 2. **Rule 2 (Capacity Tier Scaling)**: If a model's benchmark accuracy stays within $\pm 0.5\%$ across 3 consecutive training cycles without reaching the target $95\%$ threshold, the controller automatically scales up to the next parameter tier (e.g., 700M $\to$ 1.2B $\to$ 2B).
 3. **Rule 3 (Automated Safety Rollback)**: If a newly trained candidate scores more than $2.5\%$ lower on the benchmark suite than the incumbent model, the proposal is automatically rejected, and the system reverts to the stable baseline checkpoint.
@@ -132,6 +133,7 @@ def compute_grpo_reward(candidate_output: str, task_context: dict) -> float:
 ## 5. UI Model Evolution & Curation Panel
 
 The frontend exposes the entire evolution lifecycle at `/benchmark/leaderboard` and via the **Model Evolution Panel**:
+
 - **Dataset Curation**: Operators can view raw SFT and DPO examples, inspect schema cleaning reports, and flag high-value or edge-case trajectories.
 - **Active Proposals**: Review pending training job proposals, parameter sizing, benchmark gains, and click `Approve & Deploy` or `Dismiss`.
 - **Chronological Run Telemetry**: Real-time loss curves, learning rate progression, and benchmark comparison charts.

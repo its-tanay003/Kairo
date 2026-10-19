@@ -17,7 +17,9 @@ The `/gateway` subsystem is a high-performance **Node.js / TypeScript** session 
 ## Real-Time WebSocket Protocol
 
 ### 1. Connection & Session Handshake
+
 Upon WebSocket connection, the Gateway establishes a cryptographically bound session token:
+
 ```json
 // Gateway -> Client (Handshake)
 {
@@ -29,17 +31,19 @@ Upon WebSocket connection, the Gateway establishes a cryptographically bound ses
 ```
 
 ### 2. Client-to-Gateway Messages
+
 | Message `type` | Payload Keys | Description |
 | :--- | :--- | :--- |
 | `chat` | `content`, `sessionId`, `modelId?` | Submits an operational directive or prompt to the agent loop. |
 | `tool_call` | `tool`, `args`, `sessionId` | Directly invokes a specific ToolSpec, bypassing the LLM planner. |
-| `subscribe_terminal`| `taskId` | Streams real-time ANSI terminal output for an active process. |
+| `subscribe_terminal` | `taskId` | Streams real-time ANSI terminal output for an active process. |
 | `terminal_input` | `taskId`, `input` | Sends stdin characters to an active process supervisor. |
 | `subscribe_screen` | `sessionId` | Connects to the low-latency RFB desktop stream for GUI tools. |
-| `presence_heartbeat`| `projectId`, `userId` | Emits operator cursor/active tab state for multi-user collaboration. |
+| `presence_heartbeat` | `projectId`, `userId` | Emits operator cursor/active tab state for multi-user collaboration. |
 | `ping` | — | Keep-alive heartbeat message. |
 
 ### 3. Gateway-to-Client Messages
+
 | Message `type` | Payload Keys | Description |
 | :--- | :--- | :--- |
 | `agent_thought` | `thought`, `duration_ms` | Streams Claude 3.7 extended thinking blocks in real time. |
@@ -54,6 +58,7 @@ Upon WebSocket connection, the Gateway establishes a cryptographically bound ses
 ## Authentication & Multi-Client Scoping
 
 The Gateway generates and verifies scoped Bearer tokens:
+
 - **Desktop Operator Token**: Full access to all tool tiers (Tier 1 CLI, Tier 2 Network, Tier 3 GUI).
 - **Mobile Read-Only Token**: Constrained to event observation, terminal viewing, and plan status monitoring.
 - **Revocation**: Instant token invalidation via `/auth/revoke` without service restart.
