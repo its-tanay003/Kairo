@@ -114,7 +114,59 @@ interface ChatMessage {
   recovery_narrative?: string;
   recovery_path?: RecoveryHistoryStep[];
   synthesis?: ClaudeSynthesisPayload;
+  modelId?: string;
+  modelRole?: string;
 }
+
+export interface ModelOption {
+  id: string;
+  name: string;
+  shortName: string;
+  badge?: string;
+  badgeClass?: string;
+  badgeColor?: string;
+  desc: string;
+  role: string;
+}
+
+export const AVAILABLE_MODELS: ModelOption[] = [
+  {
+    id: "kairo-scale-2b",
+    name: "Kairo 3.7 (Cyber-Ops Sonnet)",
+    shortName: "Kairo 3.7 (Sonnet Tier)",
+    badge: "Default",
+    badgeClass: "wordmark-badge",
+    desc: "High-capability autonomous planning & Kali VM reasoning",
+    role: "primary-custom-scaled-tier-c",
+  },
+  {
+    id: "Qwen2.5-0.5B-Instruct",
+    name: "Kairo 3.5 (Haiku Fast)",
+    shortName: "Kairo 3.5 (Haiku Fast)",
+    badge: "⚡ Low Latency",
+    badgeColor: "var(--accent-green)",
+    desc: "High-speed port discovery & initial banner reconnaissance",
+    role: "fallback",
+  },
+  {
+    id: "Qwen3-Coder-30B-A3B-Instruct",
+    name: "Llama-3-70B Pentest SFT",
+    shortName: "Llama-3-70B Pentest SFT",
+    badge: "Fine-Tuned",
+    badgeColor: "var(--accent-blue)",
+    desc: "Local 70B cyber-ops weights with strict grammar constraints",
+    role: "primary",
+  },
+  {
+    id: "kairo-scale-2b-grpo",
+    name: "DeepSeek-R1 Reasoner",
+    shortName: "DeepSeek-R1 Reasoner",
+    badge: "Thinking",
+    badgeColor: "var(--accent-amber)",
+    desc: "Deep chain-of-thought mathematical and exploit analysis",
+    role: "primary-custom-scaled-grpo",
+  },
+];
 
 interface ModelCenterStatus {
   model_id: string;
@@ -188,7 +240,52 @@ export default function Home() {
   const [devCustomCmd, setDevCustomCmd] = useState<string>("");
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState<boolean>(false);
   const [selectedModel, setSelectedModel] = useState<string>("Kairo 3.7 (Cyber-Ops Sonnet)");
+  const [selectedModelId, setSelectedModelId] = useState<string>("kairo-scale-2b");
   const [showModelMenu, setShowModelMenu] = useState<boolean>(false);
+
+  const handleSelectModel = (modelId: string, modelName: string) => {
+    setSelectedModel(modelName);
+    setSelectedModelId(modelId);
+    setShowModelMenu(false);
+
+    // 1. Notify Gateway WebSocket clients
+    if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
+      wsRef.current.send(
+        JSON.stringify({
+          type: "select_model",
+          modelId,
+          sessionId,
+        })
+      );
+    }
+
+    // 2. Trigger Orchestrator backend model switch immediately
+    fetch("http://localhost:8000/model-center/select", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ model_id: modelId }),
+    })
+      .then((res) => (res.ok ? res.json() : null))
+      .then((data) => {
+        if (data?.active_model) {
+          setModelCenter((prev) =>
+            prev ? { ...prev, model_id: data.active_model.model_id, role: data.active_model.role } : null
+          );
+        }
+        fetchTelemetry();
+      })
+      .catch(() => {
+        // Fallback through Gateway proxy
+        fetch("http://localhost:4000/model-center/select", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ model_id: modelId }),
+        })
+          .then((res) => (res.ok ? res.json() : null))
+          .then(() => fetchTelemetry())
+          .catch((err) => console.error("Model select error:", err));
+      });
+  };
 
   const openToolInConsole = (toolId?: string) => {
     if (!toolId) {
@@ -249,8 +346,39 @@ export default function Home() {
   const fetchTelemetry = () => {
     fetch("http://localhost:8000/model-center")
       .then((res) => (res.ok ? res.json() : null))
-      .then((data) => data && setModelCenter(data))
-      .catch(() => {});
+      .then((data) => {
+        if (data) {
+          setModelCenter(data);
+          if (data.model_id) {
+            setSelectedModelId(data.model_id);
+            const found = AVAILABLE_MODELS.find(
+              (m) => m.id === data.model_id || m.role === data.role
+            );
+            if (found) {
+              setSelectedModel(found.name);
+            }
+          }
+        }
+      })
+      .catch(() => {
+        fetch("http://localhost:4000/model-center")
+          .then((res) => (res.ok ? res.json() : null))
+          .then((data) => {
+            if (data) {
+              setModelCenter(data);
+              if (data.model_id) {
+                setSelectedModelId(data.model_id);
+                const found = AVAILABLE_MODELS.find(
+                  (m) => m.id === data.model_id || m.role === data.role
+                );
+                if (found) {
+                  setSelectedModel(found.name);
+                }
+              }
+            }
+          })
+          .catch(() => {});
+      });
 
     fetch("http://localhost:8000/vm/status")
       .then((res) => (res.ok ? res.json() : null))
@@ -343,9 +471,28 @@ export default function Home() {
               setActiveTaskId(data.taskId);
               setRunningToolName(data.tool || "task");
             }
+          } else if (data.type === "model_switched") {
+            const switchedId = data.model_id || data.model?.model_id;
+            if (switchedId) {
+              setSelectedModelId(switchedId);
+              const found = AVAILABLE_MODELS.find(
+                (m) => m.id === switchedId || m.role === data.model?.role
+              );
+              if (found) {
+                setSelectedModel(found.name);
+              }
+            }
+            fetchTelemetry();
           } else if (data.type === "agent_response") {
             setActiveTaskId(null);
             setRunningToolName(null);
+            if (data.modelId) {
+              const found = AVAILABLE_MODELS.find((m) => m.id === data.modelId);
+              if (found) {
+                setSelectedModelId(data.modelId);
+                setSelectedModel(found.name);
+              }
+            }
             const msgId = createUniqueMsgId("resp", data.id || data.messageId);
             setMessages((prev) => {
               if (data.eventId && prev.some((m) => m.eventId === data.eventId)) {
@@ -366,10 +513,11 @@ export default function Home() {
                   recovery_narrative: data.execution?.recovery_narrative,
                   recovery_path: data.execution?.recovery_path,
                   synthesis: data.synthesis || data.execution?.synthesis,
+                  modelId: data.modelId,
+                  modelRole: data.modelRole,
                 },
               ];
             });
-
 
             if (data.event) {
               setAllEvents((prev) => [data.event, ...prev]);
@@ -482,6 +630,7 @@ export default function Home() {
         content: text,
         sessionId,
         taskId,
+        modelId: selectedModelId,
       })
     );
   };
@@ -586,46 +735,32 @@ export default function Home() {
             </button>
             {showModelMenu && (
               <div className="model-dropdown-menu">
-                <button
-                  className={`model-dropdown-item ${selectedModel.includes("Sonnet") ? "active" : ""}`}
-                  onClick={() => { setSelectedModel("Kairo 3.7 (Cyber-Ops Sonnet)"); setShowModelMenu(false); }}
-                >
-                  <div className="model-item-title">
-                    <span>Kairo 3.7 (Sonnet Tier)</span>
-                    <span className="wordmark-badge">Default</span>
-                  </div>
-                  <span className="model-item-desc">High-capability autonomous planning & Kali VM reasoning</span>
-                </button>
-                <button
-                  className={`model-dropdown-item ${selectedModel.includes("Haiku") ? "active" : ""}`}
-                  onClick={() => { setSelectedModel("Kairo 3.5 (Haiku Fast)"); setShowModelMenu(false); }}
-                >
-                  <div className="model-item-title">
-                    <span>Kairo 3.5 (Haiku Fast)</span>
-                    <span style={{ fontSize: "10px", color: "var(--accent-green)" }}>⚡ Low Latency</span>
-                  </div>
-                  <span className="model-item-desc">High-speed port discovery & initial banner reconnaissance</span>
-                </button>
-                <button
-                  className={`model-dropdown-item ${selectedModel.includes("Llama") ? "active" : ""}`}
-                  onClick={() => { setSelectedModel("Llama-3-70B Pentest SFT"); setShowModelMenu(false); }}
-                >
-                  <div className="model-item-title">
-                    <span>Llama-3-70B Pentest SFT</span>
-                    <span style={{ fontSize: "10px", color: "var(--accent-blue)" }}>Fine-Tuned</span>
-                  </div>
-                  <span className="model-item-desc">Local 70B cyber-ops weights with strict grammar constraints</span>
-                </button>
-                <button
-                  className={`model-dropdown-item ${selectedModel.includes("DeepSeek") ? "active" : ""}`}
-                  onClick={() => { setSelectedModel("DeepSeek-R1 Reasoner"); setShowModelMenu(false); }}
-                >
-                  <div className="model-item-title">
-                    <span>DeepSeek-R1 Reasoner</span>
-                    <span style={{ fontSize: "10px", color: "var(--accent-amber)" }}>Thinking</span>
-                  </div>
-                  <span className="model-item-desc">Deep chain-of-thought mathematical and exploit analysis</span>
-                </button>
+                {AVAILABLE_MODELS.map((opt) => {
+                  const isActive =
+                    selectedModelId === opt.id ||
+                    selectedModel === opt.name ||
+                    selectedModel.toLowerCase().includes(opt.id.toLowerCase());
+                  return (
+                    <button
+                      key={opt.id}
+                      className={`model-dropdown-item ${isActive ? "active" : ""}`}
+                      onClick={() => handleSelectModel(opt.id, opt.name)}
+                    >
+                      <div className="model-item-title">
+                        <span>{opt.shortName}</span>
+                        {opt.badge && (
+                          <span
+                            className={opt.badgeClass || ""}
+                            style={opt.badgeColor ? { fontSize: "10px", color: opt.badgeColor } : undefined}
+                          >
+                            {opt.badge}
+                          </span>
+                        )}
+                      </div>
+                      <span className="model-item-desc">{opt.desc}</span>
+                    </button>
+                  );
+                })}
               </div>
             )}
           </div>

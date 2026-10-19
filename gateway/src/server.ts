@@ -113,6 +113,35 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
+  if (
+    (url.pathname === "/model-center/select" || url.pathname === "/models/select") &&
+    req.method === "POST"
+  ) {
+    try {
+      const body = await parseJsonBody(req);
+      const response = await fetch(`${ORCHESTRATOR_URL}/model-center/select`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
+      const data = (await response.json()) as any;
+      if (response.ok) {
+        broadcastToAll({
+          type: "model_switched",
+          model_id: data.active_model?.model_id || body.model_id,
+          model: data.active_model,
+          timestamp: new Date().toISOString(),
+        });
+      }
+      res.writeHead(response.status, { "Content-Type": "application/json" });
+      res.end(JSON.stringify(data));
+    } catch (err: any) {
+      res.writeHead(502, { "Content-Type": "application/json" });
+      res.end(JSON.stringify({ error: "Failed to switch model via orchestrator", details: err.message }));
+    }
+    return;
+  }
+
   if (url.pathname === "/model-center" || url.pathname === "/models") {
     try {
       const response = await fetch(`${ORCHESTRATOR_URL}/model-center`);
@@ -1438,11 +1467,42 @@ wss.on("connection", async (ws: WebSocket, req) => {
         return;
       }
 
+      // Select / Switch Model WebSocket Directive
+      if (payload.type === "select_model" || payload.type === "model_select") {
+        const modelId = payload.modelId || payload.model_id;
+        try {
+          const resp = await fetch(`${ORCHESTRATOR_URL}/model-center/select`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ model_id: modelId }),
+          });
+          const data = (await resp.json()) as any;
+          broadcastToAll({
+            type: "model_switched",
+            model_id: data.active_model?.model_id || modelId,
+            model: data.active_model,
+            timestamp: new Date().toISOString(),
+          });
+        } catch (err: any) {
+          console.error(`[Gateway] Error switching model:`, err.message);
+          ws.send(
+            JSON.stringify({
+              type: "error",
+              sessionId,
+              error: `Failed to switch model to ${modelId}: ${err.message}`,
+              timestamp: new Date().toISOString(),
+            })
+          );
+        }
+        return;
+      }
+
       // Standard Chat message
       if (payload.type === "chat" || payload.type === "message") {
         const content = payload.content || payload.text || payload.message || "Hello World";
         const customSessionId = payload.sessionId || sessionId;
         const taskId = payload.taskId || `task_${randomUUID().slice(0, 8)}`;
+        const modelId = payload.modelId || payload.model_id;
 
         broadcastToAll({
           type: "user_message_broadcast",
@@ -1450,6 +1510,7 @@ wss.on("connection", async (ws: WebSocket, req) => {
           clientType: session.clientType,
           taskId,
           text: content,
+          modelId,
           timestamp: new Date().toISOString(),
         });
 
@@ -1458,7 +1519,7 @@ wss.on("connection", async (ws: WebSocket, req) => {
           status: "dispatching_to_orchestrator",
           sessionId: customSessionId,
           taskId,
-          text: `Calling agent orchestrator at ${ORCHESTRATOR_URL}...`,
+          text: `Calling agent orchestrator at ${ORCHESTRATOR_URL}${modelId ? ` [Model: ${modelId}]` : ""}...`,
         });
 
         try {
@@ -1470,6 +1531,7 @@ wss.on("connection", async (ws: WebSocket, req) => {
               message: content,
               task_id: taskId,
               parent_event: payload.parentEvent,
+              model_id: modelId,
             }),
           });
 
@@ -1491,6 +1553,9 @@ wss.on("connection", async (ws: WebSocket, req) => {
             event: result.event,
             durationMs: result.duration_ms,
             toolSelection: result.tool_selection,
+            modelId: result.model_id || modelId,
+            modelRole: result.model_role,
+            modelStatus: result.model_status,
             timestamp: new Date().toISOString(),
           });
         } catch (err: any) {

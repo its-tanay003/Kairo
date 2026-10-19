@@ -103,6 +103,7 @@ class RunRequest(BaseModel):
     parent_event: Optional[str] = None
     explicit_tool: Optional[str] = None
     explicit_args: Optional[Dict[str, Any]] = None
+    model_id: Optional[str] = None
 
 
 class KillRequest(BaseModel):
@@ -372,6 +373,7 @@ def run_loop(req: RunRequest):
             parent_event=req.parent_event,
             explicit_tool=req.explicit_tool,
             explicit_args=req.explicit_args,
+            model_id=req.model_id,
         )
         return result
     except Exception as e:

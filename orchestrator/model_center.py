@@ -80,20 +80,40 @@ class ModelCenter:
         cfg = self.load_config()
         return cfg.get("models", [])
 
+    MODEL_ALIASES = {
+        "kairo 3.7": "kairo-scale-2b",
+        "kairo 3.7 (cyber-ops sonnet)": "kairo-scale-2b",
+        "cyber-ops sonnet": "kairo-scale-2b",
+        "sonnet": "kairo-scale-2b",
+        "kairo 3.5": "Qwen2.5-0.5B-Instruct",
+        "kairo 3.5 (haiku fast)": "Qwen2.5-0.5B-Instruct",
+        "haiku fast": "Qwen2.5-0.5B-Instruct",
+        "haiku": "Qwen2.5-0.5B-Instruct",
+        "llama-3-70b pentest sft": "Qwen3-Coder-30B-A3B-Instruct",
+        "llama-3-70b": "Qwen3-Coder-30B-A3B-Instruct",
+        "pentest sft": "Qwen3-Coder-30B-A3B-Instruct",
+        "deepseek-r1 reasoner": "kairo-scale-2b-grpo",
+        "deepseek-r1": "kairo-scale-2b-grpo",
+        "deepseek": "kairo-scale-2b-grpo",
+        "reasoner": "kairo-scale-2b-grpo",
+    }
+
     def get_model_by_role(self, role: str) -> Optional[Dict[str, Any]]:
         """Finds configured model by role (e.g. 'primary-custom', 'primary', 'fallback')."""
         models = self.list_models()
-        return next((m for m in models if m.get("role") == role), None)
+        target = role.strip().lower()
+        return next((m for m in models if str(m.get("role", "")).strip().lower() == target), None)
 
     def get_model_by_id(self, model_id: str) -> Optional[Dict[str, Any]]:
         """Finds configured model by model_id."""
         models = self.list_models()
-        return next((m for m in models if m.get("model_id") == model_id), None)
+        target = model_id.strip().lower()
+        return next((m for m in models if str(m.get("model_id", "")).strip().lower() == target), None)
 
     def get_active_model(self) -> Dict[str, Any]:
         """Returns currently active model configuration."""
         cfg = self.load_config()
-        active_id = cfg.get("active_model", "Qwen3-Coder-30B-A3B-Instruct")
+        active_id = cfg.get("active_model", "kairo-scale-2b")
         model = self.get_model_by_id(active_id)
         if not model:
             models = cfg.get("models", [])
@@ -106,24 +126,45 @@ class ModelCenter:
         if not model:
             raise ValueError(f"Model ID '{model_id}' not found in models catalog.")
         cfg = self.load_config()
-        cfg["active_model"] = model_id
+        canonical_id = model["model_id"]
+        cfg["active_model"] = canonical_id
         self.save_config(cfg)
         return model
 
     def select_model(self, model_id_or_role: str) -> Dict[str, Any]:
         """
-        Selects model by either model_id or role (e.g., 'primary-custom', 'fallback').
+        Selects model by model_id, role (e.g., 'primary-custom', 'fallback'), or display alias.
         """
+        clean_key = str(model_id_or_role).strip().lower()
+
+        # 1. Check known frontend display aliases
+        if clean_key in self.MODEL_ALIASES:
+            canonical = self.MODEL_ALIASES[clean_key]
+            return self.set_active_model(canonical)
+
+        # 2. Check by role
         by_role = self.get_model_by_role(model_id_or_role)
         if by_role:
             return self.set_active_model(by_role["model_id"])
 
+        # 3. Check by exact/case-insensitive model_id
         by_id = self.get_model_by_id(model_id_or_role)
         if by_id:
             return self.set_active_model(by_id["model_id"])
 
+        # 4. Partial/contains match in aliases or IDs
+        for alias, canonical in self.MODEL_ALIASES.items():
+            if alias in clean_key or clean_key in alias:
+                return self.set_active_model(canonical)
+
+        models = self.list_models()
+        for m in models:
+            mid = str(m.get("model_id", "")).lower()
+            if clean_key in mid or mid in clean_key:
+                return self.set_active_model(m["model_id"])
+
         raise ValueError(
-            f"No model found matching model_id or role: '{model_id_or_role}'"
+            f"No model found matching model_id, role, or alias: '{model_id_or_role}'"
         )
 
     def unload_model(self, model_id: Optional[str] = None) -> Dict[str, Any]:

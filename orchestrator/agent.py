@@ -66,10 +66,28 @@ class AgentLoop:
         parent_event: Optional[str] = None,
         explicit_tool: Optional[str] = None,
         explicit_args: Optional[Dict[str, Any]] = None,
+        model_id: Optional[str] = None,
     ) -> Dict[str, Any]:
         task_id = task_id or f"task_{uuid.uuid4().hex[:8]}"
         start_time_iso = datetime.now(timezone.utc).isoformat()
         t0 = time.time()
+
+        # Model Activation & Identity Resolution
+        active_model_info: Dict[str, Any] = {}
+        if model_id:
+            try:
+                from orchestrator.model_center import model_center
+                active_model_info = model_center.select_model(model_id)
+                logger.info(f"[AgentLoop] Selected and activated model '{active_model_info.get('model_id')}' for session {session_id}")
+            except Exception as e:
+                logger.warning(f"[AgentLoop] Failed to activate requested model '{model_id}': {e}")
+
+        if not active_model_info:
+            try:
+                from orchestrator.model_center import model_center
+                active_model_info = model_center.get_active_model()
+            except Exception:
+                active_model_info = {"model_id": "kairo-scale-2b", "role": "primary-custom-scaled-tier-c"}
 
         tools = self.registry.list_tools()
         llm_response: Optional[LLMResponse] = None
@@ -171,6 +189,8 @@ class AgentLoop:
                         },
                         "duration_ms": int((time.time() - t0) * 1000),
                         "model_status": "scope_gate_update",
+                        "model_id": active_model_info.get("model_id"),
+                        "model_role": active_model_info.get("role"),
                     }
 
         # Check explicit tool invocation request
@@ -310,6 +330,8 @@ class AgentLoop:
                     "event": asdict(rejection_event),
                     "tool_selection": tool_selection_data,
                     "duration_ms": 0,
+                    "model_id": active_model_info.get("model_id"),
+                    "model_role": active_model_info.get("role"),
                 }
 
             stdout_output = ""
@@ -545,7 +567,12 @@ class AgentLoop:
                 stderr_ref=f"inline://{stderr_output}" if stderr_output else None,
                 artifact_refs=event_artifact_refs or ["memory://context/session_state.json"],
                 screenshots=[],
-                network_context={"ip": "127.0.0.1", "model_server": self.llama_client.base_url},
+                network_context={
+                    "ip": "127.0.0.1",
+                    "model_id": active_model_info.get("model_id"),
+                    "model_role": active_model_info.get("role"),
+                    "model_server": self.llama_client.base_url,
+                },
                 result_summary=result_summary,
                 confidence=1.0 if explicit_tool else (0.99 if used_llm else 0.95),
                 parent_event=parent_event,
@@ -602,6 +629,8 @@ class AgentLoop:
                 "event": as_dict_event(event),
                 "duration_ms": round((time.time() - t0) * 1000, 2),
                 "model_status": "hybrid_tool_selection",
+                "model_id": active_model_info.get("model_id"),
+                "model_role": active_model_info.get("role"),
             }
 
         # Branch 2: Conversational Plain Text
@@ -624,7 +653,12 @@ class AgentLoop:
             stderr_ref=None,
             artifact_refs=[],
             screenshots=[],
-            network_context={"ip": "127.0.0.1", "model_server": self.llama_client.base_url},
+            network_context={
+                "ip": "127.0.0.1",
+                "model_id": active_model_info.get("model_id"),
+                "model_role": active_model_info.get("role"),
+                "model_server": self.llama_client.base_url,
+            },
             result_summary=f"Conversational response: {content_text[:60]}...",
             confidence=1.0,
             parent_event=parent_event,
@@ -642,6 +676,8 @@ class AgentLoop:
             "event": as_dict_event(event),
             "duration_ms": round((time.time() - t0) * 1000, 2),
             "model_status": "llama.cpp_grammar_constrained",
+            "model_id": active_model_info.get("model_id"),
+            "model_role": active_model_info.get("role"),
         }
 
     def _extract_shell_args(self, message: str) -> Dict[str, Any]:
