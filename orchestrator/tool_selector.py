@@ -53,15 +53,24 @@ CAPABILITY_TOOL_AFFINITY: Dict[str, List[str]] = {
     "host_live_detection": ["system_ping", "nmap.scan.v1"],
     "service_detection": ["nmap.scan.v1", "whatweb.scan.v1"],
     "service_fingerprinting": ["whatweb.scan.v1", "nmap.scan.v1"],
-    "dns_subdomain_discovery": ["dnsenum.enum.v1", "dig.lookup.v1", "gobuster.dir.v1"],
-    "dns_enumeration": ["dnsenum.enum.v1", "dig.lookup.v1"],
-    "dns_lookup": ["dig.lookup.v1", "dnsenum.enum.v1"],
+    "dns_subdomain_discovery": ["subfinder.enum.v1", "dnsrecon.enum.v1", "dnsenum.enum.v1", "dig.lookup.v1", "gobuster.dir.v1"],
+    "subdomain_discovery": ["subfinder.enum.v1", "dnsrecon.enum.v1", "dnsenum.enum.v1"],
+    "subdomain_enumeration": ["subfinder.enum.v1", "dnsrecon.enum.v1", "dnsenum.enum.v1"],
+    "dns_enumeration": ["dnsrecon.enum.v1", "dnsenum.enum.v1", "dig.lookup.v1"],
+    "dns_lookup": ["dig.lookup.v1", "dnsenum.enum.v1", "dnsrecon.enum.v1"],
+    "zone_transfer": ["dnsrecon.enum.v1", "dig.lookup.v1"],
     "domain_whois_lookup": ["whois.lookup.v1"],
     "whois": ["whois.lookup.v1"],
     "web_directory_enum": ["gobuster.dir.v1", "ffuf.fuzz.v1"],
     "web_directory_enumeration": ["gobuster.dir.v1", "ffuf.fuzz.v1"],
     "web_fuzzing": ["ffuf.fuzz.v1", "gobuster.dir.v1"],
-    "web_vulnerability_scan": ["nikto.scan.v1", "sqlmap.scan.v1"],
+    "web_vulnerability_scan": ["nikto.scan.v1", "wpscan.audit.v1", "sqlmap.scan.v1"],
+    "wordpress_audit": ["wpscan.audit.v1"],
+    "wordpress_scan": ["wpscan.audit.v1"],
+    "cms_scan": ["wpscan.audit.v1", "whatweb.scan.v1"],
+    "filesystem_vulnerability_scan": ["trivy.fs.v1"],
+    "container_fs_scan": ["trivy.fs.v1"],
+    "cve_scan": ["trivy.fs.v1", "searchsploit.search.v1", "nikto.scan.v1"],
     "sql_injection_test": ["sqlmap.scan.v1"],
     "sqli_audit": ["sqlmap.scan.v1"],
     "credential_testing": ["hydra.brute.v1"],
@@ -414,6 +423,31 @@ class HybridToolSelector:
         if any(w in goal.lower() for w in ["hash", "md5", "sha", "identify"]) and "hashid" in tool.id:
             keyword_boosts += 0.35
             bonus_reasons.append("hash identification terms")
+        if any(w in goal.lower() for w in ["subfinder", "subdomain"]) and "subfinder" in tool.id:
+            keyword_boosts += 0.40
+            bonus_reasons.append("subdomain discovery terms")
+        if any(w in goal.lower() for w in ["dnsrecon", "zone transfer", "axfr"]) and "dnsrecon" in tool.id:
+            keyword_boosts += 0.40
+            bonus_reasons.append("DNSRecon/zone transfer terms")
+        if any(w in goal.lower() for w in ["trivy", "filesystem", "secret", "package", "cve"]) and "trivy" in tool.id:
+            keyword_boosts += 0.40
+            bonus_reasons.append("Trivy CVE/filesystem terms")
+        if any(w in goal.lower() for w in ["wpscan", "wordpress", "wp plugin", "wp theme"]) and "wpscan" in tool.id:
+            keyword_boosts += 0.40
+            bonus_reasons.append("WPScan WordPress terms")
+        if any(w in goal.lower() for w in ["browser", "dom", "playwright", "cookie"]) and "browser" in tool.id:
+            keyword_boosts += 0.40
+            bonus_reasons.append("browser security terms")
+
+        # Broad execution penalty: heavily demote shell.run.v1 and kali.exec.v1 if goal maps to security ops
+        if tool.id in ("kali.exec.v1", "shell.run.v1"):
+            security_ops = [
+                "scan", "port", "nmap", "dns", "subdomain", "dir", "fuzz", "cve", "vuln",
+                "sql", "sqli", "password", "brute", "whois", "dig", "traffic", "pcap",
+                "wordpress", "wpscan", "trivy", "hash", "exif", "metadata", "burp", "wireshark", "zap"
+            ]
+            if any(op in goal.lower() for op in security_ops):
+                return 0.05, "demoted: typed security tool adapter is favored for this operation"
 
         base_overlap = min(len(content_matches) / 5.0, 0.65) if query_tokens else 0.2
         score = min(max(base_overlap + keyword_boosts, 0.15), 1.0)
@@ -674,6 +708,23 @@ class HybridToolSelector:
             else:
                 wf = "start_capture"
             args = {"action": "workflow", "workflow": wf, "params": {"interface": "eth0"}}
+        elif tid == "dnsrecon.enum.v1":
+            args = {"target": host_only or target or "target.lab", "scan_type": "std"}
+        elif tid == "subfinder.enum.v1":
+            args = {"target": host_only or target or "127.0.0.1"}
+        elif tid == "trivy.fs.v1":
+            args = {
+                "target": target if target.startswith(("/", ".")) else "/home/kali",
+                "severity": "HIGH,CRITICAL",
+                "scanners": "vuln,secret",
+                "format": "json",
+            }
+        elif tid == "wpscan.audit.v1":
+            target_url = target if target.startswith("http") else f"http://{target}"
+            args = {"target": target_url, "detection_mode": "passive", "enumerate": "vp,u"}
+        elif tid == "browser.security.v1":
+            target_url = target if target.startswith("http") else f"http://{target}"
+            args = {"url": target_url, "action": "navigate"}
         elif tid == "hello_world":
             args = {"name": "kairo"}
         else:

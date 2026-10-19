@@ -203,39 +203,128 @@ class AgentLoop:
             except Exception as e:
                 logger.warning(f"Could not calculate candidate scores for explicit tool: {e}")
         else:
-            # Check prompt for direct tool syntax
-            if "kali" in message.lower() or "sandbox" in message.lower() or "kali.exec.v1" in message.lower():
-                tool_id = "kali.exec.v1"
-                requested_args = self._extract_kali_args(message)
-                try:
-                    sel_res = tool_selector.select(goal=message, session_id=session_id)
-                    tool_selection_data = sel_res.to_dict()
-                except Exception:
-                    pass
-            elif "shell.run.v1" in message.lower() or "run command" in message.lower() or "execute command" in message.lower():
-                tool_id = "shell.run.v1"
-                requested_args = self._extract_shell_args(message)
-                try:
-                    sel_res = tool_selector.select(goal=message, session_id=session_id)
-                    tool_selection_data = sel_res.to_dict()
-                except Exception:
-                    pass
-            else:
-                # Use Hybrid Tool Selection Scorer
-                try:
-                    sel_res = tool_selector.select(goal=message, session_id=session_id)
-                    tool_selection_data = sel_res.to_dict()
-                    tool_id = sel_res.selected_tool.tool_id
-                    requested_args = sel_res.selected_tool.inferred_args
-                except Exception as e:
-                    logger.warning(f"Tool selector error, falling back to default: {e}")
-                    tool_id = "hello_world"
-                    requested_args = {"input": message, "target": "BoundaryVerification"}
+            # Pass user request through Hybrid Tool Selection Engine
+            # Strictly favors typed, validated tool adapters for known operations over broad command execution
+            try:
+                sel_res = tool_selector.select(goal=message, session_id=session_id)
+                tool_selection_data = sel_res.to_dict()
+                tool_id = sel_res.selected_tool.tool_id
+                requested_args = dict(sel_res.selected_tool.inferred_args)
+            except Exception as e:
+                logger.warning(f"Tool selector error, falling back to default: {e}")
+                tool_id = "hello_world"
+                requested_args = {"input": message, "target": "BoundaryVerification"}
 
         # Branch 1: Tool Execution
         if tool_id:
             spec: Optional[ToolSpec] = self.registry.get(tool_id)
             tool_version = spec.version if spec else "1.0.0"
+
+            # Workflow Approval Policy Gate for Broad Command Execution:
+            # Unrestricted command execution (shell.run.v1, kali.exec.v1) is restricted to explicitly approved workflows
+            from orchestrator.validation import is_workflow_approved, validate_tool_arguments
+            active_contract = get_active_scope_contract(self.db_path)
+
+            wf_approved, wf_reason = is_workflow_approved(
+                tool_id=tool_id,
+                requested_args=requested_args if isinstance(requested_args, dict) else {},
+                scope_contract=active_contract,
+            )
+            if not wf_approved:
+                logger.warning(f"[WorkflowGate] Blocked unrestricted execution for '{tool_id}': {wf_reason}")
+                policy_synth = {
+                    "reply": f"### 🛡️ Unrestricted Command Execution Blocked\n\n{wf_reason}",
+                    "process": {
+                        "title": "Workflow Policy Gate",
+                        "tool_id": tool_id,
+                        "tool_name": spec.name if spec else tool_id,
+                        "intent": "Blocked unrestricted execution",
+                        "status": "blocked",
+                        "status_label": "Policy Blocked",
+                    },
+                    "output": {
+                        "summary_metrics": [
+                            {"label": "Policy Status", "value": "Restricted", "type": "error"},
+                            {"label": "Tool", "value": tool_id, "type": "warning"},
+                        ],
+                        "raw_stdout": wf_reason,
+                    },
+                    "result": {
+                        "headline": "Unrestricted command execution requires explicit workflow approval",
+                        "status": "error",
+                        "key_takeaways": [
+                            "Broad command execution adapters (shell.run.v1, kali.exec.v1) are restricted.",
+                            "Use typed, validated security tool adapters (e.g. nmap.scan.v1, gobuster.dir.v1, wpscan.audit.v1, etc.) for known operations.",
+                        ],
+                    },
+                }
+                blocked_event = Event.create(
+                    session_id=session_id,
+                    task_id=task_id,
+                    actor="gateway:workflow_policy",
+                    tool_id=tool_id,
+                    tool_version=tool_version,
+                    requested_args=requested_args,
+                    exit_code=403,
+                    result_summary=f"WORKFLOW_POLICY_BLOCK: {wf_reason}",
+                    confidence=0.0,
+                    network_context={"reason": wf_reason, "authorized": False, "policy": "workflow_approval"},
+                )
+                b_event_id = insert_event(blocked_event, self.db_path)
+                return {
+                    "status": "rejected",
+                    "authorized": False,
+                    "error": "UNAPPROVED_COMMAND_EXECUTION",
+                    "reply": policy_synth["reply"],
+                    "synthesis": policy_synth,
+                    "tool_executed": {"id": tool_id, "name": spec.name if spec else tool_id, "version": tool_version},
+                    "execution": {"adapter": tool_id, "exit_code": 403, "stderr": wf_reason, "duration_ms": 0},
+                    "event_id": b_event_id,
+                    "tool_selection": tool_selection_data,
+                    "duration_ms": 0,
+                    "model_id": active_model_info.get("model_id"),
+                    "model_role": active_model_info.get("role"),
+                }
+
+            # Typed Schema & Security Argument Validation
+            if spec:
+                is_valid_args, arg_errors = validate_tool_arguments(spec, requested_args if isinstance(requested_args, dict) else {})
+                if not is_valid_args:
+                    arg_err_msg = "; ".join(arg_errors)
+                    logger.warning(f"[ArgValidator] Rejected arguments for '{tool_id}': {arg_err_msg}")
+                    val_synth = {
+                        "reply": f"### ⚠️ Argument Validation Error for `{tool_id}`\n\n{arg_err_msg}",
+                        "process": {"title": "Argument Validation", "tool_id": tool_id, "status": "error", "status_label": "Invalid Arguments"},
+                        "output": {"summary_metrics": [{"label": "Status", "value": "Invalid Args", "type": "error"}], "raw_stdout": arg_err_msg},
+                        "result": {"headline": "Tool execution rejected due to schema/validation errors", "status": "error", "key_takeaways": arg_errors},
+                    }
+                    val_event = Event.create(
+                        session_id=session_id,
+                        task_id=task_id,
+                        actor="gateway:arg_validator",
+                        tool_id=tool_id,
+                        tool_version=tool_version,
+                        requested_args=requested_args,
+                        exit_code=400,
+                        result_summary=f"ARG_VALIDATION_ERROR: {arg_err_msg}",
+                        confidence=0.0,
+                        network_context={"validation_errors": arg_errors},
+                    )
+                    v_event_id = insert_event(val_event, self.db_path)
+                    return {
+                        "status": "rejected",
+                        "authorized": False,
+                        "error": "ARGUMENT_VALIDATION_ERROR",
+                        "reply": val_synth["reply"],
+                        "synthesis": val_synth,
+                        "tool_executed": {"id": tool_id, "name": spec.name if spec else tool_id, "version": tool_version},
+                        "execution": {"adapter": tool_id, "exit_code": 400, "stderr": arg_err_msg, "duration_ms": 0},
+                        "event_id": v_event_id,
+                        "tool_selection": tool_selection_data,
+                        "duration_ms": 0,
+                        "model_id": active_model_info.get("model_id"),
+                        "model_role": active_model_info.get("role"),
+                    }
 
             # Scope Contract Enforcement:
             # Execution gateway must reject any tool call whose target or tier falls outside active Scope Contract

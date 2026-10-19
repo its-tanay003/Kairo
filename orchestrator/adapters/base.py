@@ -101,6 +101,25 @@ class ToolAdapter(ABC):
         """Parse raw command output into structured observation dict."""
         ...
 
+    def validate_inputs(self, inputs: Dict[str, Any]) -> tuple[bool, List[str]]:
+        """
+        Validate structured inputs before execution.
+        Enforces schema typing and rejects command injection metacharacters.
+        """
+        errors: List[str] = []
+        if not isinstance(inputs, dict):
+            return False, ["Inputs must be a key-value dictionary."]
+
+        if self.tool_id not in ("shell.run.v1", "kali.exec.v1"):
+            for k, v in inputs.items():
+                if isinstance(v, str):
+                    for bad in (";", "&&", "||", "`", "$(", "|", "\n"):
+                        if bad in v:
+                            errors.append(f"Command injection sequence '{bad}' detected in argument '{k}'")
+        if errors:
+            return False, errors
+        return True, []
+
     def execute(
         self,
         inputs: Dict[str, Any],
@@ -119,6 +138,25 @@ class ToolAdapter(ABC):
         and hashes evidence artifacts.
         """
         task_id = task_id or f"task_{uuid.uuid4().hex[:8]}"
+
+        # Step 4: Validate inputs before building args
+        is_valid, validation_errors = self.validate_inputs(inputs)
+        if not is_valid:
+            err_msg = "; ".join(validation_errors)
+            logger.warning(f"[{self.tool_id}] Input validation rejected execution: {err_msg}")
+            return ToolObservation(
+                tool_id=self.tool_id,
+                tool_version=self.tool_version,
+                task_id=task_id,
+                status="error",
+                exit_code=400,
+                raw_stdout="",
+                raw_stderr=f"Input validation rejected: {err_msg}",
+                duration_ms=0.0,
+                observation={"tool": self._binary(), "validation_error": True, "errors": validation_errors},
+                error=err_msg,
+            )
+
         args = self.build_args(inputs)
         binary = self._binary()
         cwd = inputs.get("cwd", "/home/kali")

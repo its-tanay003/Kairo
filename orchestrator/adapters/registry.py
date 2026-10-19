@@ -31,6 +31,10 @@ _ADAPTER_MODULES = [
     "orchestrator.adapters.wireshark_adapter",
     "orchestrator.adapters.zap_adapter",
     "orchestrator.adapters.browser_adapter",
+    "orchestrator.adapters.dnsrecon_adapter",
+    "orchestrator.adapters.subfinder_adapter",
+    "orchestrator.adapters.trivy_adapter",
+    "orchestrator.adapters.wpscan_adapter",
 ]
 
 
@@ -60,6 +64,13 @@ class AdapterRegistry:
                         pass
             except ImportError as e:
                 logger.warning(f"[AdapterRegistry] Could not load {module_path}: {e}")
+
+        # Also auto-discover any dynamically installed SDK adapters
+        try:
+            from sdk.registry_bridge import auto_discover_sdk_tools
+            auto_discover_sdk_tools()
+        except Exception as e:
+            logger.debug(f"[AdapterRegistry] Dynamic SDK discovery notice: {e}")
 
     def get(self, tool_id: str) -> Optional[Type[ToolAdapter]]:
         return self._adapters.get(tool_id)
