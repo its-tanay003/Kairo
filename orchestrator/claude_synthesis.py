@@ -532,8 +532,25 @@ def _synthesize_web_audit(
     observation: Optional[Dict[str, Any]] = None,
     duration_s: float = 1.0,
 ) -> Dict[str, Any]:
-    target = inputs.get("target") or inputs.get("url") or inputs.get("host") or "target.local"
     obs = observation or {}
+    params_dict = inputs.get("params") if isinstance(inputs.get("params"), dict) else {}
+    target = (
+        inputs.get("target")
+        or inputs.get("url")
+        or inputs.get("host")
+        or params_dict.get("target")
+        or params_dict.get("url")
+        or params_dict.get("host")
+        or obs.get("target")
+        or obs.get("host")
+        or "target.local"
+    )
+    port = (
+        inputs.get("port")
+        or params_dict.get("port")
+        or obs.get("port")
+        or 80
+    )
     findings_list = obs.get("findings") or obs.get("vulnerabilities") or []
     alerts_count = obs.get("alerts_count") or obs.get("total_findings") or len(findings_list)
     server_info = obs.get("server_info", {})
@@ -547,7 +564,16 @@ def _synthesize_web_audit(
             "status": f.get("id") or f.get("osvdb") or "ALERT",
         })
 
-    is_unreachable = conn_status == "unreachable" or "unable to connect" in stdout.lower() or "connection refused" in stdout.lower()
+    is_unreachable = (
+        conn_status == "unreachable"
+        or obs.get("target_reachable") is False
+        or "unable to connect" in stdout.lower()
+        or "connection refused" in stdout.lower()
+        or "target unreachable" in stdout.lower()
+        or "host unreachable" in stdout.lower()
+        or "target is unreachable" in stdout.lower()
+        or "no real target reachable" in stdout.lower()
+    )
     is_sim = bool(
         obs.get("is_simulated")
         or obs.get("execution_plane") == "simulated_mock"
@@ -607,15 +633,19 @@ Executed **`{tool_name}`** against web target **`{target_display}`**.
     elif is_unreachable:
         md = f"""### ⚠️ Web Target Unreachable
 
-Executed **`{tool_name}`** against **`{target}`**, but the target server did not respond on the designated port.
+Executed **`{tool_name}`** against **`{target}`**, but no real target was reachable.
 
 #### 🔍 Execution Details:
 - **Target Asset:** `{target}`
-- **Port:** `{inputs.get('port', 80)}`
-- **Diagnostic:** Target service is not running or connections are refused/filtered.
+- **Connection Status:** `Unreachable / Offline`
+- **Confirmed Vulnerabilities:** `0` (No live vulnerabilities found or confirmed)
+- **Diagnostic:** Target service is not running or connections are refused/unreachable.
+
+#### 🛡️ Truthful Security Finding:
+No vulnerability was found. The target is unreachable and cannot be inspected for security issues.
 
 #### 💡 Resolution:
-- Verify that the web server on `{target}` is running and bound to port `{inputs.get('port', 80)}`.
+- Verify that the web server on `{target}` is running and bound to port `{port}`.
 - If testing a local dev server, ensure it is listening on `0.0.0.0` or test against an active HTTP/HTTPS endpoint.
 """
     else:
@@ -648,7 +678,8 @@ Ensure the target web server `{target}` is running and accepting HTTP/HTTPS conn
         },
         "output": {
             "summary_metrics": [
-                {"label": "Alerts Found", "value": str(alerts_count if exit_code == 0 else 0), "type": "warning" if alerts_count > 0 else ("neutral" if is_unreachable else "success")},
+                {"label": "Confirmed Vulnerabilities", "value": "0" if (is_unreachable or is_sim) else str(alerts_count if exit_code == 0 else 0), "type": "warning" if (alerts_count > 0 and not is_sim and not is_unreachable) else ("neutral" if is_unreachable else "success")},
+                {"label": "Alerts Found", "value": "0" if is_unreachable else str(alerts_count if exit_code == 0 else 0), "type": "warning" if (alerts_count > 0 and not is_unreachable) else ("neutral" if is_unreachable else "success")},
                 {"label": "Target", "value": target, "type": "info"},
                 {"label": "Duration", "value": f"{duration_s}s", "type": "neutral"},
             ],
@@ -658,17 +689,31 @@ Ensure the target web server `{target}` is running and accepting HTTP/HTTPS conn
             "has_raw_terminal": bool(stdout.strip() or stderr.strip()),
         },
         "result": {
-            "headline": f"Web audit of {target} failed (Exit {exit_code})" if exit_code != 0 else (f"Web audit of {target} finished with {alerts_count} alert(s)" if not is_unreachable else f"Target {target} unreachable on port {inputs.get('port', 80)}"),
+            "headline": (
+                f"Web audit of {target} failed (Exit {exit_code})" if exit_code != 0
+                else (f"Target {target} unreachable (0 vulnerabilities confirmed)" if is_unreachable
+                else f"Web audit of {target} finished with {alerts_count} alert(s)")
+            ),
             "status": "clean" if (exit_code == 0 and not is_unreachable) else "failed",
-            "security_posture": f"Audit Failed (Exit Code {exit_code})" if exit_code != 0 else ("Audit Completed" if not is_unreachable else "Host Unreachable"),
+            "security_posture": (
+                f"Audit Failed (Exit Code {exit_code})" if exit_code != 0
+                else ("Host Unreachable (0 Findings)" if is_unreachable
+                else "Audit Completed")
+            ),
             "key_takeaways": [
-                f"Web audit against {target} failed with exit code {exit_code}.",
-                f"Error diagnostics: {stderr.strip() or stdout.strip() or 'Non-zero exit encountered.'}",
-                "No security alerts or findings were registered from this failed execution.",
-            ] if exit_code != 0 else [
-                f"Scanned web target {target}.",
-                f"Generated evidence artifacts in local store.",
-            ],
+                f"Target web service at {target} is unreachable or offline.",
+                "Zero live vulnerabilities found or confirmed.",
+                "Simulation mode truthfully records that no target was reachable.",
+            ] if is_unreachable else (
+                [
+                    f"Web audit against {target} failed with exit code {exit_code}.",
+                    f"Error diagnostics: {stderr.strip() or stdout.strip() or 'Non-zero exit encountered.'}",
+                    "No security alerts or findings were registered from this failed execution.",
+                ] if exit_code != 0 else [
+                    f"Scanned web target {target}.",
+                    f"Generated evidence artifacts in local store.",
+                ]
+            ),
             "recommended_actions": [
                 {"label": "Inspect Audit Explorer", "prompt": "Inspect verified vulnerability findings, evidence store, and generate compliance report"},
             ],

@@ -998,13 +998,18 @@ class HybridToolSelector:
             gl = goal.lower()
             if any(w in gl for w in ["history", "proxy"]):
                 wf = "inspect_proxy_history"
-            elif any(w in gl for w in ["repeater", "replay"]):
+            elif any(w in gl for w in ["repeater", "replay", "scan", "audit", "test", "probe", "check", "task"]):
                 wf = "send_to_repeater"
             elif any(w in gl for w in ["sitemap", "map"]):
                 wf = "export_target_sitemap"
             else:
-                wf = "init_project"
-            args = {"action": "workflow", "workflow": wf, "params": {}}
+                wf = "send_to_repeater" if target else "init_project"
+            args = {
+                "action": "workflow",
+                "workflow": wf,
+                "target": target,
+                "params": {"target": target, "url": target, "host": host_only or target},
+            }
         elif tid == "wireshark.gui.v1":
             gl = goal.lower()
             if any(w in gl for w in ["filter", "display"]):

@@ -17,7 +17,9 @@ from __future__ import annotations
 
 import json
 import logging
+import socket
 import time
+import urllib.parse
 from typing import Any, Dict, List, Optional, Tuple
 from PIL import Image, ImageDraw, ImageFont
 
@@ -25,6 +27,48 @@ from orchestrator.adapters.gui_base import BaseGuiAdapter, GuiControl
 from orchestrator.kali_connector import ExecutionPlaneType, SIMULATION_NOTICE_TEXT
 
 logger = logging.getLogger("orchestrator.adapters.burpsuite")
+
+
+def extract_host_port(target_str: str, default_host: str = "target.local", default_port: int = 80) -> Tuple[str, int]:
+    """Extracts hostname and port from a target URL or address string."""
+    if not target_str:
+        return default_host, default_port
+    clean = target_str if "://" in target_str else f"http://{target_str}"
+    try:
+        parsed = urllib.parse.urlparse(clean)
+        host = parsed.hostname or default_host
+        port = parsed.port or (443 if parsed.scheme == "https" else default_port)
+        return host, int(port)
+    except Exception:
+        return default_host, default_port
+
+
+def check_target_reachable(host: str, port: int = 80, timeout: float = 0.5) -> bool:
+    """Probes whether a target host:port is genuinely reachable over TCP."""
+    if not host:
+        return False
+    host_clean = host.strip().lower()
+    # Dummy/simulation test targets that are explicitly non-live
+    if host_clean in (
+        "target.local",
+        "unreachable",
+        "unreachable.local",
+        "unreachable-target.local",
+        "unreachable-test.local",
+        "unreachable.test",
+        "demo.local",
+        "none",
+        "invalid",
+        "example.com",
+    ):
+        return False
+    try:
+        sock = socket.create_connection((host, int(port)), timeout=timeout)
+        sock.close()
+        return True
+    except (socket.error, OSError):
+        return False
+
 
 
 class BurpSuiteGuiAdapter(BaseGuiAdapter):
@@ -140,15 +184,27 @@ class BurpSuiteGuiAdapter(BaseGuiAdapter):
     def _workflow_init_project(self, task_id: str, params: Dict[str, Any]) -> Dict[str, Any]:
         """Workflow: Initialize temporary project defaults and verify main window."""
         project_name = params.get("project_name", "Temporary Project")
+        target_input = str(params.get("target") or params.get("url") or "")
+        param_host = params.get("host")
+        param_port = params.get("port")
+        host, port = extract_host_port(target_input, default_host=param_host or "target.local", default_port=int(param_port or 80))
+        if param_host:
+            host = param_host
+        if param_port:
+            port = int(param_port)
+
+        is_reachable = check_target_reachable(host, port)
+
         self.window_title = f"{self.app_name} - {project_name}"
         self.visible_panel = "Proxy"
         self.visible_subpanel = "Intercept"
-        self.status_bar = f"Proxy running on {self.proxy_host}:{self.proxy_port} | Ready"
+        status_reach = "Ready" if is_reachable else f"Target {host} Unreachable"
+        self.status_bar = f"Proxy running on {self.proxy_host}:{self.proxy_port} | {status_reach} [SIMULATED]"
         self._setup_controls()
 
         vis = self.capture_screenshot(
             task_id=task_id,
-            caption="Burp Suite Init Project - Ready on Proxy Intercept",
+            caption=f"Burp Suite Init Project - Ready on Proxy Intercept ({status_reach})",
             workflow_step="init_project",
         )
 
@@ -156,6 +212,18 @@ class BurpSuiteGuiAdapter(BaseGuiAdapter):
             "success": True,
             "project_name": project_name,
             "proxy_endpoint": f"{self.proxy_host}:{self.proxy_port}",
+            "target": f"{host}:{port}",
+            "host": host,
+            "port": port,
+            "target_reachable": is_reachable,
+            "server_info": {
+                "server": "None",
+                "connection_status": "reachable" if is_reachable else "unreachable",
+            },
+            "alerts_count": 0,
+            "findings": [],
+            "vulnerabilities": [],
+            "total_findings": 0,
             "screenshot_sha256": vis.sha256,
             "is_simulated": True,
             "simulation_notice": SIMULATION_NOTICE_TEXT,
@@ -217,6 +285,10 @@ class BurpSuiteGuiAdapter(BaseGuiAdapter):
             "total_items": len(self.http_history),
             "matched_items": len(records),
             "records": records,
+            "alerts_count": 0,
+            "findings": [],
+            "vulnerabilities": [],
+            "total_findings": 0,
             "screenshot_sha256": vis.sha256,
             "is_simulated": True,
             "simulation_notice": SIMULATION_NOTICE_TEXT,
@@ -230,33 +302,63 @@ class BurpSuiteGuiAdapter(BaseGuiAdapter):
         if req_id is not None:
             target_record = next((r for r in self.http_history if r["id"] == req_id), None)
 
+        target_input = str(params.get("target") or params.get("url") or "")
+        param_host = params.get("host")
+        param_port = params.get("port")
+
         if target_record:
             req_text = f"{target_record['method']} {target_record['url']} HTTP/1.1\r\nHost: {target_record['host']}\r\nUser-Agent: Mozilla/5.0 (Kali/Linux)\r\n\r\n"
+            host, port = extract_host_port(target_record['host'], default_host=target_record['host'], default_port=80)
         else:
             method = params.get("method", "GET")
             url = params.get("url", "/admin/test")
-            host = params.get("host", "target.local")
+            host, port = extract_host_port(target_input, default_host=param_host or "target.local", default_port=int(param_port or 80))
+            if param_host:
+                host = param_host
+            if param_port:
+                port = int(param_port)
             body = params.get("body", "")
             req_text = f"{method} {url} HTTP/1.1\r\nHost: {host}\r\n\r\n{body}"
 
-        # Create or update repeater tab
+        # Probe reachability of the real target
+        is_reachable = check_target_reachable(host, port)
         tab_name = params.get("tab_name", f"Probe #{len(self.repeater_tabs) + 1}")
-        mock_response = (
-            "HTTP/1.1 200 OK\r\n"
-            "Server: SimulatedMockServer/1.0\r\n"
-            "Content-Type: text/html; charset=UTF-8\r\n"
-            "X-Simulation-Notice: [SIMULATED — demo mode, not a live scan]\r\n"
-            "Content-Length: 285\r\n\r\n"
-            "<html><body><h3>[SIMULATED — demo mode, not a live scan]</h3>"
-            "<p>Synthetic response generated for demonstration purposes only. "
-            "No live vulnerability scan performed.</p></body></html>"
-        )
+
+        if is_reachable:
+            mock_response = (
+                "HTTP/1.1 200 OK\r\n"
+                "Server: TargetServer/1.0\r\n"
+                "Content-Type: text/html; charset=UTF-8\r\n"
+                f"X-Simulation-Notice: {SIMULATION_NOTICE_TEXT}\r\n"
+                "Content-Length: 260\r\n\r\n"
+                f"<html><body><h3>{SIMULATION_NOTICE_TEXT}</h3>"
+                f"<p>Connected to live target host {host}:{port}. "
+                "Audit probe dispatched — 0 vulnerabilities confirmed.</p></body></html>"
+            )
+            resp_status = 200
+            self.status_bar = f"Repeater request dispatched -> Response 200 OK to {host}:{port} [SIMULATED]"
+            caption_text = f"Burp Suite Repeater - Sent {tab_name} -> 200 OK [SIMULATED]"
+        else:
+            mock_response = (
+                f"HTTP/1.1 502 Bad Gateway (Target Unreachable)\r\n"
+                f"Server: BurpSuite-SimulatedEngine/1.0\r\n"
+                f"Content-Type: text/plain; charset=UTF-8\r\n"
+                f"X-Simulation-Notice: {SIMULATION_NOTICE_TEXT}\r\n"
+                f"Content-Length: 185\r\n\r\n"
+                f"{SIMULATION_NOTICE_TEXT}\n"
+                f"Error: Target '{host}:{port}' is unreachable or connection refused.\n"
+                f"No real target reachable — 0 live vulnerabilities confirmed.\n"
+            )
+            resp_status = 502
+            self.status_bar = f"Repeater: Connection refused to {host}:{port} (Host unreachable) [SIMULATED]"
+            caption_text = f"Burp Suite Repeater - Target {host}:{port} Unreachable [SIMULATED]"
+
         new_tab = {
             "tab_id": len(self.repeater_tabs) + 1,
             "name": tab_name,
             "request": req_text,
             "response": mock_response,
-            "status_code": 200,
+            "status_code": resp_status,
         }
         self.repeater_tabs.append(new_tab)
         self.active_repeater_index = len(self.repeater_tabs) - 1
@@ -264,12 +366,11 @@ class BurpSuiteGuiAdapter(BaseGuiAdapter):
         self.visible_panel = "Repeater"
         self.visible_subpanel = tab_name
         self.window_title = f"{self.app_name} - Repeater [{tab_name}]"
-        self.status_bar = "Repeater request dispatched -> Response 200 OK (285 bytes) [SIMULATED]"
         self._setup_controls()
 
         vis = self.capture_screenshot(
             task_id=task_id,
-            caption=f"Burp Suite Repeater - Sent {tab_name} -> 200 OK [SIMULATED]",
+            caption=caption_text,
             workflow_step="send_to_repeater",
         )
 
@@ -277,9 +378,21 @@ class BurpSuiteGuiAdapter(BaseGuiAdapter):
             "success": True,
             "tab_name": tab_name,
             "request_dispatched": req_text,
-            "response_status": 200,
+            "response_status": resp_status,
             "response_snippet": mock_response[:200],
             "response_body": mock_response,
+            "target": f"{host}:{port}",
+            "host": host,
+            "port": port,
+            "target_reachable": is_reachable,
+            "server_info": {
+                "server": "TargetServer" if is_reachable else "None",
+                "connection_status": "reachable" if is_reachable else "unreachable",
+            },
+            "alerts_count": 0,
+            "findings": [],
+            "vulnerabilities": [],
+            "total_findings": 0,
             "screenshot_sha256": vis.sha256,
             "is_simulated": True,
             "simulation_notice": SIMULATION_NOTICE_TEXT,
@@ -304,6 +417,10 @@ class BurpSuiteGuiAdapter(BaseGuiAdapter):
             "success": True,
             "site_map": dict(self.site_map),
             "endpoint_count": sum(len(v) for v in self.site_map.values()),
+            "alerts_count": 0,
+            "findings": [],
+            "vulnerabilities": [],
+            "total_findings": 0,
             "screenshot_sha256": vis.sha256,
             "is_simulated": True,
             "simulation_notice": SIMULATION_NOTICE_TEXT,
