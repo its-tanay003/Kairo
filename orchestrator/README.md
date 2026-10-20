@@ -35,9 +35,11 @@ The `/orchestrator` subsystem is the central nervous system of Kairo. Implemente
                                     │
                                     ▼
 ┌────────────────────────────────────────────────────────────────────────┐
-│               Scope Contract Authorization Gate                        │
-│  - Validates HMAC-SHA256 signature and operator authorization          │
-│  - Strictly verifies target IP/domain resides within allowed CIDR      │
+│             Execution Gateway Perimeter (execution_gateway.py)         │
+│  - Fail-closed Scope Contract validation (HMAC-SHA256, CIDRs, Tiers)   │
+│  - Anti-Prompt-Injection cryptographic operator tokens (KAIRO-OP-...)  │
+│  - Tool registration check (exit 127) & schema argument validation    │
+│  - Broad command approval policy & immutable 20-field event logging    │
 └───────────────────────────────────┬────────────────────────────────────┘
                                     │
                                     ▼
@@ -79,6 +81,8 @@ The `/orchestrator` subsystem is the central nervous system of Kairo. Implemente
 
 | Module | Purpose & Core Responsibilities |
 | :--- | :--- |
+| [`execution_gateway.py`](execution_gateway.py) | **Centralized Execution Perimeter**: The authoritative single choke point for all tool and command execution routes. Enforces fail-closed scope contracts, CIDR targets, tool tiers, operator token verification (`KAIRO-OP-...`), broad execution approvals, and 20-field SQLite audit logging. |
+| [`model_runtime.py`](model_runtime.py) | **Local Neural Inference Engine**: Manages local PyTorch causal LM inference (`TransformersLocalRuntime` for GRPO checkpoints) and local GGUF grammar inference (`LlamaCppLocalRuntime`). Enforces fine-grained `ModelReadinessState` and zero-cloud execution. |
 | [`server.py`](server.py) | Main FastAPI application exposing REST and WebSocket endpoints for execution, process management, findings, intent, audit, and model evolution. |
 | [`agent.py`](agent.py) | Autonomous agent execution loop coordinating intent classification, tool invocation, trustworthy execution result logging, and honest response synthesis. |
 | [`dag_controller.py`](dag_controller.py) | Topological DAG execution controller enforcing prerequisite evidence gating (e.g. blocking web scanning until HTTP port is confirmed), capability-aware tool selection, and recovery path lineage. |

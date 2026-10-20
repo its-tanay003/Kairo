@@ -47,6 +47,7 @@ The `/tests` directory contains Kairo's verification matrix comprising **52+ com
 
 | Test File | Focus & Verification Criteria |
 | :--- | :--- |
+| [`test_execution_gateway.py`](test_execution_gateway.py) | **Authoritative Execution Perimeter (11 Tests)**: Single choke point verification for all execution routes. Validates in-scope targets, out-of-scope rejections before adapter dispatch, expired contracts, tool tier bounds, command injection blocking, unregistered tools (127), fail-closed enforcement without contracts, DAG node gateway enforcement, anti-prompt self-authorization, and cryptographic operator token verification (`KAIRO-OP-...`). |
 | [`test_scope_contract.py`](test_scope_contract.py) | HMAC-SHA256 signature verification, tamper detection, CIDR IP validation, and out-of-scope rejection. |
 | [`test_workspace_and_auth_gateway.py`](test_workspace_and_auth_gateway.py) | Multi-client authentication tokens, desktop vs mobile scopes, token revocation, and session isolation. |
 
@@ -108,7 +109,13 @@ The `/tests` directory contains Kairo's verification matrix comprising **52+ com
 
 ## Running Tests
 
-### Run Full Test Suite
+### Run Master Consolidated Engineering Suite (104 Tests - 100% Pass)
+
+```bash
+python -m pytest tests/test_execution_gateway.py tests/test_model_integration.py tests/test_model_intent_flow.py tests/test_dag_controller.py tests/test_trustworthy_execution.py tests/test_toolspec_registry.py tests/test_scope_contract.py tests/test_workspace_and_auth_gateway.py tests/test_execution_plane_and_tauri.py tests/test_tool_selection.py -v
+```
+
+### Run Full Test Matrix
 
 ```bash
 python -m pytest -v
@@ -117,8 +124,8 @@ python -m pytest -v
 ### Run Specific Subsystem Tests
 
 ```bash
-# Scope Contract & Security
-python -m pytest tests/test_scope_contract.py -v
+# Execution Gateway & Scope Security
+python -m pytest tests/test_execution_gateway.py tests/test_scope_contract.py -v
 
 # Cognitive Loop & Self-Healing
 python -m pytest tests/test_observer_critic_recovery.py -v

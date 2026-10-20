@@ -54,8 +54,7 @@ sequenceDiagram
     participant ORCH as Orchestrator (/orchestrator)
     participant CLAS as Intent Classifier (intent_classifier.py)
     participant DAG as DAG Controller (dag_controller.py)
-    participant REG as Tool Registry (/registry)
-    participant GATE as Scope Gate (HMAC-SHA256)
+    participant EGW as Execution Gateway (execution_gateway.py)
     participant VM as Kali Worker / Supervisor
     participant VERIF as Finding Verifier (finding_verifier.py)
     participant EVT as SQLite Store (/events)
@@ -70,18 +69,19 @@ sequenceDiagram
     DAG-->>ORCH: Validated Execution DAG (Topological Order)
     loop For Each Node in Execution Plan
         DAG->>DAG: Verify Prerequisite Evidence (e.g. open port confirmed?)
-        DAG->>REG: Resolve ToolSpec (e.g. nmap.scan.v1)
-        REG-->>DAG: Tool Schema & Execution Constraints
-        DAG->>GATE: Validate Target IP & Tool Tier vs Scope Contract
-        GATE-->>DAG: Approved (Cryptographic HMAC Validated)
-        DAG->>VM: Execute via Worker API with Resource Caps
-        VM-->>DAG: Real Telemetry (authentic exit_code, stdout, stderr, duration)
+        DAG->>EGW: execute(tool_id, args, session_id, target)
+        EGW->>EGW: Verify Tool Registration (127 if missing)
+        EGW->>EGW: Validate Schema & Reject Injection (400)
+        EGW->>EGW: Scope Authorization & Tool Tier (403 if out-of-scope)
+        EGW->>EGW: Verify Cryptographic Operator Token (Anti-Prompt Injection)
+        EGW->>VM: Execute via Worker API with Resource Caps
+        VM-->>EGW: Real Telemetry (authentic exit_code, stdout, stderr, duration)
+        EGW->>EVT: INSERT INTO events (authoritative 20-field audit record)
+        EGW-->>DAG: ExecutionGatewayResult (exit_code, observation, artifacts)
         alt If Security Finding Discovered
             DAG->>VERIF: Live Active Verification Check (Socket Handshake / Banner Probe)
             VERIF-->>DAG: Verification Status (verified | refuted | inconclusive)
         end
-        DAG->>EVT: INSERT INTO events (20-column audit record with command_line & typed_invocation)
-        EVT-->>DAG: Confirmed event_id
         ORCH-->>GW: WS Event Notification { event, status }
         GW-->>Operator: WS Emit to Client (Live Terminal Stream & DAG Node Update)
     end
@@ -121,12 +121,19 @@ The Session Gateway acts as a high-concurrency, stateful multiplexer between bro
 
 ## 5. Autonomous Orchestrator & Cognitive Loop (`/orchestrator`)
 
-The Orchestrator implements an autonomous **Observer-Critic-Recovery** loop augmented by strict **Trustworthy Execution** principles, topological prerequisite gating, and live finding verification:
+The Orchestrator implements an autonomous **Observer-Critic-Recovery** loop augmented by a **Centralized Execution Gateway**, genuine local neural model runtimes, topological prerequisite gating, and live finding verification:
 
-1. **Intent Classification & Provenance (`intent_classifier.py`)**: Directives are classified upfront (`question`, `plan_only`, `tool_request`, `task_request`) with extracted target entities and explicit provenance logging.
-2. **Topological DAG Controller (`dag_controller.py`)**: Plans are constructed as Directed Acyclic Graphs with **Prerequisite Evidence Gating**. For example, web application scanners (`nikto.scan.v1`) or directory bruteforcers (`gobuster.dir.v1`) are blocked unless network reconnaissance nodes have verified an active HTTP/HTTPS listener on the target.
-3. **Evaluator & Tool Selector (`tool_selector.py`)**: Matches goal criteria against declarative ToolSpecs using semantic affinity, environment compatibility, and historical reliability scoring from the audit store.
-4. **Scope Contract Authorization Gate (`scope_contract.py`)**: HMAC-SHA256 signature verification validates target IPs, CIDR boundaries, and tool tiers before process dispatch.
+1. **Intent Classification & Provenance (`intent_classifier.py`)**: Directives are classified upfront (`question`, `plan_only`, `tool_request`, `task_request`) with extracted target entities and explicit provenance logging. Non-operational questions and plan-only requests execute 0 tools.
+2. **Local Neural Model Runtime (`model_runtime.py`)**:
+   - **`TransformersLocalRuntime`**: Executes fine-tuned causal LM checkpoints (`training/checkpoints/grpo/kairo-grpo-final`) directly via PyTorch/HuggingFace transformers.
+   - **`LlamaCppLocalRuntime`**: High-throughput GGUF quantized model inference constrained by runtime GBNF grammars.
+   - **Zero-Cloud Guarantee**: Cloud provider fallbacks are strictly prohibited; missing models transition to `FAILED` rather than leaking prompts.
+3. **Topological DAG Controller (`dag_controller.py`)**: Plans are constructed as Directed Acyclic Graphs with **Prerequisite Evidence Gating**. For example, web application scanners (`nikto.scan.v1`) or directory bruteforcers (`gobuster.dir.v1`) are blocked unless network reconnaissance nodes have verified an active HTTP/HTTPS listener on the target.
+4. **Centralized Execution Gateway (`execution_gateway.py`)**:
+   - **Single Choke Point**: All routes leading to execution (agent loop, DAG nodes, recovery agent, direct tools) must pass through this 7-stage authorization perimeter.
+   - **Fail-Closed Scope Perimeter**: Validates active Scope Contracts, CIDR targets, and tool tiers before adapter dispatch.
+   - **Anti-Prompt Self-Authorization**: Rejects prompt injection claims of authority. Requires cryptographic operator tokens (`KAIRO-OP-...`) for target modifications.
+   - **Injection Defense & Tool Registration**: Rejects shell metacharacters (400) and unregistered tools (127) without process creation.
 5. **Trustworthy Execution Plane (`agent.py`)**:
    - **Authentic Exit Codes**: Real process return codes are strictly propagated (e.g. `1` for network timeout/socket error, `127` for unregistered tool, never synthesized `0`).
    - **Deterministic CLI Command Line**: Exact shell invocation strings (`command_line`) are deterministically reconstructed.

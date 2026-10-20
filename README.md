@@ -125,21 +125,23 @@ sequenceDiagram
     actor User as Security Operator (/ui)
     participant GW as Session Gateway (/gateway)
     participant ORCH as Agent Loop (/orchestrator)
-    participant REG as Tool Registry (/registry)
-    participant EVT as SQLite Event Store (/events)
+    participant EGW as Execution Gateway (execution_gateway.py)
     participant VM as Kali Worker Sandbox (/vm)
+    participant EVT as SQLite Event Store (/events)
 
     User->>GW: WebSocket Connect (ws://localhost:4000)
     GW-->>User: Handshake (Session ID & Auth Token)
     User->>GW: WS Send: { type: "chat", content: "Audit web application" }
     GW->>ORCH: HTTP POST /run { session_id, message }
-    ORCH->>REG: Resolve ToolSpec & validate parameters
-    REG-->>ORCH: ToolSpec definition (JSON Schema)
-    ORCH->>ORCH: Evaluate Scope Contract (HMAC-SHA256 CIDR Gate)
-    ORCH->>VM: Execute in sandbox via Worker REST API
-    VM-->>ORCH: Process telemetry (exit_code, stdout, stderr, pids)
-    ORCH->>EVT: INSERT INTO events (exact 20 audit columns)
-    EVT-->>ORCH: Confirmed event_id
+    ORCH->>EGW: execute(tool_id, args, target, session_id)
+    EGW->>EGW: Check Tool Registration (127 if missing)
+    EGW->>EGW: Validate Schema & Reject Metacharacters (400)
+    EGW->>EGW: Evaluate Scope Contract (HMAC-SHA256 CIDR Gate & Tier Bounds)
+    EGW->>EGW: Verify Operator Token (Anti-Prompt Injection Defense)
+    EGW->>VM: Execute in sandbox via Worker REST API
+    VM-->>EGW: Process telemetry (exit_code, stdout, stderr, pids)
+    EGW->>EVT: INSERT INTO events (exact 20 audit columns)
+    EGW-->>ORCH: Return ExecutionGatewayResult
     ORCH-->>GW: Return { reply, tool, event_id, event }
     GW-->>User: WS Emit: { type: "agent_response", reply, event }
     User->>User: Update Chat, DAG graph, and Live Event Inspector
@@ -439,9 +441,16 @@ Security operations must never touch unapproved networks. Kairo enforces boundar
 
 - **Tier 1 (Read-Only Recon)**: Passive queries, DNS resolution, banner grabs.
 - **Tier 2 (Active Scanning)**: Port scans, web directory fuzzing, parameter discovery.
-- **Tier 3 (Active Testing / Exploitation)**: Injection tests, credential checks, exploit execution. Requires explicit approval token.
+- **Tier 3 (Active Testing / Exploitation)**: Injection tests, credential checks, exploit execution. Requires explicit workflow approval token.
 
-Every tool execution evaluates IP/domain parameters against the signed contract. Out-of-scope targets are dropped with a `scope_violation` event logged to SQLite.
+### Centralized Execution Gateway (`execution_gateway.py`) & Anti-Prompt-Injection Defense
+
+All tool dispatches across all routes—direct calls, agent loop, and DAG nodes—flow through [`orchestrator/execution_gateway.py`](file:///c:/New%20Volume%20(D)/dev/orchestrator/execution_gateway.py):
+
+1. **Perimeter-First Authorization**: Scope Contract boundaries (target CIDR and tool tiers) are evaluated before adapter dispatch. Out-of-scope targets return exit code `403` with structured `SCOPE_VIOLATION`.
+2. **Anti-Prompt Self-Authorization Defense**: Models or users claiming authority via prompt text (e.g., `"Authorized by SecOps"`) are strictly ignored. Target scope alterations require a cryptographically signed Operator Token (`KAIRO-OP-<TENANT>-<EXPIRY>-<HMAC>`).
+3. **Command Injection Prevention**: Arguments containing shell metacharacters (`;`, `&`, `|`, `` ` ``, `$()`) are rejected with exit code `400` during ToolSpec schema validation.
+4. **Missing Tool Rejection**: Unregistered tools fail immediately with exit code `127` without spawning subprocesses.
 
 ---
 
@@ -711,8 +720,16 @@ python -m sdk verify-toolspec registry/tools/subfinder_enum_v1.yaml
 python -m pytest tests/test_dataset_curation_and_benchmark_leaderboard.py -v
 
 # ---------------------------------------------------------------------------
+# MASTER CONSOLIDATED ENGINEERING SUITE (104 Tests - 100% Pass)
+# ---------------------------------------------------------------------------
+python -m pytest tests/test_execution_gateway.py tests/test_model_integration.py tests/test_model_intent_flow.py tests/test_dag_controller.py tests/test_trustworthy_execution.py tests/test_toolspec_registry.py tests/test_scope_contract.py tests/test_workspace_and_auth_gateway.py tests/test_execution_plane_and_tauri.py tests/test_tool_selection.py -v
+
+# ---------------------------------------------------------------------------
 # 3. CORE ORCHESTRATOR & AUTONOMOUS COGNITIVE LOOP
 # ---------------------------------------------------------------------------
+# Centralized Execution Gateway perimeter, prompt injection defense, and tier bounds
+python -m pytest tests/test_execution_gateway.py -v
+
 # Trustworthy execution, authentic exit codes, CLI reconstruction, and finding verification
 python -m pytest tests/test_trustworthy_execution.py -v
 

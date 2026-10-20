@@ -65,6 +65,15 @@ flowchart LR
 
 Kairo provides rigorous verification suites ensuring execution results and reported findings are truthful and tamper-proof:
 
+### 0. Centralized Execution Perimeter (`tests/test_execution_gateway.py` - 11 Tests)
+
+- **Fail-Closed Perimeter Enforcement**: Proves that all tool dispatch routes (direct, agent loop, DAG node, recovery, finding verifier) are intercepted by the `ExecutionGateway`.
+- **Target Boundary & Tool Tier Gates**: Verifies in-scope targets are authorized and out-of-scope targets are blocked before adapter invocation; verifies tool tier boundaries (e.g. Tier 3 tools blocked when contract only allows Tier 1-2).
+- **Command Injection Defense**: Verifies shell metacharacters (`;`, `&`, `|`, `$()`, backticks) are rejected during ToolSpec schema validation with exit code 400.
+- **Missing Tool Rejection**: Verifies unregistered tools are rejected with exit code 127 without spawning processes.
+- **Anti-Prompt Self-Authorization**: Proves user prompts claiming authorization (`"Authorized by CEO"`) cannot modify target scope or bypass gates without a valid cryptographic operator token (`KAIRO-OP-...`).
+- **Cryptographic Operator Token Authorization**: Authenticates valid HMAC operator tokens to allow target adjustments while preserving full audit traceability.
+
 ### 1. Authentic Telemetry & Honest Synthesis (`tests/test_trustworthy_execution.py` - 13 Tests)
 
 - **Authentic Non-Zero Exit Codes**: Verifies runtime errors emit exit code `1` and unregistered tools emit exit code `127`. No synthetic `0` exit codes are permitted on failure.
@@ -113,24 +122,27 @@ Simulates erratic human operator behavior:
 ## 6. Running the Master Test Matrix
 
 ```bash
-# 1. Run all 52+ test suites with verbose output
+# 1. Run Master Consolidated Engineering Suite (104 Tests - 100% Pass)
+python -m pytest tests/test_execution_gateway.py tests/test_model_integration.py tests/test_model_intent_flow.py tests/test_dag_controller.py tests/test_trustworthy_execution.py tests/test_toolspec_registry.py tests/test_scope_contract.py tests/test_workspace_and_auth_gateway.py tests/test_execution_plane_and_tauri.py tests/test_tool_selection.py -v
+
+# 2. Run all 52+ test suites with verbose output
 python -m pytest -v
 
-# 2. Run trustworthy execution and DAG controller tests
+# 3. Run Execution Gateway and Scope Contract security tests
+python -m pytest tests/test_execution_gateway.py tests/test_scope_contract.py -v
+
+# 4. Run trustworthy execution and DAG controller tests
 python -m pytest tests/test_trustworthy_execution.py tests/test_dag_controller.py -v
 
-# 3. Run model intent flow and dual-model integration tests
+# 5. Run model intent flow and dual-model integration tests
 python -m pytest tests/test_model_intent_flow.py tests/test_model_integration.py -v
 
-# 4. Run fast unit and schema tests only
+# 6. Run fast unit and schema tests only
 python -m pytest tests/test_toolspec_registry.py tests/test_tool_selection.py -v
 
-# 5. Run security and scope authorization tests
-python -m pytest tests/test_scope_contract.py tests/test_workspace_and_auth_gateway.py -v
-
-# 6. Run cognitive loop and recovery tests
+# 7. Run cognitive loop and recovery tests
 python -m pytest tests/test_observer_critic_recovery.py tests/test_planner.py -v
 
-# 7. Run model training and reinforcement learning tests
+# 8. Run model training and reinforcement learning tests
 python -m pytest tests/test_grpo_training_and_rewards.py tests/test_scale_stages_pipeline.py -v
 ```
