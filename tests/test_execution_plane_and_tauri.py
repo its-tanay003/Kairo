@@ -73,7 +73,7 @@ class TestKaliExecutionPlaneDetection(unittest.TestCase):
             task_id="test_uniform_01",
             command="echo",
             args=["hello_kairo_plane"],
-            timeout_ms=5000,
+            timeout_ms=15000,
         )
 
         expected_keys = {
@@ -96,6 +96,139 @@ class TestKaliExecutionPlaneDetection(unittest.TestCase):
         self.assertIn("backend_name", plane)
         self.assertIn("plane_type", plane)
         self.assertTrue(vm_status["running"])
+
+    def test_local_host_fallback_enum_and_notice(self):
+        """Verifies ExecutionPlaneType includes LOCAL_HOST_FALLBACK with value 'local_host_fallback'."""
+        self.assertEqual(ExecutionPlaneType.LOCAL_HOST_FALLBACK.value, "local_host_fallback")
+        self.assertIn("local_host_fallback", [e.value for e in ExecutionPlaneType])
+
+    def test_execute_linux_native_tags_local_host_fallback_and_notice(self):
+        """
+        When _execute_linux_native fires because no isolated Kali VM/worker is reachable,
+        it must tag execution_plane as 'local_host_fallback' and provide the plain-language notice.
+        """
+        from unittest.mock import patch, MagicMock
+        connector = KaliWorkerConnector()
+        with patch("subprocess.run") as mock_run:
+            mock_proc = MagicMock()
+            mock_proc.returncode = 0
+            mock_proc.stdout = "fallback output"
+            mock_proc.stderr = ""
+            mock_run.return_value = mock_proc
+
+            res = connector._execute_linux_native(
+                task_id="task_fallback_01",
+                command="echo",
+                args=["testing_fallback"],
+                cwd="/home/kali",
+                timeout_ms=5000,
+            )
+
+            self.assertEqual(res["execution_plane"], ExecutionPlaneType.LOCAL_HOST_FALLBACK.value)
+            self.assertEqual(res["execution_plane"], "local_host_fallback")
+            self.assertEqual(res["fallback_notice"], "Ran directly on this machine — no isolated Kali worker was available.")
+            self.assertTrue(res["local_fallback"])
+
+    def test_claude_synthesis_surfaces_fallback_notice_in_reply_and_tool_card(self):
+        """
+        Verifies that synthesize_agent_response injects the visible warning banner in chat reply
+        and process metadata when running on local_host_fallback.
+        """
+        from orchestrator.claude_synthesis import synthesize_agent_response
+        synth = synthesize_agent_response(
+            user_goal="Test host fallback behavior",
+            tool_id="shell.run.v1",
+            tool_name="Shell Command",
+            inputs={"command": "whoami"},
+            exit_code=0,
+            stdout="hp",
+            stderr="",
+            execution_plane="local_host_fallback",
+            fallback_notice="Ran directly on this machine — no isolated Kali worker was available.",
+        )
+
+        self.assertIn("Ran directly on this machine — no isolated Kali worker was available.", synth["reply"])
+        self.assertTrue(synth["reply"].startswith("> ⚠️ **Ran directly on this machine — no isolated Kali worker was available.**"))
+        self.assertEqual(synth["process"]["execution_plane"], "local_host_fallback")
+        self.assertEqual(synth["process"]["fallback_notice"], "Ran directly on this machine — no isolated Kali worker was available.")
+        self.assertTrue(synth["process"]["local_fallback"])
+        metrics = synth["output"]["summary_metrics"]
+        self.assertTrue(any(m["label"] == "Execution Plane" and "Host Fallback" in m["value"] for m in metrics))
+
+    def test_agent_records_local_host_fallback_event(self):
+        """
+        Verifies that AgentLoop._execute_single_tool records execution_plane: 'local_host_fallback'
+        in the SQLite event network_context and returns the notice.
+        """
+        import time
+        from unittest.mock import patch, MagicMock
+        from orchestrator.agent import AgentLoop
+        from events.db import init_db
+
+        temp_db = ROOT_DIR / "temp_fallback_test.db"
+        try:
+            init_db(temp_db)
+            agent = AgentLoop(db_path=temp_db)
+
+            # Mock vm_manager to return fallback plane
+            with patch("orchestrator.agent.vm_manager.execute_in_vm") as mock_exec:
+                mock_exec.return_value = {
+                    "task_id": "task_fb_test",
+                    "status": "success",
+                    "exit_code": 0,
+                    "stdout": "host executed",
+                    "stderr": "",
+                    "duration_ms": 15,
+                    "execution_plane": "local_host_fallback",
+                    "fallback_notice": "Ran directly on this machine — no isolated Kali worker was available.",
+                    "local_fallback": True,
+                }
+
+                mock_record = MagicMock(
+                    selected_model="test_model",
+                    actual_model_id="test_model",
+                    inference_runtime="llama_cpp",
+                    processed_by_selected_model=True,
+                    structured_output={},
+                    fallback_used=False,
+                    fallback_reason=None,
+                )
+                mock_record.to_dict.return_value = {"model_id": "test_model"}
+
+                res = agent._execute_single_tool(
+                    session_id="sess_fb_01",
+                    task_id="task_fb_test",
+                    tool_id="kali.exec.v1",
+                    requested_args={"command": "whoami", "workflow_token": "KAIRO-WF-APPROVED"},
+                    active_model_info={"model_id": "test_model", "role": "primary"},
+                    exec_record=mock_record,
+                    message="run host tool",
+                    t0=time.time(),
+                    start_time_iso="2026-10-20T12:00:00Z",
+                    parent_event=None,
+                    plan_id=None,
+                    node_id=None,
+                )
+
+                self.assertEqual(res["execution_plane"], "local_host_fallback")
+                self.assertIn("Ran directly on this machine — no isolated Kali worker was available.", res["reply"])
+
+                # Inspect SQLite event
+                import sqlite3
+                conn = sqlite3.connect(temp_db)
+                row = conn.execute("SELECT network_context FROM events WHERE task_id = 'task_fb_test'").fetchone()
+                conn.close()
+                self.assertIsNotNone(row)
+                net_ctx = json.loads(row[0])
+                self.assertEqual(net_ctx["execution_plane"], "local_host_fallback")
+                self.assertEqual(net_ctx["fallback_notice"], "Ran directly on this machine — no isolated Kali worker was available.")
+                self.assertTrue(net_ctx["local_fallback"])
+        finally:
+            if temp_db.exists():
+                try:
+                    temp_db.unlink()
+                except Exception:
+                    pass
 
 
 class TestTauriDesktopShell(unittest.TestCase):

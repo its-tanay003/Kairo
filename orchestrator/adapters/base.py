@@ -49,6 +49,9 @@ class ToolObservation:
     artifacts: List[str] = field(default_factory=list)   # File paths produced
     timestamp: str = field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
     error: Optional[str] = None
+    execution_plane: Optional[str] = None
+    fallback_notice: Optional[str] = None
+    local_fallback: bool = False
 
     def to_dict(self) -> Dict[str, Any]:
         return {
@@ -64,6 +67,9 @@ class ToolObservation:
             "artifacts": self.artifacts,
             "timestamp": self.timestamp,
             "error": self.error,
+            "execution_plane": self.execution_plane,
+            "fallback_notice": self.fallback_notice,
+            "local_fallback": self.local_fallback,
         }
 
 
@@ -187,6 +193,9 @@ class ToolAdapter(ABC):
             timed_out = result.get("timed_out", False)
             duration_ms = result.get("duration_ms", round((time.perf_counter() - t0) * 1000, 2))
             captured_artifacts = [a.get("filepath", a.get("filename", "")) for a in result.get("artifacts", [])]
+            execution_plane = result.get("execution_plane", "unknown")
+            fallback_notice = result.get("fallback_notice")
+            local_fallback = bool(result.get("local_fallback", False) or execution_plane == "local_host_fallback")
         else:
             from orchestrator.process_supervisor import ProcessResult
             proc: ProcessResult = self._supervisor.execute(
@@ -204,6 +213,9 @@ class ToolAdapter(ABC):
             timed_out = proc.timed_out
             duration_ms = proc.duration_ms
             captured_artifacts = [a.get("filepath", a.get("filename", "")) for a in proc.artifacts]
+            execution_plane = "local_host_fallback"
+            fallback_notice = "Ran directly on this machine — no isolated Kali worker was available."
+            local_fallback = True
 
         if timed_out:
             status = "timeout"
@@ -226,6 +238,12 @@ class ToolAdapter(ABC):
             logger.error(f"[{self.tool_id}] Parser failed: {e}")
             observation = {"parse_error": str(e), "raw": stdout[:2000]}
 
+        if fallback_notice or local_fallback:
+            if isinstance(observation, dict):
+                observation["execution_plane"] = execution_plane
+                observation["fallback_notice"] = fallback_notice
+                observation["local_fallback"] = local_fallback
+
         artifacts = observation.pop("_artifacts", [])
         all_artifacts = list(dict.fromkeys(artifacts + captured_artifacts))
 
@@ -241,6 +259,9 @@ class ToolAdapter(ABC):
             observation=observation,
             artifacts=all_artifacts,
             error=stderr.strip() if status == "error" else None,
+            execution_plane=execution_plane,
+            fallback_notice=fallback_notice,
+            local_fallback=local_fallback,
         )
 
     def _binary(self) -> str:

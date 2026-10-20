@@ -13,6 +13,9 @@ export interface ClaudeProcessMeta {
   status?: string;
   status_label?: string;
   tier?: number;
+  execution_plane?: string;
+  fallback_notice?: string;
+  local_fallback?: boolean;
 }
 
 export interface ClaudeOutputFinding {
@@ -154,6 +157,9 @@ export interface ClaudeOutputCardProps {
     duration_ms?: number;
     observation?: Record<string, unknown>;
     synthesis?: ClaudeSynthesisPayload;
+    execution_plane?: string;
+    fallback_notice?: string;
+    local_fallback?: boolean;
   };
   durationMs?: number;
   toolSelection?: ClaudeToolSelectionMeta;
@@ -245,6 +251,19 @@ export default function ClaudeOutputCard({
     : processData?.duration_s
     ? processData.duration_s.toFixed(1)
     : "1.2";
+
+  const isLocalHostFallback = Boolean(
+    execution?.execution_plane === "local_host_fallback" ||
+    processData?.execution_plane === "local_host_fallback" ||
+    execution?.local_fallback ||
+    processData?.local_fallback ||
+    execution?.fallback_notice ||
+    processData?.fallback_notice
+  );
+  const fallbackNoticeText =
+    execution?.fallback_notice ||
+    processData?.fallback_notice ||
+    "Ran directly on this machine — no isolated Kali worker was available.";
 
   const commandString =
     processData?.command_line ||
@@ -554,6 +573,26 @@ export default function ClaudeOutputCard({
       {/* 3. The Process Card: Clear Step Breakdown & Interactive Terminal */}
       {(tool || processData || execution) && (
         <div className={`claude-process-card ${isFailed ? "has-error" : ""}`}>
+          {isLocalHostFallback && (
+            <div
+              className="claude-fallback-banner"
+              style={{
+                display: "flex",
+                alignItems: "center",
+                gap: "8px",
+                padding: "8px 14px",
+                backgroundColor: "rgba(245, 158, 11, 0.12)",
+                borderBottom: "1px solid rgba(245, 158, 11, 0.25)",
+                color: "#fbbf24",
+                fontSize: "12px",
+                fontWeight: 600,
+              }}
+            >
+              <span style={{ fontSize: "14px" }}>⚠️</span>
+              <span>{fallbackNoticeText}</span>
+            </div>
+          )}
+
           <div className="claude-process-card-header">
             <div className="claude-process-card-title-group">
               <span className="claude-process-icon">
@@ -570,6 +609,26 @@ export default function ClaudeOutputCard({
             </div>
 
             <div className="claude-process-actions-group">
+              {isLocalHostFallback && (
+                <span
+                  style={{
+                    fontSize: "11px",
+                    padding: "2px 8px",
+                    borderRadius: "10px",
+                    backgroundColor: "rgba(245, 158, 11, 0.15)",
+                    color: "#f59e0b",
+                    border: "1px solid rgba(245, 158, 11, 0.35)",
+                    fontWeight: 600,
+                    display: "inline-flex",
+                    alignItems: "center",
+                    gap: "4px",
+                  }}
+                  title={fallbackNoticeText}
+                >
+                  ⚠️ Host Fallback
+                </span>
+              )}
+
               <span className={`claude-status-badge ${isFailed ? "error" : "success"}`}>
                 <span className="status-dot-pulse" />
                 {isFailed
@@ -634,7 +693,36 @@ export default function ClaudeOutputCard({
                         Tier {processData?.tier || 2} · Authorized
                       </span>
                     </div>
+                    <div className="overview-item">
+                      <span className="overview-label">Execution Plane</span>
+                      <span
+                        className="overview-val font-mono"
+                        style={{ color: isLocalHostFallback ? "#f59e0b" : "inherit" }}
+                      >
+                        {isLocalHostFallback ? "local_host_fallback" : "Isolated Kali Worker"}
+                      </span>
+                    </div>
                   </div>
+
+                  {isLocalHostFallback && (
+                    <div
+                      style={{
+                        margin: "10px 0",
+                        padding: "8px 12px",
+                        borderRadius: "6px",
+                        backgroundColor: "rgba(245, 158, 11, 0.1)",
+                        border: "1px solid rgba(245, 158, 11, 0.3)",
+                        color: "#fbbf24",
+                        fontSize: "12px",
+                        display: "flex",
+                        alignItems: "center",
+                        gap: "8px",
+                      }}
+                    >
+                      <span style={{ fontSize: "14px" }}>⚠️</span>
+                      <span><strong>Notice:</strong> {fallbackNoticeText}</span>
+                    </div>
+                  )}
 
                   {commandString && (
                     <div className="claude-command-box">
@@ -741,6 +829,16 @@ export default function ClaudeOutputCard({
                       <div className="telemetry-row">
                         <span>Adapter Class:</span>
                         <code>{execution.adapter}</code>
+                      </div>
+                    )}
+                    <div className="telemetry-row">
+                      <span>Execution Plane:</span>
+                      <code>{execution?.execution_plane || processData?.execution_plane || (isLocalHostFallback ? "local_host_fallback" : "isolated_worker")}</code>
+                    </div>
+                    {isLocalHostFallback && (
+                      <div className="telemetry-row">
+                        <span>Fallback Notice:</span>
+                        <code style={{ color: "#f59e0b" }}>{fallbackNoticeText}</code>
                       </div>
                     )}
                     {onOpenConsole && (
@@ -1044,6 +1142,29 @@ function MarkdownRenderer({ content }: { content: string }) {
         <h2 key={i} className="prose-h2">
           {renderInlineMarkdown(line.slice(3))}
         </h2>
+      );
+      continue;
+    }
+
+    // Blockquote or Callout: > ...
+    if (line.trim().startsWith("> ")) {
+      elements.push(
+        <div
+          key={i}
+          className="prose-callout-notice"
+          style={{
+            borderLeft: "3px solid #f59e0b",
+            background: "rgba(245, 158, 11, 0.1)",
+            padding: "8px 12px",
+            borderRadius: "0 6px 6px 0",
+            margin: "8px 0",
+            color: "#fbbf24",
+            fontSize: "13px",
+            lineHeight: "1.5",
+          }}
+        >
+          {renderInlineMarkdown(line.trim().slice(2))}
+        </div>
       );
       continue;
     }

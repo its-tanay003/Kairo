@@ -25,6 +25,8 @@ def synthesize_agent_response(
     duration_ms: float = 0.0,
     is_scope_violation: bool = False,
     scope_violation_reason: Optional[str] = None,
+    execution_plane: Optional[str] = None,
+    fallback_notice: Optional[str] = None,
 ) -> Dict[str, Any]:
     """
     Produces a 3-part Claude-style payload:
@@ -39,7 +41,7 @@ def synthesize_agent_response(
 
     # 1. Handle Scope Contract Violation
     if is_scope_violation or (scope_violation_reason and "OUT_OF_SCOPE" in scope_violation_reason):
-        return _synthesize_scope_violation(
+        res = _synthesize_scope_violation(
             user_goal=user_goal,
             tool_id=tool_id_clean,
             tool_name=tool_name_clean,
@@ -47,10 +49,9 @@ def synthesize_agent_response(
             reason=scope_violation_reason or "Target falls outside authorized boundary.",
             duration_s=duration_s,
         )
-
     # 2. Handle Nmap Port & Network Scanners
-    if "nmap" in tool_id_clean.lower():
-        return _synthesize_nmap_scan(
+    elif "nmap" in tool_id_clean.lower():
+        res = _synthesize_nmap_scan(
             user_goal=user_goal,
             inputs=inputs,
             exit_code=exit_code,
@@ -59,19 +60,17 @@ def synthesize_agent_response(
             observation=observation,
             duration_s=duration_s,
         )
-
     # 3. Handle Network Interface & Connection Inquiries (ip, ifconfig, ipconfig)
-    if _is_network_interface_query(user_goal, stdout, inputs):
-        return _synthesize_network_connection(
+    elif _is_network_interface_query(user_goal, stdout, inputs):
+        res = _synthesize_network_connection(
             user_goal=user_goal,
             inputs=inputs,
             stdout=stdout,
             duration_s=duration_s,
         )
-
     # 4. Handle Web Security Scanners (ZAP, Burp, Nikto, WhatWeb)
-    if any(k in tool_id_clean.lower() for k in ["zap", "burp", "nikto", "whatweb", "ffuf", "gobuster"]):
-        return _synthesize_web_audit(
+    elif any(k in tool_id_clean.lower() for k in ["zap", "burp", "nikto", "whatweb", "ffuf", "gobuster"]):
+        res = _synthesize_web_audit(
             user_goal=user_goal,
             tool_id=tool_id_clean,
             tool_name=tool_name_clean,
@@ -82,10 +81,21 @@ def synthesize_agent_response(
             observation=observation,
             duration_s=duration_s,
         )
-
     # 5. Handle Network Recon & DNS (Whois, Dig)
-    if any(k in tool_id_clean.lower() for k in ["whois", "dig"]):
-        return _synthesize_domain_recon(
+    elif any(k in tool_id_clean.lower() for k in ["whois", "dig"]):
+        res = _synthesize_domain_recon(
+            user_goal=user_goal,
+            tool_id=tool_id_clean,
+            tool_name=tool_name_clean,
+            inputs=inputs,
+            exit_code=exit_code,
+            stdout=stdout,
+            stderr=stderr,
+            duration_s=duration_s,
+        )
+    else:
+        # 6. Default Shell / Kali / Diagnostic Execution
+        res = _synthesize_generic_execution(
             user_goal=user_goal,
             tool_id=tool_id_clean,
             tool_name=tool_name_clean,
@@ -96,17 +106,43 @@ def synthesize_agent_response(
             duration_s=duration_s,
         )
 
-    # 6. Default Shell / Kali / Diagnostic Execution
-    return _synthesize_generic_execution(
-        user_goal=user_goal,
-        tool_id=tool_id_clean,
-        tool_name=tool_name_clean,
-        inputs=inputs,
-        exit_code=exit_code,
-        stdout=stdout,
-        stderr=stderr,
-        duration_s=duration_s,
+    # Decorate with visible plain-language fallback notice when running on local host
+    is_fallback = bool(
+        execution_plane == "local_host_fallback"
+        or fallback_notice
+        or (isinstance(observation, dict) and (
+            observation.get("execution_plane") == "local_host_fallback"
+            or bool(observation.get("fallback_notice"))
+            or observation.get("local_fallback") is True
+        ))
     )
+    if is_fallback:
+        notice_text = fallback_notice or (
+            observation.get("fallback_notice") if isinstance(observation, dict) else None
+        ) or "Ran directly on this machine — no isolated Kali worker was available."
+
+        # Prepend visible plain-language notice in the chat reply markdown
+        notice_banner = f"> ⚠️ **{notice_text}**\n\n"
+        if not res.get("reply", "").startswith("> ⚠️"):
+            res["reply"] = notice_banner + res.get("reply", "")
+
+        # Attach to process metadata for tool card UI
+        if "process" in res and isinstance(res["process"], dict):
+            res["process"]["execution_plane"] = "local_host_fallback"
+            res["process"]["fallback_notice"] = notice_text
+            res["process"]["local_fallback"] = True
+
+        # Prepend to output summary metrics
+        if "output" in res and isinstance(res["output"], dict):
+            metrics = res["output"].setdefault("summary_metrics", [])
+            if not any(m.get("label") == "Execution Plane" for m in metrics):
+                metrics.insert(0, {
+                    "label": "Execution Plane",
+                    "value": "Host Fallback (No VM)",
+                    "type": "warning",
+                })
+
+    return res
 
 
 # ---------------------------------------------------------------------------

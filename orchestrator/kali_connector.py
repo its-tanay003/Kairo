@@ -38,6 +38,11 @@ class ExecutionPlaneType(str, Enum):
     MACOS_VIRTUALIZATION = "macos_virtualization"
     VIRTUALBOX_SANDBOX = "virtualbox_sandbox"
     SIMULATED_MOCK = "simulated_mock"
+    LOCAL_HOST_FALLBACK = "local_host_fallback"
+
+
+FALLBACK_NOTICE_TEXT = "Ran directly on this machine — no isolated Kali worker was available."
+
 
 
 @dataclass
@@ -108,6 +113,8 @@ class KaliWorkerConnector:
             return ExecutionPlaneType.VIRTUALBOX_SANDBOX
         elif override == "mock" or override == "simulated":
             return ExecutionPlaneType.SIMULATED_MOCK
+        elif override in ("fallback", "local_host_fallback", "host"):
+            return ExecutionPlaneType.LOCAL_HOST_FALLBACK
         return None
 
     def get_info(self, force_refresh: bool = False) -> ExecutionPlaneInfo:
@@ -402,6 +409,7 @@ class KaliWorkerConnector:
             ExecutionPlaneType.MACOS_VIRTUALIZATION: "macOS Virtualization Framework (Forced Override)",
             ExecutionPlaneType.VIRTUALBOX_SANDBOX: "VirtualBox Kali VM Sandbox",
             ExecutionPlaneType.SIMULATED_MOCK: "Simulated Mock Plane",
+            ExecutionPlaneType.LOCAL_HOST_FALLBACK: "Local Host Fallback (No Isolated Kali Worker)",
         }
         return ExecutionPlaneInfo(
             platform=host_system,
@@ -474,7 +482,7 @@ class KaliWorkerConnector:
         # Route 2: Platform-specific direct plane execution
         if info.plane_type == ExecutionPlaneType.WINDOWS_WSL2:
             return self._execute_wsl2(task_id, command, args, cwd, timeout_ms, info)
-        elif info.plane_type == ExecutionPlaneType.LINUX_NATIVE:
+        elif info.plane_type in (ExecutionPlaneType.LINUX_NATIVE, ExecutionPlaneType.LOCAL_HOST_FALLBACK):
             return self._execute_linux_native(task_id, command, args, cwd, timeout_ms)
         elif info.plane_type == ExecutionPlaneType.MACOS_VIRTUALIZATION:
             return self._execute_macos_vf(task_id, command, args, cwd, timeout_ms, info)
@@ -609,8 +617,10 @@ class KaliWorkerConnector:
                 "stdout": proc.stdout,
                 "stderr": proc.stderr,
                 "duration_ms": dur_ms,
-                "execution_plane": "linux_native",
-                "backend": "Local Linux",
+                "execution_plane": ExecutionPlaneType.LOCAL_HOST_FALLBACK.value,
+                "backend": "Local Host Fallback",
+                "fallback_notice": FALLBACK_NOTICE_TEXT,
+                "local_fallback": True,
                 "timed_out": False,
                 "artifacts": [],
             }
@@ -622,8 +632,10 @@ class KaliWorkerConnector:
                 "stdout": "",
                 "stderr": f"Command timed out after {timeout_ms}ms",
                 "duration_ms": round((time.perf_counter() - t0) * 1000, 2),
-                "execution_plane": "linux_native",
-                "backend": "Local Linux",
+                "execution_plane": ExecutionPlaneType.LOCAL_HOST_FALLBACK.value,
+                "backend": "Local Host Fallback",
+                "fallback_notice": FALLBACK_NOTICE_TEXT,
+                "local_fallback": True,
                 "timed_out": True,
                 "artifacts": [],
             }
@@ -635,8 +647,10 @@ class KaliWorkerConnector:
                 "stdout": "",
                 "stderr": str(e),
                 "duration_ms": round((time.perf_counter() - t0) * 1000, 2),
-                "execution_plane": "linux_native",
-                "backend": "Local Linux",
+                "execution_plane": ExecutionPlaneType.LOCAL_HOST_FALLBACK.value,
+                "backend": "Local Host Fallback",
+                "fallback_notice": FALLBACK_NOTICE_TEXT,
+                "local_fallback": True,
                 "timed_out": False,
                 "artifacts": [],
             }
@@ -723,8 +737,10 @@ class KaliWorkerConnector:
                 "stdout": proc.stdout,
                 "stderr": proc.stderr,
                 "duration_ms": round((time.perf_counter() - t0) * 1000, 2),
-                "execution_plane": "host_fallback",
-                "backend": "Direct Host",
+                "execution_plane": ExecutionPlaneType.LOCAL_HOST_FALLBACK.value,
+                "backend": "Direct Host Fallback",
+                "fallback_notice": FALLBACK_NOTICE_TEXT,
+                "local_fallback": True,
                 "timed_out": False,
                 "artifacts": [],
             }
@@ -736,8 +752,10 @@ class KaliWorkerConnector:
                 "stdout": "",
                 "stderr": str(e),
                 "duration_ms": round((time.perf_counter() - t0) * 1000, 2),
-                "execution_plane": "host_fallback",
-                "backend": "Direct Host",
+                "execution_plane": ExecutionPlaneType.LOCAL_HOST_FALLBACK.value,
+                "backend": "Direct Host Fallback",
+                "fallback_notice": FALLBACK_NOTICE_TEXT,
+                "local_fallback": True,
                 "timed_out": False,
                 "artifacts": [],
             }

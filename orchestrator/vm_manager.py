@@ -314,6 +314,8 @@ class VMManager:
                 "snapshot_name": snap_info.get("snapshot_name") if snap_info else None,
                 "execution_plane": conn_res.get("execution_plane", "unknown"),
                 "backend": conn_res.get("backend", "local_plane"),
+                "fallback_notice": conn_res.get("fallback_notice"),
+                "local_fallback": conn_res.get("local_fallback", False),
             }
 
         if "output" not in res_data:

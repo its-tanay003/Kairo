@@ -359,6 +359,8 @@ class ExecutionGateway:
         observation: Dict[str, Any] = {}
         artifacts: List[str] = []
         recorded_cmd = ""
+        fallback_notice: Optional[str] = None
+        local_fallback: bool = False
 
         try:
             if tool_id == "hello_world":
@@ -420,6 +422,9 @@ class ExecutionGateway:
                 stderr_output = vm_res.get("stderr") or ""
                 artifacts = [a.get("filepath", a.get("filename", "")) for a in vm_res.get("artifacts", [])]
                 observation = vm_res
+                execution_plane = vm_res.get("execution_plane", "unknown")
+                fallback_notice = vm_res.get("fallback_notice")
+                local_fallback = bool(vm_res.get("local_fallback", False) or execution_plane == "local_host_fallback")
 
             else:
                 adapter_cls = adapter_registry.get(tool_id)
@@ -485,12 +490,18 @@ class ExecutionGateway:
                 stderr_output = getattr(obs, "raw_stderr", "")
                 observation = getattr(obs, "observation", {})
                 artifacts = getattr(obs, "artifacts", []) or []
+                execution_plane = getattr(obs, "execution_plane", None) or (observation.get("execution_plane") if isinstance(observation, dict) else None)
+                fallback_notice = getattr(obs, "fallback_notice", None) or (observation.get("fallback_notice") if isinstance(observation, dict) else None)
+                local_fallback = bool(getattr(obs, "local_fallback", False) or (observation.get("local_fallback", False) if isinstance(observation, dict) else False) or execution_plane == "local_host_fallback")
 
         except Exception as exc:
             logger.exception(f"[ExecutionGateway] Unhandled exception while executing '{tool_id}': {exc}")
             exit_code = 1
             stderr_output = f"Execution exception: {str(exc)}"
             observation = {"error": str(exc), "exception": True}
+            execution_plane = "local_host_fallback"
+            fallback_notice = "Ran directly on this machine — no isolated Kali worker was available."
+            local_fallback = True
 
         duration_ms = round((time.time() - t0) * 1000, 2)
         real_status = "success" if exit_code == 0 else "failed"
@@ -520,6 +531,9 @@ class ExecutionGateway:
                 "plan_id": plan_id,
                 "node_id": node_id,
                 "authorized": True,
+                "execution_plane": execution_plane or ("local_host_fallback" if local_fallback else "unknown"),
+                "fallback_notice": fallback_notice,
+                "local_fallback": local_fallback,
             },
             result_summary=f"Executed {tool_id} -> exit {exit_code} ({real_status})",
             confidence=1.0 if exit_code == 0 else 0.0,

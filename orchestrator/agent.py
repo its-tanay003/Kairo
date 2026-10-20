@@ -39,6 +39,7 @@ from orchestrator.llama_client import LlamaCppClient
 from orchestrator.models import LLMResponse
 from orchestrator.process_supervisor import supervisor, ProcessResult
 from orchestrator.vm_manager import vm_manager
+from orchestrator.kali_connector import ExecutionPlaneType, FALLBACK_NOTICE_TEXT
 from orchestrator.tool_selector import tool_selector
 from orchestrator.adapters.registry import adapter_registry
 from orchestrator.intent_classifier import (
@@ -597,12 +598,19 @@ class AgentLoop:
             if vm_res.get("rolled_back"):
                 event_artifact_refs.append(f"rollback://{vm_res.get('rollback_info', {}).get('snapshot_restored', 'kairo_worker_ready')}")
 
+            exec_plane = vm_res.get("execution_plane", "unknown")
+            fallback_notice = vm_res.get("fallback_notice")
+            local_fallback = bool(vm_res.get("local_fallback", False) or exec_plane == ExecutionPlaneType.LOCAL_HOST_FALLBACK.value)
+
             execution_details = {
                 "adapter": "kali.exec.v1",
                 "status": real_status,
                 "command_line": recorded_cmd,
                 "typed_invocation": typed_invocation,
-                "sandboxed": True,
+                "sandboxed": not local_fallback,
+                "execution_plane": exec_plane,
+                "fallback_notice": fallback_notice,
+                "local_fallback": local_fallback,
                 "vm": vm_manager.vm_name,
                 "command": command,
                 "args": args,
@@ -702,6 +710,10 @@ class AgentLoop:
                     reply_text = f"Agent executed {tool_id} (v{tool_version}): Tool completed with exit code {exit_code} (FAILED)."
                     result_summary = f"Executed {tool_id} ({cmd_summary}) -> exit {exit_code} (FAILED)"
 
+                obs_exec_plane = getattr(obs, "execution_plane", None) or (obs.observation.get("execution_plane") if isinstance(obs.observation, dict) else None)
+                obs_fallback_notice = getattr(obs, "fallback_notice", None) or (obs.observation.get("fallback_notice") if isinstance(obs.observation, dict) else None)
+                obs_local_fallback = bool(getattr(obs, "local_fallback", False) or (obs.observation.get("local_fallback", False) if isinstance(obs.observation, dict) else False) or obs_exec_plane == ExecutionPlaneType.LOCAL_HOST_FALLBACK.value)
+
                 execution_details = {
                     "adapter": tool_id,
                     "status": real_status,
@@ -713,6 +725,9 @@ class AgentLoop:
                     "duration_ms": obs.duration_ms,
                     "observation": obs.observation,
                     "artifacts": obs.artifacts,
+                    "execution_plane": obs_exec_plane or "unknown",
+                    "fallback_notice": obs_fallback_notice,
+                    "local_fallback": obs_local_fallback,
                 }
             except Exception as e:
                 logger.error(f"Error executing adapter {tool_id}: {e}", exc_info=True)
@@ -764,14 +779,32 @@ class AgentLoop:
         }
 
         # Step provenance tracking for execution
+        exec_plane = execution_details.get("execution_plane")
+        fallback_notice = execution_details.get("fallback_notice")
+        is_local_fallback = bool(
+            execution_details.get("local_fallback")
+            or exec_plane == ExecutionPlaneType.LOCAL_HOST_FALLBACK.value
+            or exec_plane == "local_host_fallback"
+            or fallback_notice
+        )
+        if is_local_fallback:
+            exec_plane = ExecutionPlaneType.LOCAL_HOST_FALLBACK.value
+            fallback_notice = fallback_notice or FALLBACK_NOTICE_TEXT
+
         step_prov["execution"] = StepProvenance(
             stage="execution",
             handled_by=tool_id,
-            runtime="kali_sandbox" if (tool_id == "kali.exec.v1" or adapter_registry.get(tool_id)) else "supervisor",
+            runtime="local_host" if is_local_fallback else ("kali_sandbox" if (tool_id == "kali.exec.v1" or adapter_registry.get(tool_id)) else "supervisor"),
             is_custom_model=False,
-            is_fallback=False,
+            is_fallback=is_local_fallback,
             executed=True,
-            details={"exit_code": exit_code, "adapter": tool_id, "duration_ms": execution_details.get("duration_ms", 0)},
+            details={
+                "exit_code": exit_code,
+                "adapter": tool_id,
+                "duration_ms": execution_details.get("duration_ms", 0),
+                "execution_plane": exec_plane or ("local_host_fallback" if is_local_fallback else "kali_sandbox"),
+                "fallback_notice": fallback_notice,
+            },
         ).to_dict()
 
         # Record exact 20-field event row in SQLite
@@ -793,6 +826,9 @@ class AgentLoop:
             screenshots=[],
             network_context={
                 "ip": "127.0.0.1",
+                "execution_plane": exec_plane or ("local_host_fallback" if is_local_fallback else "unknown"),
+                "fallback_notice": fallback_notice,
+                "local_fallback": is_local_fallback,
                 "model_id": active_model_info.get("model_id"),
                 "model_role": active_model_info.get("role"),
                 "model_server": self.llama_client.base_url,
@@ -841,12 +877,17 @@ class AgentLoop:
                 stderr=stderr_output or "",
                 observation=execution_details.get("observation"),
                 duration_ms=round((time.time() - t0) * 1000, 2),
+                execution_plane=exec_plane,
+                fallback_notice=fallback_notice,
             )
             if synthesis.get("reply"):
                 reply_text = synthesis["reply"]
             execution_details["synthesis"] = synthesis
         except Exception as e:
             logger.warning(f"Synthesis error: {e}", exc_info=True)
+
+        if is_local_fallback and not reply_text.startswith("> ⚠️"):
+            reply_text = f"> ⚠️ **{fallback_notice}**\n\n{reply_text}"
 
         return {
             "session_id": session_id,
@@ -857,6 +898,9 @@ class AgentLoop:
             "typed_invocation": typed_invocation,
             "reply": reply_text,
             "synthesis": execution_details.get("synthesis"),
+            "execution_plane": exec_plane,
+            "fallback_notice": fallback_notice,
+            "local_fallback": is_local_fallback,
             "tool_executed": {
                 "id": tool_id,
                 "version": tool_version,
