@@ -145,7 +145,7 @@ The Orchestrator implements an autonomous **Observer-Critic-Recovery** loop augm
    - Scope-gated: Out-of-scope targets are strictly blocked (`blocked_out_of_scope`).
    - Dynamically updates finding confidence (+0.2 on verified, -0.4 on refuted).
 7. **Critic & Self-Healing Recovery (`critic.py`, `recovery_agent.py`)**: Evaluates results against success criteria and triggers compensatory recovery paths without crashing the graph.
-8. **Honest Synthesis (`claude_synthesis.py`)**: If execution encounters failure, the agent emits an explicit failure badge (`❌ Execution Failed`) and accurately explains the error rather than inventing a successful result or claiming "Audit Complete".
+8. **Honest Synthesis (`reporter_templates.py`)**: Deterministic formatting engine (aliased by `claude_synthesis.py` for backward compatibility). If execution encounters failure, the agent emits an explicit failure badge (`❌ Execution Failed`) and accurately explains the error rather than inventing a successful result or claiming "Audit Complete".
 
 ---
 

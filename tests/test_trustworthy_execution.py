@@ -19,13 +19,14 @@ import pytest
 
 from events.db import init_db
 from orchestrator.agent import AgentLoop
-from orchestrator.claude_synthesis import (
+from orchestrator.reporter_templates import (
     synthesize_agent_response,
     _synthesize_nmap_scan,
     _synthesize_web_audit,
     _synthesize_domain_recon,
     _synthesize_generic_execution,
 )
+import orchestrator.claude_synthesis as claude_synthesis_alias
 from orchestrator.dag_controller import DAGController, EvidenceContext
 from orchestrator.evidence_store import EvidenceStore, Finding
 from orchestrator.finding_verifier import FindingVerifier
@@ -179,6 +180,29 @@ class TestHonestSynthesisReporting:
         assert "❌ Domain Reconnaissance Failed" in synth["reply"]
         assert synth["result"]["status"] == "failed"
         assert "Reconnaissance Failed" in synth["result"]["security_posture"]
+
+    def test_reporter_templates_alias_backward_compatibility(self):
+        """Verifies that orchestrator.claude_synthesis is a backward-compatible alias of reporter_templates."""
+        # Both modules should expose the same synthesis functions
+        assert claude_synthesis_alias.synthesize_agent_response is synthesize_agent_response
+        assert claude_synthesis_alias._synthesize_nmap_scan is _synthesize_nmap_scan
+        assert claude_synthesis_alias._synthesize_web_audit is _synthesize_web_audit
+        assert claude_synthesis_alias._synthesize_domain_recon is _synthesize_domain_recon
+        assert claude_synthesis_alias._synthesize_generic_execution is _synthesize_generic_execution
+
+        # Direct call through alias should produce deterministic output
+        alias_res = claude_synthesis_alias.synthesize_agent_response(
+            user_goal="Test alias",
+            tool_id="shell.run.v1",
+            tool_name="Shell",
+            inputs={"command": "whoami"},
+            exit_code=0,
+            stdout="hp\n",
+            duration_ms=10.0,
+        )
+        assert alias_res["process"]["status"] == "success"
+        assert alias_res["process"]["status_label"] == "Exit 0"
+        assert "Command Execution Completed" in alias_res["reply"]
 
 
 class TestDAGExecutionTrustworthiness:

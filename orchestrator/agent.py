@@ -51,7 +51,7 @@ from orchestrator.intent_classifier import (
 )
 from orchestrator.planner import planner, Planner
 
-from orchestrator.claude_synthesis import synthesize_agent_response
+from orchestrator.reporter_templates import synthesize_agent_response
 
 logger = logging.getLogger("orchestrator.agent")
 

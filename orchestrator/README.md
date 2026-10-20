@@ -64,7 +64,7 @@ The `/orchestrator` subsystem is the central nervous system of Kairo. Implemente
 │  1. Observer (observer.py): Extracts structured ObservationFacts       │
 │  2. Critic (critic.py): Evaluates success vs failure criteria          │
 │  3. Recovery Agent (recovery_agent.py): Proposes compensatory actions  │
-│  4. Honest Synthesis (claude_synthesis.py): Emits failure badges       │
+│  4. Honest Synthesis (reporter_templates.py): Emits failure badges     │
 └───────────────────────────────────┬────────────────────────────────────┘
                                     │
                                     ▼
@@ -89,7 +89,7 @@ The `/orchestrator` subsystem is the central nervous system of Kairo. Implemente
 | [`finding_verifier.py`](finding_verifier.py) | Active live finding verification engine executing scope-checked TCP socket handshakes, HTTP/HTTPS banner inspection, and dynamic confidence updates (+0.2/-0.4). |
 | [`intent_classifier.py`](intent_classifier.py) | Dynamic multi-class intent classifier (`question`, `plan_only`, `tool_request`, `task_request`) with extracted entities and provenance metadata. |
 | [`model_integration.py`](model_integration.py) | Dual-model local routing orchestrator managing custom primary weights and local fallback inference with 6-tuple audit provenance. |
-| [`claude_synthesis.py`](claude_synthesis.py) | Honest Anthropic Claude-style response synthesizer with failure badging (`❌ Execution Failed`) and truthful error reporting. |
+| [`reporter_templates.py`](reporter_templates.py) | Deterministic, zero-hallucination agent response formatting engine with truthful failure badging (`❌ Execution Failed`), simulation warnings, and reachability status (aliased by `claude_synthesis.py` for backward compatibility). |
 | [`planner.py`](planner.py) | Autonomous DAG task planner. Validates dependency structures, prevents cycles, and orchestrates multi-step penetration operations. |
 | [`observer.py`](observer.py) | Telemetry observer parsing raw tool stdout/stderr into structured `ObservationFact` entities (open ports, CVEs, hosts). |
 | [`critic.py`](critic.py) | Evaluation critic verifying task exit codes, regex success signals, and hallucination indicators. |
