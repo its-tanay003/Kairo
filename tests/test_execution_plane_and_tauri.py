@@ -129,6 +129,59 @@ class TestKaliExecutionPlaneDetection(unittest.TestCase):
             self.assertEqual(res["fallback_notice"], "Ran directly on this machine — no isolated Kali worker was available.")
             self.assertTrue(res["local_fallback"])
 
+    def test_execute_linux_native_records_audit_event_when_db_provided(self):
+        """
+        Verifies that _execute_linux_native creates an authoritative SQLite audit Event
+        explicitly tagged with execution_plane: 'local_host_fallback' when db_path is provided.
+        """
+        from unittest.mock import patch, MagicMock
+        from events.db import init_db
+        import sqlite3
+
+        temp_db = ROOT_DIR / "temp_native_fallback_test.db"
+        try:
+            init_db(temp_db)
+            connector = KaliWorkerConnector()
+            with patch("subprocess.run") as mock_run:
+                mock_proc = MagicMock()
+                mock_proc.returncode = 0
+                mock_proc.stdout = "native fallback test output"
+                mock_proc.stderr = ""
+                mock_run.return_value = mock_proc
+
+                res = connector._execute_linux_native(
+                    task_id="task_native_audit_01",
+                    command="whoami",
+                    args=[],
+                    cwd="/tmp",
+                    timeout_ms=5000,
+                    session_id="sess_native_audit_01",
+                    db_path=temp_db,
+                    tool_id="kali.exec.v1",
+                )
+
+                self.assertEqual(res["execution_plane"], "local_host_fallback")
+                self.assertEqual(res["fallback_notice"], "Ran directly on this machine — no isolated Kali worker was available.")
+                self.assertTrue(res["local_fallback"])
+                self.assertIn("Ran directly on this machine — no isolated Kali worker was available.", res["result_summary"])
+
+                conn = sqlite3.connect(temp_db)
+                row = conn.execute("SELECT network_context, result_summary FROM events WHERE task_id = 'task_native_audit_01'").fetchone()
+                conn.close()
+
+                self.assertIsNotNone(row)
+                net_ctx = json.loads(row[0])
+                self.assertEqual(net_ctx["execution_plane"], "local_host_fallback")
+                self.assertEqual(net_ctx["fallback_notice"], "Ran directly on this machine — no isolated Kali worker was available.")
+                self.assertTrue(net_ctx["local_fallback"])
+                self.assertIn("Ran directly on this machine — no isolated Kali worker was available.", row[1])
+        finally:
+            if temp_db.exists():
+                try:
+                    temp_db.unlink()
+                except Exception:
+                    pass
+
     def test_claude_synthesis_surfaces_fallback_notice_in_reply_and_tool_card(self):
         """
         Verifies that synthesize_agent_response injects the visible warning banner in chat reply

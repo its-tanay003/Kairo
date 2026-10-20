@@ -12,6 +12,8 @@ import json
 import re
 from typing import Any, Dict, List, Optional
 
+from orchestrator.kali_connector import FALLBACK_NOTICE_TEXT
+
 
 def synthesize_agent_response(
     user_goal: str,
@@ -157,11 +159,11 @@ def synthesize_agent_response(
         if is_fallback:
             notice_text = fallback_notice or (
                 observation.get("fallback_notice") if isinstance(observation, dict) else None
-            ) or "Ran directly on this machine — no isolated Kali worker was available."
+            ) or FALLBACK_NOTICE_TEXT
 
             # Prepend visible plain-language notice in the chat reply markdown
             notice_banner = f"> ⚠️ **{notice_text}**\n\n"
-            if not res.get("reply", "").startswith("> ⚠️"):
+            if notice_text not in res.get("reply", ""):
                 res["reply"] = notice_banner + res.get("reply", "")
 
             # Attach to process metadata for tool card UI

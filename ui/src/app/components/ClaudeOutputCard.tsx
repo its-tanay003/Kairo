@@ -1142,6 +1142,27 @@ export default function ClaudeOutputCard({
       {/* 5. The Result: Executive Synthesis & Human-Friendly Explanation */}
       {text && (
         <div className="claude-result-body">
+          {isLocalHostFallback && !text.includes(fallbackNoticeText) && (
+            <div
+              className="claude-fallback-chat-notice"
+              style={{
+                display: "flex",
+                alignItems: "center",
+                gap: "8px",
+                padding: "8px 12px",
+                marginBottom: "12px",
+                backgroundColor: "rgba(245, 158, 11, 0.12)",
+                borderRadius: "6px",
+                border: "1px solid rgba(245, 158, 11, 0.3)",
+                color: "#fbbf24",
+                fontSize: "12px",
+                fontWeight: 600,
+              }}
+            >
+              <span>⚠️</span>
+              <span>{fallbackNoticeText}</span>
+            </div>
+          )}
           <div className="claude-markdown-prose">
             {/* Render plain text or simple markdown formatting */}
             <MarkdownRenderer content={text} />

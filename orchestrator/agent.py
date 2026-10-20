@@ -587,20 +587,27 @@ class AgentLoop:
             recorded_cmd = cmd_str
             real_status = "timeout" if vm_res.get("timed_out") else ("failed" if exit_code != 0 else "success")
             status_str = "TIMED OUT" if vm_res.get("timed_out") else (f"CAP VIOLATION ({vm_res.get('violation_reason')})" if vm_res.get("resource_limit_exceeded") else f"exit {exit_code}")
-            reply_text = f"Kali Sandbox [kali.exec.v1] completed: `{cmd_str}` ({status_str}) in {vm_res.get('duration_ms', 0)}ms"
-            result_summary = f"Kali Sandbox executed `{cmd_str}` -> exit {exit_code}"
-            if vm_res.get("rolled_back"):
-                result_summary += " [VM Rolled Back]"
+            exec_plane = vm_res.get("execution_plane", "unknown")
+            fallback_notice = vm_res.get("fallback_notice")
+            local_fallback = bool(vm_res.get("local_fallback", False) or exec_plane == ExecutionPlaneType.LOCAL_HOST_FALLBACK.value)
+
+            if local_fallback:
+                fallback_notice = fallback_notice or FALLBACK_NOTICE_TEXT
+                reply_text = f"Local Host Fallback [kali.exec.v1] completed: `{cmd_str}` ({status_str}) in {vm_res.get('duration_ms', 0)}ms"
+                result_summary = f"[{FALLBACK_NOTICE_TEXT}] Executed `{cmd_str}` on local host fallback -> exit {exit_code}"
+                actor = "orchestrator:host_fallback:kali.exec.v1"
+            else:
+                reply_text = f"Kali Sandbox [kali.exec.v1] completed: `{cmd_str}` ({status_str}) in {vm_res.get('duration_ms', 0)}ms"
+                result_summary = f"Kali Sandbox executed `{cmd_str}` -> exit {exit_code}"
+                if vm_res.get("rolled_back"):
+                    result_summary += " [VM Rolled Back]"
+                actor = "orchestrator:sandbox:kali.exec.v1"
 
             event_artifact_refs = [f"sha256:{a.get('sha256')}:{a.get('filename')}" for a in vm_res.get("artifacts", [])]
             if vm_res.get("snapshot_name"):
                 event_artifact_refs.append(f"snapshot://{vm_res.get('snapshot_name')}")
             if vm_res.get("rolled_back"):
                 event_artifact_refs.append(f"rollback://{vm_res.get('rollback_info', {}).get('snapshot_restored', 'kairo_worker_ready')}")
-
-            exec_plane = vm_res.get("execution_plane", "unknown")
-            fallback_notice = vm_res.get("fallback_notice")
-            local_fallback = bool(vm_res.get("local_fallback", False) or exec_plane == ExecutionPlaneType.LOCAL_HOST_FALLBACK.value)
 
             execution_details = {
                 "adapter": "kali.exec.v1",
@@ -627,7 +634,6 @@ class AgentLoop:
                 "violation_reason": vm_res.get("violation_reason"),
                 "artifacts": vm_res.get("artifacts", []),
             }
-            actor = "orchestrator:sandbox:kali.exec.v1"
 
         elif tool_id == "hello_world":
             greet_target = requested_args.get("target") or requested_args.get("input") or "World"
@@ -835,6 +841,7 @@ class AgentLoop:
                 "duration_ms": execution_details.get("duration_ms", 0),
                 "execution_plane": exec_plane or ("simulated_mock" if is_simulated else ("local_host_fallback" if is_local_fallback else "kali_sandbox")),
                 "fallback_notice": fallback_notice,
+                "local_fallback": is_local_fallback,
                 "is_simulated": is_simulated,
                 "simulation_notice": sim_notice,
             },
@@ -842,6 +849,8 @@ class AgentLoop:
 
         if is_simulated and not result_summary.startswith("[SIMULATED"):
             result_summary = f"{sim_notice} {result_summary}"
+        elif is_local_fallback and not result_summary.startswith(f"[{FALLBACK_NOTICE_TEXT}]") and not result_summary.startswith("[HOST FALLBACK]"):
+            result_summary = f"[{FALLBACK_NOTICE_TEXT}] {result_summary}"
 
         # Record exact 20-field event row in SQLite
         event = Event.create(

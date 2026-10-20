@@ -45,7 +45,7 @@ from events.db import (
 )
 from orchestrator.adapters.registry import adapter_registry
 from orchestrator.auth import auth_manager
-from orchestrator.kali_connector import ExecutionPlaneType, SIMULATION_NOTICE_TEXT
+from orchestrator.kali_connector import ExecutionPlaneType, FALLBACK_NOTICE_TEXT, SIMULATION_NOTICE_TEXT
 from orchestrator.process_supervisor import ProcessResult, ProcessSupervisor, get_supervisor
 from orchestrator.validation import BROAD_EXECUTION_TOOLS, is_workflow_approved, validate_tool_arguments
 from orchestrator.vm_manager import VMManager, get_vm_manager
@@ -78,6 +78,8 @@ class ExecutionResult:
     is_simulated: bool = False
     simulation_notice: Optional[str] = None
     execution_plane: Optional[str] = None
+    local_fallback: bool = False
+    fallback_notice: Optional[str] = None
 
     def to_dict(self) -> Dict[str, Any]:
         return asdict(self)
@@ -511,14 +513,18 @@ class ExecutionGateway:
                     simulation_notice = SIMULATION_NOTICE_TEXT
                 if is_simulated:
                     execution_plane = ExecutionPlaneType.SIMULATED_MOCK.value
+                elif local_fallback:
+                    execution_plane = ExecutionPlaneType.LOCAL_HOST_FALLBACK.value
+                    if not fallback_notice:
+                        fallback_notice = FALLBACK_NOTICE_TEXT
 
         except Exception as exc:
             logger.exception(f"[ExecutionGateway] Unhandled exception while executing '{tool_id}': {exc}")
             exit_code = 1
             stderr_output = f"Execution exception: {str(exc)}"
             observation = {"error": str(exc), "exception": True}
-            execution_plane = "local_host_fallback"
-            fallback_notice = "Ran directly on this machine — no isolated Kali worker was available."
+            execution_plane = ExecutionPlaneType.LOCAL_HOST_FALLBACK.value
+            fallback_notice = FALLBACK_NOTICE_TEXT
             local_fallback = True
 
         duration_ms = round((time.time() - t0) * 1000, 2)
@@ -549,8 +555,8 @@ class ExecutionGateway:
                 "plan_id": plan_id,
                 "node_id": node_id,
                 "authorized": True,
-                "execution_plane": execution_plane or ("local_host_fallback" if local_fallback else "unknown"),
-                "fallback_notice": fallback_notice,
+                "execution_plane": execution_plane or (ExecutionPlaneType.LOCAL_HOST_FALLBACK.value if local_fallback else "unknown"),
+                "fallback_notice": fallback_notice or (FALLBACK_NOTICE_TEXT if local_fallback else None),
                 "local_fallback": local_fallback,
                 "is_simulated": is_simulated,
                 "simulation_notice": simulation_notice,
@@ -558,7 +564,11 @@ class ExecutionGateway:
             result_summary=(
                 f"{SIMULATION_NOTICE_TEXT} Executed {tool_id} -> exit {exit_code} ({real_status})"
                 if is_simulated
-                else f"Executed {tool_id} -> exit {exit_code} ({real_status})"
+                else (
+                    f"[{FALLBACK_NOTICE_TEXT}] Executed {tool_id} -> exit {exit_code} ({real_status})"
+                    if local_fallback
+                    else f"Executed {tool_id} -> exit {exit_code} ({real_status})"
+                )
             ),
             confidence=1.0 if exit_code == 0 else 0.0,
             parent_event=parent_event,
@@ -585,7 +595,9 @@ class ExecutionGateway:
             actor=actor,
             is_simulated=is_simulated,
             simulation_notice=simulation_notice,
-            execution_plane=execution_plane,
+            execution_plane=execution_plane or (ExecutionPlaneType.LOCAL_HOST_FALLBACK.value if local_fallback else None),
+            local_fallback=local_fallback,
+            fallback_notice=fallback_notice or (FALLBACK_NOTICE_TEXT if local_fallback else None),
         )
 
     def authorize_scope_modification(

@@ -442,6 +442,9 @@ class KaliWorkerConnector:
         timeout_ms: int = 30000,
         resource_limits: Optional[Dict[str, Any]] = None,
         artifact_dir: Optional[str] = None,
+        session_id: Optional[str] = None,
+        db_path: Optional[str] = None,
+        **kwargs: Any,
     ) -> Dict[str, Any]:
         """
         Transparently executes a command on the detected execution plane.
@@ -484,11 +487,17 @@ class KaliWorkerConnector:
         if info.plane_type == ExecutionPlaneType.WINDOWS_WSL2:
             return self._execute_wsl2(task_id, command, args, cwd, timeout_ms, info)
         elif info.plane_type in (ExecutionPlaneType.LINUX_NATIVE, ExecutionPlaneType.LOCAL_HOST_FALLBACK):
-            return self._execute_linux_native(task_id, command, args, cwd, timeout_ms)
+            return self._execute_linux_native(
+                task_id, command, args, cwd, timeout_ms,
+                session_id=session_id, db_path=db_path, tool_id=tool_id, **kwargs
+            )
         elif info.plane_type == ExecutionPlaneType.MACOS_VIRTUALIZATION:
             return self._execute_macos_vf(task_id, command, args, cwd, timeout_ms, info)
         else:
-            return self._execute_fallback_host(task_id, command, args, cwd, timeout_ms)
+            return self._execute_fallback_host(
+                task_id, command, args, cwd, timeout_ms,
+                session_id=session_id, db_path=db_path, tool_id=tool_id, **kwargs
+            )
 
     def _execute_wsl2(
         self,
@@ -593,11 +602,20 @@ class KaliWorkerConnector:
         self,
         task_id: str,
         command: str,
-        args: List[str],
-        cwd: str,
-        timeout_ms: int,
+        args: List[str] = None,
+        cwd: str = ".",
+        timeout_ms: int = 30000,
+        session_id: Optional[str] = None,
+        db_path: Optional[str] = None,
+        tool_id: Optional[str] = None,
+        **kwargs: Any,
     ) -> Dict[str, Any]:
-        """Executes natively on Linux host."""
+        """Executes natively on Linux host when no isolated Kali VM/worker is reachable."""
+        logger.warning(
+            "[HOST FALLBACK] No isolated Kali VM/worker available for task '%s'. Executing directly on local host. Notice: %s",
+            task_id,
+            FALLBACK_NOTICE_TEXT,
+        )
         t0 = time.perf_counter()
         full_cmd = [command] + args
         work_dir = cwd if os.path.exists(cwd) else None
@@ -611,7 +629,7 @@ class KaliWorkerConnector:
                 check=False,
             )
             dur_ms = round((time.perf_counter() - t0) * 1000, 2)
-            return {
+            result = {
                 "task_id": task_id,
                 "status": "success" if proc.returncode == 0 else "error",
                 "exit_code": proc.returncode,
@@ -626,13 +644,14 @@ class KaliWorkerConnector:
                 "artifacts": [],
             }
         except subprocess.TimeoutExpired:
-            return {
+            dur_ms = round((time.perf_counter() - t0) * 1000, 2)
+            result = {
                 "task_id": task_id,
                 "status": "timeout",
                 "exit_code": -1,
                 "stdout": "",
                 "stderr": f"Command timed out after {timeout_ms}ms",
-                "duration_ms": round((time.perf_counter() - t0) * 1000, 2),
+                "duration_ms": dur_ms,
                 "execution_plane": ExecutionPlaneType.LOCAL_HOST_FALLBACK.value,
                 "backend": "Local Host Fallback",
                 "fallback_notice": FALLBACK_NOTICE_TEXT,
@@ -641,13 +660,14 @@ class KaliWorkerConnector:
                 "artifacts": [],
             }
         except Exception as e:
-            return {
+            dur_ms = round((time.perf_counter() - t0) * 1000, 2)
+            result = {
                 "task_id": task_id,
                 "status": "error",
                 "exit_code": -1,
                 "stdout": "",
                 "stderr": str(e),
-                "duration_ms": round((time.perf_counter() - t0) * 1000, 2),
+                "duration_ms": dur_ms,
                 "execution_plane": ExecutionPlaneType.LOCAL_HOST_FALLBACK.value,
                 "backend": "Local Host Fallback",
                 "fallback_notice": FALLBACK_NOTICE_TEXT,
@@ -655,6 +675,41 @@ class KaliWorkerConnector:
                 "timed_out": False,
                 "artifacts": [],
             }
+
+        summary = f"[{FALLBACK_NOTICE_TEXT}] Executed `{command}` on local host fallback -> exit {result.get('exit_code')}"
+        result["result_summary"] = summary
+
+        # Tag and record authoritative audit event if DB is available
+        if db_path or session_id:
+            try:
+                from events.db import Event, insert_event
+                audit_event = Event.create(
+                    session_id=session_id or "local_host_fallback_session",
+                    task_id=task_id,
+                    actor="orchestrator:kali_connector:local_host_fallback",
+                    tool_id=tool_id or f"host.{command}",
+                    tool_version="1.0.0",
+                    requested_args={"command": command, "args": args, "cwd": cwd},
+                    normalized_args={"command": command, "args": args, "cwd": cwd},
+                    process_id=os.getpid(),
+                    exit_code=result.get("exit_code", -1),
+                    stdout_ref=f"inline://{result.get('stdout', '')[:500]}" if result.get("stdout") else None,
+                    stderr_ref=f"inline://{result.get('stderr', '')[:500]}" if result.get("stderr") else None,
+                    network_context={
+                        "command": command,
+                        "args": args,
+                        "execution_plane": ExecutionPlaneType.LOCAL_HOST_FALLBACK.value,
+                        "fallback_notice": FALLBACK_NOTICE_TEXT,
+                        "local_fallback": True,
+                    },
+                    result_summary=f"[{FALLBACK_NOTICE_TEXT}] Executed `{command}` on local host fallback -> exit {result.get('exit_code')}",
+                )
+                insert_event(audit_event, db_path=db_path)
+                result["event_id"] = audit_event.id
+            except Exception as db_err:
+                logger.debug("Local host fallback audit event not persisted to DB: %s", db_err)
+
+        return result
 
     def _execute_macos_vf(
         self,
@@ -716,11 +771,20 @@ class KaliWorkerConnector:
         self,
         task_id: str,
         command: str,
-        args: List[str],
-        cwd: str,
-        timeout_ms: int,
+        args: List[str] = None,
+        cwd: str = ".",
+        timeout_ms: int = 30000,
+        session_id: Optional[str] = None,
+        db_path: Optional[str] = None,
+        tool_id: Optional[str] = None,
+        **kwargs: Any,
     ) -> Dict[str, Any]:
         """Fallback direct host execution when no VM/WSL is reachable."""
+        logger.warning(
+            "[HOST FALLBACK] No isolated VM/WSL available for task '%s'. Executing directly on host machine: %s",
+            task_id,
+            FALLBACK_NOTICE_TEXT,
+        )
         t0 = time.perf_counter()
         try:
             full_cmd = [command] + args
@@ -731,7 +795,7 @@ class KaliWorkerConnector:
                 timeout=timeout_ms / 1000.0,
                 check=False,
             )
-            return {
+            result = {
                 "task_id": task_id,
                 "status": "success" if proc.returncode == 0 else "error",
                 "exit_code": proc.returncode,
@@ -744,9 +808,10 @@ class KaliWorkerConnector:
                 "local_fallback": True,
                 "timed_out": False,
                 "artifacts": [],
+                "result_summary": f"[{FALLBACK_NOTICE_TEXT}] Executed `{command}` on direct host fallback -> exit {proc.returncode}",
             }
         except Exception as e:
-            return {
+            result = {
                 "task_id": task_id,
                 "status": "error",
                 "exit_code": -1,
@@ -759,7 +824,40 @@ class KaliWorkerConnector:
                 "local_fallback": True,
                 "timed_out": False,
                 "artifacts": [],
+                "result_summary": f"[{FALLBACK_NOTICE_TEXT}] Executed `{command}` on direct host fallback -> exit -1 (error)",
             }
+
+        # Tag and record authoritative audit event if DB is available
+        if db_path or session_id:
+            try:
+                from events.db import Event, insert_event
+                audit_event = Event.create(
+                    session_id=session_id or "local_host_fallback_session",
+                    task_id=task_id,
+                    actor="orchestrator:kali_connector:direct_host_fallback",
+                    tool_id=tool_id or f"host.{command}",
+                    tool_version="1.0.0",
+                    requested_args={"command": command, "args": args, "cwd": cwd},
+                    normalized_args={"command": command, "args": args, "cwd": cwd},
+                    process_id=os.getpid(),
+                    exit_code=result.get("exit_code", -1),
+                    stdout_ref=f"inline://{result.get('stdout', '')[:500]}" if result.get("stdout") else None,
+                    stderr_ref=f"inline://{result.get('stderr', '')[:500]}" if result.get("stderr") else None,
+                    network_context={
+                        "command": command,
+                        "args": args,
+                        "execution_plane": ExecutionPlaneType.LOCAL_HOST_FALLBACK.value,
+                        "fallback_notice": FALLBACK_NOTICE_TEXT,
+                        "local_fallback": True,
+                    },
+                    result_summary=f"[{FALLBACK_NOTICE_TEXT}] Executed `{command}` on direct host fallback -> exit {result.get('exit_code')}",
+                )
+                insert_event(audit_event, db_path=db_path)
+                result["event_id"] = audit_event.id
+            except Exception as db_err:
+                logger.debug("Direct host fallback audit event not persisted to DB: %s", db_err)
+
+        return result
 
 
 # Global singleton instance
