@@ -9,13 +9,13 @@
 
 1. [Session Gateway WebSocket API (`ws://localhost:4000`)](#1-session-gateway-websocket-api-wslocalhost4000)
 2. [Orchestrator REST API (`http://localhost:8000`)](#2-orchestrator-rest-api-httplocalhost8000)
-   - [2.1 Agent Execution & Lifecycle](#21-agent-execution--lifecycle)
-   - [2.2 DAG Planner & Graph Execution](#22-dag-planner--graph-execution)
+   - [2.1 Agent Execution, Intent Classification & Lifecycle](#21-agent-execution-intent-classification--lifecycle)
+   - [2.2 DAG Planner, Graph Execution & Prerequisite Evidence Gating](#22-dag-planner-graph-execution--prerequisite-evidence-gating)
    - [2.3 Tool Selection & Tool Memory](#23-tool-selection--tool-memory)
    - [2.4 Scope Contract Authorization Gate](#24-scope-contract-authorization-gate)
    - [2.5 Self-Healing Cognitive Loop (Observer, Critic, Recovery)](#25-self-healing-cognitive-loop-observer-critic-recovery)
-   - [2.6 Evidence Store, Finding Cards & Reports](#26-evidence-store-finding-cards--reports)
-   - [2.7 Model Center, Telemetry & Model Switching](#27-model-center-telemetry--model-switching)
+   - [2.6 Evidence Store, Finding Verification & Reports](#26-evidence-store-finding-verification--reports)
+   - [2.7 Model Center, Telemetry, Dual-Model Routing & Hot-Switching](#27-model-center-telemetry-dual-model-routing--hot-switching)
    - [2.8 Model Evolution Controller & Autonomous Policies](#28-model-evolution-controller--autonomous-policies)
    - [2.9 Dataset Curation & Model Training Pipeline](#29-dataset-curation--model-training-pipeline)
    - [2.10 Benchmark Leaderboard & Multi-Model Sweeps](#210-benchmark-leaderboard--multi-model-sweeps)
@@ -121,51 +121,96 @@ Emits cognitive reasoning traces in real time:
 
 #### `agent_response` (Agent Completion)
 
-Returned when the agent loop completes a thinking/execution turn:
+Returned when the agent loop completes a thinking/execution turn. Kairo enforces **Trustworthy Execution Results**: authentic exit codes (e.g. `1` or `127` on error, never synthesized `0`), deterministic reconstructed command lines (`command_line`), structured typed invocations (`typed_invocation`), and honest synthesis:
 
 ```json
 {
   "type": "agent_response",
-  "reply": "Network reconnaissance completed for target 192.168.1.50.",
+  "reply": "Network reconnaissance completed for target 192.168.1.50.\n\n### Discovered Open Ports\n- `22/tcp` (OpenSSH 8.9)\n- `80/tcp` (Apache httpd 2.4)",
   "taskId": "task_1791380123_abc",
   "tool": {
     "id": "nmap.scan.v1",
     "version": "1.0.0",
     "name": "Nmap Network Scanner"
   },
+  "command_line": "nmap -sV 192.168.1.50",
+  "typed_invocation": {
+    "tool": "nmap.scan.v1",
+    "version": "1.0.0",
+    "arguments": {
+      "target": "192.168.1.50",
+      "flags": "-sV"
+    }
+  },
   "execution": {
     "command": "nmap -sV 192.168.1.50",
+    "command_line": "nmap -sV 192.168.1.50",
     "exit_code": 0,
     "stdout": "PORT   STATE SERVICE VERSION\n22/tcp open  ssh     OpenSSH 8.9\n80/tcp open  http    Apache httpd 2.4",
-    "stderr": ""
+    "stderr": "",
+    "typed_invocation": {
+      "tool": "nmap.scan.v1",
+      "version": "1.0.0",
+      "arguments": {
+        "target": "192.168.1.50",
+        "flags": "-sV"
+      }
+    }
   },
   "eventId": 52
 }
 ```
 
+*Note on Honest Failure Reporting*: If an execution fails (e.g. host unreachable, tool missing, or non-zero exit code), Kairo surfaces an explicit failure badge (`❌ Execution Failed`), preserves the true exit code (e.g. `1` for socket error, `127` for unregistered tool), and explains the actual error rather than inventing a success summary or claiming "No vulnerabilities found".
+
 ---
 
 ## 2. Orchestrator REST API (`http://localhost:8000`)
 
-The FastAPI Orchestrator coordinates agent planning, process execution, model management, and forensic auditing.
+The FastAPI Orchestrator coordinates agent planning, process execution, model management, finding verification, and forensic auditing.
 
-### 2.1 Agent Execution & Lifecycle
+### 2.1 Agent Execution, Intent Classification & Lifecycle
 
-- `POST /run`: Trigger the agent loop for a user directive.
-- `GET /health`: Orchestrator health check, uptime, and database connection status.
-- `GET /tools`: Return all 27 registered ToolSpecs loaded from `registry/tools/`.
+- `POST /run`: Trigger the autonomous agent loop for a user directive. Accepts `{"message": str, "session_id": str, "prefer_llm": bool}`.
+- `POST /chat`: Unified conversational endpoint with dynamic intent classification. Automatically classifies directives, routes to local inference, executes tools when appropriate, and tracks full step provenance.
+- `POST /intent`: Standalone intent classifier endpoint. Analyzes user directives and returns:
+
+```json
+{
+  "intent": "task_request",
+  "confidence": 0.95,
+  "reasoning": "User requested an active network scan against a specific host",
+  "target": "192.168.1.50",
+  "extracted_entities": {
+    "target": "192.168.1.50",
+    "action": "scan"
+  },
+  "provenance": {
+    "step": "intent_classification",
+    "model": "rule_classifier",
+    "timestamp": "2026-10-20T10:30:00Z"
+  }
+}
+```
+
+- `GET /health`: Orchestrator health check, uptime, memory, and database connection status.
+- `GET /tools`: Return all registered ToolSpecs loaded from `registry/tools/`.
 
 ---
 
-### 2.2 DAG Planner & Graph Execution
+### 2.2 DAG Planner, Graph Execution & Prerequisite Evidence Gating
 
-- `POST /planner/decompose`: Decompose an operational goal into an ordered DAG plan.
-- `GET /planner/plans`: List all created DAG plans.
-- `GET /planner/plans/{plan_id}`: Retrieve graph nodes and dependency structure for a specific plan.
-- `GET /planner/plans/{plan_id}/ready`: Return all unblocked nodes ready for immediate execution.
-- `POST /planner/plans/{plan_id}/nodes/{node_id}/status`: Update node status (`READY`, `RUNNING`, `SUCCESS`, `FAILED`, `SKIPPED`).
-- `POST /planner/plans/{plan_id}/execute`: Execute all nodes in the DAG in topological order.
+- `POST /planner/decompose`: Decompose an operational goal into a validated Directed Acyclic Graph (DAG) plan with dependency tracking and topological ordering. Accepts `{"goal": str, "session_id": str, "prefer_llm": bool}`.
+- `GET /planner/plans`: List all created DAG plans across sessions.
+- `GET /planner/plans/{plan_id}`: Retrieve graph nodes, dependencies, and execution states for a specific plan.
+- `GET /planner/plans/{plan_id}/ready`: Return all unblocked nodes ready for immediate parallel or serial execution.
+- `POST /planner/plans/{plan_id}/nodes/{node_id}/status`: Update node status (`PENDING`, `READY`, `RUNNING`, `SUCCESS`, `FAILED`, `SKIPPED`).
+- `POST /planner/plans/{plan_id}/execute` or `POST /planner/plans/{plan_id}/run`: Execute all nodes in the DAG in strict topological order using the `DAGController`. Enforces:
+  - **Prerequisite Evidence Gating**: Subsequent dependent nodes (e.g. web scanners, brute-force tools) are executed only if prerequisite observations were confirmed (e.g. verified open HTTP ports).
+  - **Failure Containment**: If a node fails (`exit_code != 0`), observation ingestion skips the failed run to prevent polluting downstream context.
+  - **Recovery Lineage**: Failed nodes record compensatory `recovery_path` traces.
 - `POST /planner/plans/{plan_id}/nodes/{node_id}/execute`: Execute a single discrete node.
+- `POST /planner/run`: Decompose and immediately execute a multi-step DAG in a single API call.
 - `GET /planner/plans/{plan_id}/report`: Generate a structured report summarizing execution of the plan.
 
 ---
@@ -195,22 +240,73 @@ The FastAPI Orchestrator coordinates agent planning, process execution, model ma
 
 ---
 
-### 2.6 Evidence Store, Finding Cards & Reports
+### 2.6 Evidence Store, Finding Verification & Reports
 
-- `GET /evidence/findings`: List all verified security findings (CVEs, exposed services, misconfigurations).
-- `POST /evidence/findings`: Ingest a verified finding card with severity, CVSS, and reproduction steps.
+- `GET /evidence/findings`: List all security findings (CVEs, exposed services, misconfigurations).
+- `POST /evidence/findings`: Ingest a finding card with severity, CVSS, and reproduction steps.
 - `GET /evidence/findings/{finding_id}`: Retrieve full finding details and associated forensic artifacts.
 - `POST /evidence/ingest-plan/{plan_id}`: Automatically ingest all outputs and facts from a completed DAG plan into the evidence store.
 - `POST /evidence/reports/generate`: Generate an executive markdown or PDF audit report with causal recovery narratives.
 - `GET /evidence/artifacts`: List all stored forensic artifacts with MIME types and SHA-256 hashes.
 
+#### Active Finding Verification Engine (`FindingVerifier`)
+
+Kairo provides active, live verification of security findings through scope-gated probes:
+
+- `GET /findings`: Query findings across the active workspace with multi-attribute filtering:
+  - Query parameters: `status` (`verified`, `refuted`, `inconclusive`, `unverified`), `min_confidence` (`0.0`-`1.0`), `severity` (`info`, `low`, `medium`, `high`, `critical`), `limit`.
+- `GET /findings/{finding_id}`: Retrieve a single finding by ID, including verification state, timestamp, and probe latency:
+
+```json
+{
+  "id": "find_80_http_open",
+  "title": "Open Port 80/tcp (HTTP)",
+  "severity": "medium",
+  "confidence": 0.95,
+  "verified": true,
+  "verification_status": "verified",
+  "verification_details": "Connected to 192.168.1.50:80 in 14.2ms. HTTP banner: Apache/2.4.52",
+  "verified_at": "2026-10-20T10:32:00Z"
+}
+```
+
+- `POST /findings/{finding_id}/verify`: Trigger an active, live verification probe against the finding:
+  - **Scope Gate**: Probes are strictly checked against the HMAC `ScopeContract`. If the target is out of scope, the probe is rejected deterministically with status `"blocked_out_of_scope"`.
+  - **Live Verification Techniques**: Raw TCP socket connect handshake with microsecond latency measurement, HTTP/HTTPS banner interrogation, and service signature checks.
+  - **Confidence Adjustment**: Confirmed findings boost confidence by `+0.2` (capped at `1.0`); refuted findings penalize confidence by `-0.4` (floored at `0.0`).
+  - **Evidence Ingestion**: Emits an `AnalyticEvidence` record and logs the verification to the audit store.
+  - Response:
+
+    ```json
+    {
+      "finding_id": "find_80_http_open",
+      "verified": true,
+      "status": "verified",
+      "latency_ms": 14.2,
+      "evidence": "Connected to 192.168.1.50:80 in 14.2ms. HTTP banner: Apache/2.4.52",
+      "confidence": 0.95
+    }
+    ```
+
 ---
 
-### 2.7 Model Center, Telemetry & Model Switching
+### 2.7 Model Center, Telemetry, Dual-Model Routing & Hot-Switching
 
 - `GET /model-center`: Retrieve real-time VRAM, RAM, CPU utilization, active model ID, and latency telemetry.
-- `GET /api/models/active`: Retrieve current active language model configuration.
-- `POST /api/models/switch`: Hot-swap active model backend (e.g. `Qwen3-Coder-30B-A3B-Instruct` $\to$ `kairo-scale-2b`) without server restart.
+- `GET /models/status` & `GET /api/models/active`: Retrieve current active language model configuration, loaded model weights, parameters, and primary/fallback state.
+- `GET /models/benchmark`: Retrieve local model benchmark metrics, golden suite pass rates, and evaluation history.
+- `GET /models/memory`: Retrieve KV-cache memory usage and context window limits.
+- `GET /models/evolution`: Retrieve model evolution cycle progress and proposal states.
+- `POST /api/models/switch`: Hot-swap active model backend (e.g. `kairo-scale-1.5b-grpo` $\leftrightarrow$ `qwen2.5-coder-7b`) without server restart.
+
+#### Dual-Model Local Routing & Audit Provenance
+
+To guarantee deterministic autonomy while remaining strictly local and air-gapped:
+
+- **Primary Model**: Custom fine-tuned local weights trained on ToolSpec schemas (e.g. `kairo-scale-1.5b-grpo`).
+- **Local Fallback Model**: Secondary local model (e.g. `Qwen2.5-Coder-7B-Instruct`) automatically invoked if the primary encounter schema parsing errors.
+- **Audit 6-Tuple**: Every model response records a 6-tuple audit object in the execution trace:
+  `{"model_id": str, "version": str, "prompt_format": str, "adapter": str, "benchmark_score": float, "inference_source": "primary" | "fallback"}`.
 
 ---
 

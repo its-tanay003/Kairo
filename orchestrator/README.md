@@ -8,15 +8,22 @@ The `/orchestrator` subsystem is the central nervous system of Kairo. Implemente
 
 ```text
 ┌────────────────────────────────────────────────────────────────────────┐
-│                        FastAPI Server (/run, /events)                  │
+│                        FastAPI Server (/run, /chat, /events)           │
 │                               (server.py)                              │
 └───────────────────────────────────┬────────────────────────────────────┘
                                     │
                                     ▼
 ┌────────────────────────────────────────────────────────────────────────┐
-│                    Autonomous Planner (planner.py)                     │
-│  - Decomposes directives into a Directed Acyclic Graph (DAG)           │
-│  - Detects cycles, resolves dependencies, coordinates parallel tasks   │
+│               Intent Classifier & Provenance (intent_classifier.py)    │
+│  - Categorizes directives: question, plan_only, tool_request, task_req │
+│  - Extracts target entities and records step provenance metadata       │
+└───────────────────────────────────┬────────────────────────────────────┘
+                                    │
+                                    ▼
+┌────────────────────────────────────────────────────────────────────────┐
+│               Topological DAG Controller (dag_controller.py)           │
+│  - Prerequisite evidence gating (verifies open ports before web scans) │
+│  - Topological node execution & failure state containment              │
 └───────────────────────────────────┬────────────────────────────────────┘
                                     │
                                     ▼
@@ -38,6 +45,14 @@ The `/orchestrator` subsystem is the central nervous system of Kairo. Implemente
 │           Process Supervisor & VM Manager (process_supervisor.py)      │
 │  - Dispatches to Host Supervisor or Kali VM Worker (vm_manager.py)     │
 │  - Enforces hard memory/CPU caps, timeouts, and SIGKILL kill switch    │
+│  - Preserves authentic exit codes and command_line reconstruction      │
+└───────────────────────────────────┬────────────────────────────────────┘
+                                    │
+                                    ▼
+┌────────────────────────────────────────────────────────────────────────┐
+│             Active Finding Verification Engine (finding_verifier.py)   │
+│  - Scope-authorized TCP socket handshakes with latency measurement     │
+│  - HTTP/HTTPS service banner interrogation and confidence calibration  │
 └───────────────────────────────────┬────────────────────────────────────┘
                                     │
                                     ▼
@@ -46,7 +61,8 @@ The `/orchestrator` subsystem is the central nervous system of Kairo. Implemente
 │                                                                        │
 │  1. Observer (observer.py): Extracts structured ObservationFacts       │
 │  2. Critic (critic.py): Evaluates success vs failure criteria          │
-│  3. Recovery Agent (recovery_agent.py): Proposes compensatory actions   │
+│  3. Recovery Agent (recovery_agent.py): Proposes compensatory actions  │
+│  4. Honest Synthesis (claude_synthesis.py): Emits failure badges       │
 └───────────────────────────────────┬────────────────────────────────────┘
                                     │
                                     ▼
@@ -63,7 +79,13 @@ The `/orchestrator` subsystem is the central nervous system of Kairo. Implemente
 
 | Module | Purpose & Core Responsibilities |
 | :--- | :--- |
-| [`server.py`](server.py) | Main FastAPI application exposing REST and WebSocket endpoints for execution, process management, evidence, audit, and model evolution. |
+| [`server.py`](server.py) | Main FastAPI application exposing REST and WebSocket endpoints for execution, process management, findings, intent, audit, and model evolution. |
+| [`agent.py`](agent.py) | Autonomous agent execution loop coordinating intent classification, tool invocation, trustworthy execution result logging, and honest response synthesis. |
+| [`dag_controller.py`](dag_controller.py) | Topological DAG execution controller enforcing prerequisite evidence gating (e.g. blocking web scanning until HTTP port is confirmed), capability-aware tool selection, and recovery path lineage. |
+| [`finding_verifier.py`](finding_verifier.py) | Active live finding verification engine executing scope-checked TCP socket handshakes, HTTP/HTTPS banner inspection, and dynamic confidence updates (+0.2/-0.4). |
+| [`intent_classifier.py`](intent_classifier.py) | Dynamic multi-class intent classifier (`question`, `plan_only`, `tool_request`, `task_request`) with extracted entities and provenance metadata. |
+| [`model_integration.py`](model_integration.py) | Dual-model local routing orchestrator managing custom primary weights and local fallback inference with 6-tuple audit provenance. |
+| [`claude_synthesis.py`](claude_synthesis.py) | Honest Anthropic Claude-style response synthesizer with failure badging (`❌ Execution Failed`) and truthful error reporting. |
 | [`planner.py`](planner.py) | Autonomous DAG task planner. Validates dependency structures, prevents cycles, and orchestrates multi-step penetration operations. |
 | [`observer.py`](observer.py) | Telemetry observer parsing raw tool stdout/stderr into structured `ObservationFact` entities (open ports, CVEs, hosts). |
 | [`critic.py`](critic.py) | Evaluation critic verifying task exit codes, regex success signals, and hallucination indicators. |

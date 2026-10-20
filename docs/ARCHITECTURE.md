@@ -44,7 +44,7 @@ KAIRO is organized as a local-first, modular monorepo engineered for autonomous 
 
 ## 2. End-to-End Execution Lifecycle
 
-The lifecycle of an autonomous security directive follows a deterministic, 10-step sequence:
+The lifecycle of an autonomous security directive follows a deterministic sequence incorporating dynamic intent classification, DAG prerequisite gating, authentic execution telemetry, and active finding verification:
 
 ```mermaid
 sequenceDiagram
@@ -52,31 +52,40 @@ sequenceDiagram
     actor Operator as Security Operator (/ui)
     participant GW as Session Gateway (/gateway)
     participant ORCH as Orchestrator (/orchestrator)
-    participant PLAN as DAG Planner (/orchestrator/planner)
+    participant CLAS as Intent Classifier (intent_classifier.py)
+    participant DAG as DAG Controller (dag_controller.py)
     participant REG as Tool Registry (/registry)
     participant GATE as Scope Gate (HMAC-SHA256)
-    participant VM as Kali Worker (/vm)
+    participant VM as Kali Worker / Supervisor
+    participant VERIF as Finding Verifier (finding_verifier.py)
     participant EVT as SQLite Store (/events)
 
     Operator->>GW: WebSocket Handshake (ws://localhost:4000)
     GW-->>Operator: Handshake Acknowledged { sessionId: "sess_main_01", token }
     Operator->>GW: WS Send: { type: "chat", content: "Audit subnet 192.168.1.0/24" }
-    GW->>ORCH: HTTP POST /run { session_id, message }
-    ORCH->>PLAN: Decompose Goal into DAG Tasks
-    PLAN-->>ORCH: Validated Execution DAG (Topological Order)
+    GW->>ORCH: HTTP POST /chat { session_id, message }
+    ORCH->>CLAS: Classify Intent (question | plan_only | tool_request | task_request)
+    CLAS-->>ORCH: Intent Result + Extracted Entities + Provenance
+    ORCH->>DAG: Decompose Goal into Prerequisite-Gated DAG
+    DAG-->>ORCH: Validated Execution DAG (Topological Order)
     loop For Each Node in Execution Plan
-        ORCH->>REG: Resolve ToolSpec (e.g. nmap.scan.v1)
-        REG-->>ORCH: Tool Schema & Execution Constraints
-        ORCH->>GATE: Validate Target IP & Tool Tier vs Scope Contract
-        GATE-->>ORCH: Approved (Cryptographic HMAC Validated)
-        ORCH->>VM: Execute via Worker REST API (port 9999)
-        VM-->>ORCH: Telemetry (exit_code, stdout, stderr, pids, duration)
-        ORCH->>EVT: INSERT INTO events (20-column audit record)
-        EVT-->>ORCH: Confirmed event_id
+        DAG->>DAG: Verify Prerequisite Evidence (e.g. open port confirmed?)
+        DAG->>REG: Resolve ToolSpec (e.g. nmap.scan.v1)
+        REG-->>DAG: Tool Schema & Execution Constraints
+        DAG->>GATE: Validate Target IP & Tool Tier vs Scope Contract
+        GATE-->>DAG: Approved (Cryptographic HMAC Validated)
+        DAG->>VM: Execute via Worker API with Resource Caps
+        VM-->>DAG: Real Telemetry (authentic exit_code, stdout, stderr, duration)
+        alt If Security Finding Discovered
+            DAG->>VERIF: Live Active Verification Check (Socket Handshake / Banner Probe)
+            VERIF-->>DAG: Verification Status (verified | refuted | inconclusive)
+        end
+        DAG->>EVT: INSERT INTO events (20-column audit record with command_line & typed_invocation)
+        EVT-->>DAG: Confirmed event_id
         ORCH-->>GW: WS Event Notification { event, status }
         GW-->>Operator: WS Emit to Client (Live Terminal Stream & DAG Node Update)
     end
-    ORCH-->>GW: Complete Response { reply, artifacts, findings }
+    ORCH-->>GW: Complete Response { reply: honest_synthesis, artifacts, findings }
     GW-->>Operator: Final Agent Response & Claude Artifacts
 ```
 
@@ -112,12 +121,24 @@ The Session Gateway acts as a high-concurrency, stateful multiplexer between bro
 
 ## 5. Autonomous Orchestrator & Cognitive Loop (`/orchestrator`)
 
-The Orchestrator implements an autonomous **Observer-Critic-Recovery** loop:
+The Orchestrator implements an autonomous **Observer-Critic-Recovery** loop augmented by strict **Trustworthy Execution** principles, topological prerequisite gating, and live finding verification:
 
-1. **Observer Phase**: Inspects recent outputs, exit codes, and network artifacts from previous executions.
-2. **Evaluator & Tool Selector**: Matches goal criteria against declarative ToolSpecs using semantic affinity, environment compatibility, and historical reliability scoring.
-3. **Critic Phase**: Evaluates generated parameters against GBNF grammar rules and verifies compliance with the active cryptographic Scope Contract.
-4. **Self-Healing Recovery Agent**: If a tool fails (e.g. `nmap` timeout or port exhaustion), the recovery loop captures the failure narrative, updates the recovery path, and dynamically selects a fall-back adapter (e.g. `subfinder` or raw socket probe).
+1. **Intent Classification & Provenance (`intent_classifier.py`)**: Directives are classified upfront (`question`, `plan_only`, `tool_request`, `task_request`) with extracted target entities and explicit provenance logging.
+2. **Topological DAG Controller (`dag_controller.py`)**: Plans are constructed as Directed Acyclic Graphs with **Prerequisite Evidence Gating**. For example, web application scanners (`nikto.scan.v1`) or directory bruteforcers (`gobuster.dir.v1`) are blocked unless network reconnaissance nodes have verified an active HTTP/HTTPS listener on the target.
+3. **Evaluator & Tool Selector (`tool_selector.py`)**: Matches goal criteria against declarative ToolSpecs using semantic affinity, environment compatibility, and historical reliability scoring from the audit store.
+4. **Scope Contract Authorization Gate (`scope_contract.py`)**: HMAC-SHA256 signature verification validates target IPs, CIDR boundaries, and tool tiers before process dispatch.
+5. **Trustworthy Execution Plane (`agent.py`)**:
+   - **Authentic Exit Codes**: Real process return codes are strictly propagated (e.g. `1` for network timeout/socket error, `127` for unregistered tool, never synthesized `0`).
+   - **Deterministic CLI Command Line**: Exact shell invocation strings (`command_line`) are deterministically reconstructed.
+   - **Structured Typed Invocation**: The formal tool contract (`typed_invocation` with tool name, version, and typed arguments) is recorded for every step.
+   - **Failure Isolation**: If a node fails, observation ingestion ignores the failed run, preventing corrupted state from contaminating downstream planning.
+6. **Active Finding Verification Engine (`finding_verifier.py`)**:
+   - When security findings (e.g. open ports, banners, vulnerabilities) are recorded, the agent executes authorized live checks.
+   - Executes TCP socket connect handshakes with microsecond latency measurement, HTTP/HTTPS banner requests, and banner comparisons.
+   - Scope-gated: Out-of-scope targets are strictly blocked (`blocked_out_of_scope`).
+   - Dynamically updates finding confidence (+0.2 on verified, -0.4 on refuted).
+7. **Critic & Self-Healing Recovery (`critic.py`, `recovery_agent.py`)**: Evaluates results against success criteria and triggers compensatory recovery paths without crashing the graph.
+8. **Honest Synthesis (`claude_synthesis.py`)**: If execution encounters failure, the agent emits an explicit failure badge (`❌ Execution Failed`) and accurately explains the error rather than inventing a successful result or claiming "Audit Complete".
 
 ---
 
@@ -192,11 +213,16 @@ Kairo houses a dedicated ML training pipeline engineered specifically for Small 
 
 ---
 
-## 12. Autonomous Model Evolution & Failover Routing
+## 12. Autonomous Model Evolution & Dual-Model Local Routing
 
-Kairo continuously improves its own capabilities without human intervention:
+Kairo continuously improves its own capabilities and guarantees local air-gapped resilience:
 
 - **Evolution Controller (`orchestrator/model_evolution_controller.py`)**: Evaluates operational telemetry every 60s against [`orchestrator/evolution_policy.yaml`](file:///c:/New%20Volume%20(D)/dev/orchestrator/evolution_policy.yaml). Automatically triggers SFT training when $\ge 50$ new traces exist, scales parameter tiers upon accuracy plateaus, and rolls back if regression exceeds 2.5%.
+- **Dual-Model Local Routing (`orchestrator/agent.py`)**:
+  - Directs prompts first to the primary custom fine-tuned model (e.g. `kairo-scale-1.5b-grpo`).
+  - If schema formatting or parser errors occur, dynamically routes to the secondary local fallback model (e.g. `Qwen2.5-Coder-7B-Instruct`).
+  - Zero external cloud calls: All inferences execute strictly against local weights.
+  - Imbues every inference with an immutable 6-tuple audit signature (`model_id`, `version`, `prompt_format`, `adapter`, `benchmark_score`, `inference_source`).
 - **Failover Router (`orchestrator/failover_router.py`)**: High-availability inference router managing all model pairs in [`models.yaml`](file:///c:/New%20Volume%20(D)/dev/models.yaml). If a primary model encounters consecutive timeouts or schema errors, traffic seamlessly fails over to the designated fallback model.
 
 ---
@@ -213,10 +239,11 @@ Empirical verification relies on isolated local vulnerability targets:
 
 ## 14. Master Verification & Testing Architecture (`/tests`)
 
-A comprehensive **48-suite test harness** certifies every service boundary:
+A comprehensive **52-suite test harness** certifies every service boundary:
 
-- Conformance testing for all 27 ToolSpecs.
+- Conformance testing for all 27 ToolSpecs with 7-gate certification.
 - Subsystem integration for DAG planner, cognitive self-healing loop, and evidence store.
-- Cryptographic HMAC verification and boundary fuzzing.
+- Trustworthy execution testing: authentic exit codes, CLI reconstruction, finding verification, and DAG prerequisite isolation.
+- Cryptographic HMAC verification, Scope Contract CIDR boundaries, and tamper detection.
 - VirtualBox VM sandboxing and automated snapshot rollback.
-- Multi-client real-time synchronization and chaos testing.
+- Multi-client real-time synchronization, intent classification flows, and chaos testing.

@@ -1,6 +1,6 @@
 # /tests - Master Verification & Test Harness Suite
 
-The `/tests` directory contains Kairo's verification matrix comprising **48 comprehensive test suites**. The test harness validates formal JSON schemas, deterministic process supervision, cryptographic boundary enforcement, VM sandboxing, cognitive self-healing loops, multi-model failover routing, and reinforcement learning reward signals.
+The `/tests` directory contains Kairo's verification matrix comprising **52+ comprehensive test suites**. The test harness validates formal JSON schemas, deterministic process supervision, cryptographic boundary enforcement, VM sandboxing, cognitive self-healing loops, multi-model failover routing, and reinforcement learning reward signals.
 
 ---
 
@@ -19,6 +19,7 @@ The `/tests` directory contains Kairo's verification matrix comprising **48 comp
 
 | Test File | Focus & Verification Criteria |
 | :--- | :--- |
+| [`test_trustworthy_execution.py`](test_trustworthy_execution.py) | Authentic exit codes (`1` on runtime error, `127` on missing tool; never forged `0`), deterministic CLI command lines, structured typed invocations, honest failure synthesis, live finding verification, and DAG failure isolation. |
 | [`test_adapter.py`](test_adapter.py) | Process supervisor lifecycle for `shell.run.v1`: argument compilation, stdout/stderr capture, hard timeout enforcement, and SIGKILL termination. |
 | [`test_tool_adapters.py`](test_tool_adapters.py) | Core Tier 1 and Tier 2 adapters (Nmap, Gobuster, Nikto, SQLMap, Hydra, WhatWeb, ExifTool, HashID, TCPDump). |
 | [`test_supervisor.py`](test_supervisor.py) | Host process supervisor resource caps, memory bounds, and CPU throttling. |
@@ -36,6 +37,7 @@ The `/tests` directory contains Kairo's verification matrix comprising **48 comp
 
 | Test File | Focus & Verification Criteria |
 | :--- | :--- |
+| [`test_dag_controller.py`](test_dag_controller.py) | Topological DAG execution, prerequisite evidence gating (e.g. blocking web scanning until HTTP port is confirmed), capability-aware tool selection, and recovery path lineage. |
 | [`test_planner.py`](test_planner.py) | DAG task decomposition, cycle detection, dependency topological sorting, and parallel execution. |
 | [`test_tool_selection.py`](test_tool_selection.py) | 7-dimension hybrid tool selection scoring (category match, capability overlap, success rate, speed, resource cost, recency, error rate). |
 | [`test_observer_critic_recovery.py`](test_observer_critic_recovery.py) | Autonomous cognitive loop: Observer fact extraction $\to$ Critic rule evaluation $\to$ Recovery Agent compensatory replanning. |
@@ -58,10 +60,12 @@ The `/tests` directory contains Kairo's verification matrix comprising **48 comp
 | [`test_snapshot_limits_artifacts.py`](test_snapshot_limits_artifacts.py) | Enforces 100MB artifact file caps, max 500 artifacts per task, and SHA-256 integrity verification. |
 | [`test_resource_limits.py`](test_resource_limits.py) | Host resource exhaustion prevention under extreme workloads. |
 
-### 7. Model Center, Failover & Evolution
+### 7. Model Center, Failover, Intent & Local Routing
 
 | Test File | Focus & Verification Criteria |
 | :--- | :--- |
+| [`test_model_intent_flow.py`](test_model_intent_flow.py) | Dynamic intent classification (question, plan_only, tool_request, task_request), target extraction, and step provenance. |
+| [`test_model_integration.py`](test_model_integration.py) | Dual-model local routing (custom primary + local Qwen fallback), air-gapped guarantees, and 6-tuple audit provenance. |
 | [`test_model_center.py`](test_model_center.py) | Hot-swapping local LLM backends via `/api/models/switch` and real-time hardware telemetry. |
 | [`test_failover_router_model_pairs.py`](test_failover_router_model_pairs.py) | Validates automated failover across all 10 model pairs upon consecutive inference failures. |
 | [`test_model_evolution_controller.py`](test_model_evolution_controller.py) | Autonomous self-improvement loop: SFT refresh on data threshold, tier scaling on plateau, and rollback on regression. |

@@ -384,6 +384,14 @@ Nodes transition through deterministic states:
 
 Cycles in the task dependency graph are detected and rejected at planning time.
 
+### Topological DAG Controller & Prerequisite Evidence Gating
+
+The `DAGController` ([`orchestrator/dag_controller.py`](file:///c:/New%20Volume%20(D)/dev/orchestrator/dag_controller.py)) schedules and dispatches graph tasks with strict evidence-based preconditions:
+
+1. **Prerequisite Evidence Gates**: Subsequent offensive tools (such as web vulnerability scanners or brute-force tools) are halted until reconnaissance nodes verify an active listener (e.g. confirming open port 80/443 before launching `nikto.scan.v1`).
+2. **Failure State Isolation**: When a task encounters a non-zero exit code or timeout, its observation output is isolated and skipped during fact ingestion to prevent downstream prompt contamination.
+3. **Causal Recovery Lineage**: Failures register recovery steps in the node's lineage for executive reporting.
+
 ---
 
 ## 8. Hybrid Tool Selection Engine & Tool Memory Store
@@ -475,6 +483,15 @@ Autonomous remediation strategies:
 
 An anti-looping circuit breaker caps recovery attempts at 3 per task.
 
+### 4. Trustworthy Execution & Honest Reporting Guarantee
+
+Kairo enforces strict rules to prevent hallucinated achievements:
+
+- **Authentic Exit Codes**: Never creates fake `0` exit codes. Runtime failures return `1`; unregistered tools return `127`.
+- **Deterministic CLI Command Line**: Every execution logs the exact reconstructed shell command string (`command_line`).
+- **Structured Typed Invocations**: Tool calls are captured as formal typed invocation contracts (`typed_invocation`).
+- **Honest Claude Synthesis**: If an operation fails, Kairo displays a prominent failure badge (`❌ Execution Failed`) and explains the precise error cause rather than claiming "Audit Completed" or "No Ports Open".
+
 ---
 
 ## 11. Evidence Store, Finding Cards & Report Generator
@@ -489,6 +506,15 @@ Every piece of evidence collected is tagged with one of six artifact classes:
 4. `Visual UI State`: DOM trees, accessibility nodes, rendered element snapshots.
 5. `Extracted Artifacts`: Response bodies, downloaded files, SSL certificates.
 6. `Structured JSON`: Parsed vulnerability findings, port listings, technology stacks.
+
+### Active Finding Verification Engine (`FindingVerifier`)
+
+To ensure findings represent verified real-world states rather than model hallucinations, Kairo incorporates the `FindingVerifier` ([`orchestrator/finding_verifier.py`](file:///c:/New%20Volume%20(D)/dev/orchestrator/finding_verifier.py)):
+
+- **Scope-Authorized Probes**: Checks every finding target against `ScopeContract.allowed_cidrs`. Out-of-scope targets are rejected deterministically (`blocked_out_of_scope`) with zero packet emissions.
+- **Live Handshake & Banner Checks**: Conducts raw TCP socket handshakes with microsecond latency measurement and queries HTTP/HTTPS banners.
+- **Dynamic Confidence Calibration**: Confirmed findings increase confidence (+0.2); refuted findings penalize confidence (-0.4) and downgrade risk levels.
+- **Finding Model Properties**: Stored findings track `verified` (bool), `verification_status` (`verified`, `refuted`, `inconclusive`, `blocked_out_of_scope`), `verification_details`, and `verified_at`.
 
 ### Finding Cards & Executive Reporting
 
@@ -687,6 +713,18 @@ python -m pytest tests/test_dataset_curation_and_benchmark_leaderboard.py -v
 # ---------------------------------------------------------------------------
 # 3. CORE ORCHESTRATOR & AUTONOMOUS COGNITIVE LOOP
 # ---------------------------------------------------------------------------
+# Trustworthy execution, authentic exit codes, CLI reconstruction, and finding verification
+python -m pytest tests/test_trustworthy_execution.py -v
+
+# Topological DAG controller and prerequisite evidence gating
+python -m pytest tests/test_dag_controller.py -v
+
+# Dynamic intent classification, target extraction, and provenance
+python -m pytest tests/test_model_intent_flow.py -v
+
+# Dual-model local routing and air-gapped 6-tuple audit tracking
+python -m pytest tests/test_model_integration.py -v
+
 # Planner DAG and dynamic graph execution
 python -m pytest tests/test_planner.py -v
 

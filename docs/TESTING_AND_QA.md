@@ -18,14 +18,17 @@ In autonomous cybersecurity platforms, software bugs and runtime hallucinations 
 
 ## 2. Test Architecture & Pytest Harness
 
-The test harness comprises **48 test suites** located in `/tests`, executed via Python's `pytest` framework and Node.js for TypeScript interfaces:
+The test harness comprises **52+ comprehensive test suites** located in `/tests`, executed via Python's `pytest` framework and Node.js for TypeScript interfaces:
 
 ```text
 /tests
 ├── Unit & Schema Tests          # ToolSpec JSON Schema, Tokenizer, Datasets
 ├── Adapter & Conformance Tests  # 7-Gate verification for Tier 1, 2, and 3 tools
+├── Trustworthy Execution Tests  # Authentic exit codes, CLI reconstruction, finding verification
+├── DAG Controller & Planning    # Prerequisite evidence gating, topological execution, recovery
 ├── Cognitive Engine Tests       # DAG Planner, Observer, Critic, Recovery
 ├── Security & Isolation Tests   # Scope Contract HMAC, VM Sandboxing, Resource Caps
+├── Model Intent & Dual-Routing  # Dynamic intent classification, local-only routing, 6-tuple audit
 ├── Model & Training Tests       # SFT, DPO, GRPO rewards, Scale stages
 ├── Multi-Client & Collab Tests  # Project presence, Audit Explorer, WebSocket sync
 └── Chaos & Extreme Stress Tests # 100-node DAGs, CIDR fuzzing, network partitions
@@ -58,7 +61,33 @@ flowchart LR
 
 ---
 
-## 4. Chaos Engineering & Extreme User Stress
+## 4. Trustworthy Execution & Verification Testing
+
+Kairo provides rigorous verification suites ensuring execution results and reported findings are truthful and tamper-proof:
+
+### 1. Authentic Telemetry & Honest Synthesis (`tests/test_trustworthy_execution.py` - 13 Tests)
+
+- **Authentic Non-Zero Exit Codes**: Verifies runtime errors emit exit code `1` and unregistered tools emit exit code `127`. No synthetic `0` exit codes are permitted on failure.
+- **Deterministic CLI Command Line**: Validates exact shell strings are reconstructed across single executions and DAG node executions.
+- **Structured Typed Invocations**: Verifies every step records a typed invocation contract `{"tool": ..., "version": ..., "arguments": ...}`.
+- **Honest Synthesis & Failure Badging**: Proves that failed tasks render explicit failure banners (`❌ Execution Failed`) and accurate error root causes rather than hallucinating "Audit Complete" or "No vulnerabilities".
+- **DAG Failure State Isolation**: Verifies that failed DAG steps (`exit_code != 0`) are skipped during observation ingestion so failed runs cannot poison downstream context.
+
+### 2. DAG Controller & Prerequisite Evidence Gating (`tests/test_dag_controller.py` - 15 Tests)
+
+- **Prerequisite Evidence Gating**: Proves web scanners and password auditors are blocked from executing unless network reconnaissance nodes have confirmed active open ports.
+- **Topological & Parallel Execution**: Validates serial vs parallel multi-task dispatch and dependency resolution.
+- **Recovery Lineage**: Verifies that failed steps trigger compensatory recovery suggestions without graph termination.
+
+### 3. Model Intent Flow & Dual-Model Local Routing (`tests/test_model_intent_flow.py`, `tests/test_model_integration.py` - 25 Tests)
+
+- **Intent Classification**: Tests 4-class intent routing (`question`, `plan_only`, `tool_request`, `task_request`) with extracted target entities.
+- **Dual-Model Air-Gapped Fallback**: Tests primary custom model execution and automatic failover to local fallback model upon schema errors.
+- **Audit 6-Tuple Provenance**: Verifies that every inference event records `model_id`, `version`, `prompt_format`, `adapter`, `benchmark_score`, and `inference_source`.
+
+---
+
+## 5. Chaos Engineering & Extreme User Stress
 
 Kairo includes purpose-built chaos engineering scripts in `/scripts`:
 
@@ -81,21 +110,27 @@ Simulates erratic human operator behavior:
 
 ---
 
-## 5. Running the Master Test Matrix
+## 6. Running the Master Test Matrix
 
 ```bash
-# 1. Run all 48 test suites with verbose output
+# 1. Run all 52+ test suites with verbose output
 python -m pytest -v
 
-# 2. Run fast unit and schema tests only
+# 2. Run trustworthy execution and DAG controller tests
+python -m pytest tests/test_trustworthy_execution.py tests/test_dag_controller.py -v
+
+# 3. Run model intent flow and dual-model integration tests
+python -m pytest tests/test_model_intent_flow.py tests/test_model_integration.py -v
+
+# 4. Run fast unit and schema tests only
 python -m pytest tests/test_toolspec_registry.py tests/test_tool_selection.py -v
 
-# 3. Run security and scope authorization tests
+# 5. Run security and scope authorization tests
 python -m pytest tests/test_scope_contract.py tests/test_workspace_and_auth_gateway.py -v
 
-# 4. Run cognitive loop and recovery tests
+# 6. Run cognitive loop and recovery tests
 python -m pytest tests/test_observer_critic_recovery.py tests/test_planner.py -v
 
-# 5. Run model training and reinforcement learning tests
+# 7. Run model training and reinforcement learning tests
 python -m pytest tests/test_grpo_training_and_rewards.py tests/test_scale_stages_pipeline.py -v
 ```
