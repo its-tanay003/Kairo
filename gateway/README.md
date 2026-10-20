@@ -35,7 +35,7 @@ Upon WebSocket connection, the Gateway establishes a cryptographically bound ses
 | Message `type` | Payload Keys | Description |
 | :--- | :--- | :--- |
 | `chat` | `content`, `sessionId`, `modelId?` | Submits an operational directive or prompt to the agent loop. |
-| `tool_call` | `tool`, `args`, `sessionId` | Directly invokes a specific ToolSpec, bypassing the LLM planner. |
+| `tool_call` | `tool`, `args`, `sessionId`, `operatorToken?` | Directly invokes a ToolSpec via `ExecutionGateway`, subject to all 7 security gates. |
 | `subscribe_terminal` | `taskId` | Streams real-time ANSI terminal output for an active process. |
 | `terminal_input` | `taskId`, `input` | Sends stdin characters to an active process supervisor. |
 | `subscribe_screen` | `sessionId` | Connects to the low-latency RFB desktop stream for GUI tools. |
@@ -46,7 +46,7 @@ Upon WebSocket connection, the Gateway establishes a cryptographically bound ses
 
 | Message `type` | Payload Keys | Description |
 | :--- | :--- | :--- |
-| `agent_thought` | `thought`, `duration_ms` | Streams Claude 3.7 extended thinking blocks in real time. |
+| `agent_thought` | `thought`, `duration_ms` | Streams local model extended thinking blocks in real time. |
 | `agent_response` | `reply`, `eventId`, `event` | Final synthesized response text, accompanied by audit event metadata. |
 | `status` | `status`, `stage`, `nodeId` | Operational state updates (e.g., `planning`, `executing_tool`, `verifying`). |
 | `terminal_data` | `taskId`, `data` | Raw VT100 stdout/stderr chunk for terminal rendering. |
@@ -55,12 +55,12 @@ Upon WebSocket connection, the Gateway establishes a cryptographically bound ses
 
 ---
 
-## Authentication & Multi-Client Scoping
+## Authentication, Operator Tokens & Session Isolation
 
-The Gateway generates and verifies scoped Bearer tokens:
+The Gateway generates and verifies scoped Bearer tokens and enforces strict **Multi-Session Isolation**:
 
-- **Desktop Operator Token**: Full access to all tool tiers (Tier 1 CLI, Tier 2 Network, Tier 3 GUI).
-- **Mobile Read-Only Token**: Constrained to event observation, terminal viewing, and plan status monitoring.
+- **Cryptographic Operator Tokens**: Broad command execution and tool invocations require HMAC operator tokens (`KAIRO-OP-<timestamp>-<role>-<hex>`). Unauthenticated or forged tokens fail at Gate 4 with `401 OPERATOR_UNAUTHORIZED`.
+- **Session & Workspace Boundary**: Sensitive tool output, ANSI terminal buffers, forensic artifacts, and findings are strictly routed to the initiating `sessionId` or verified workspace members via `sendToSessionOrWorkspace()`. Unrelated sessions cannot observe private operational execution data.
 - **Revocation**: Instant token invalidation via `/auth/revoke` without service restart.
 
 ---

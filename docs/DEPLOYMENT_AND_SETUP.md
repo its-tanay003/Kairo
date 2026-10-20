@@ -29,10 +29,10 @@
 
 ### Software Prerequisites
 
-- **Python**: 3.11 or 3.12 (with `venv`, `pip`)
+- **Python**: 3.11, 3.12, 3.13, or 3.14 (verified on Python 3.14 with `pip`)
 - **Node.js**: v18.0.0 or higher with `npm`
 - **Docker**: Docker Desktop or Docker Engine with Docker Compose
-- **VirtualBox**: Version 7.0+ (for isolated Kali Linux guest worker)
+- **VirtualBox**: Version 7.0+ (optional: for isolated headless Kali Linux guest worker)
 
 ---
 
@@ -54,7 +54,7 @@ python -m venv venv
 # Linux/macOS:
 source venv/bin/activate
 
-pip install -r orchestrator/requirements.txt
+pip install -r requirements.txt
 ```
 
 ### Step 3: Install Node.js Dependencies
@@ -65,13 +65,31 @@ npm --prefix ui install
 npm --prefix gateway install
 ```
 
-### Step 4: Initialize the SQLite Audit Database
+### Step 4: Initialize SQLite Audit Database
 
 ```bash
 python -c "from events.db import init_db; init_db(); print('Database initialized successfully')"
 ```
 
-### Step 5: Launch the Service Stack
+### Step 5: Configure Local Neural Inference Backend
+
+KAIRO enforces a strict **Zero-Cloud Inference** architecture. No remote LLM APIs (OpenAI, Anthropic, Bedrock) are utilized or permitted.
+
+1. **Primary Custom Model (PyTorch Causal LM)**:
+   - Checkpoint path: `training/checkpoints/grpo/kairo-grpo-final`
+   - Automatically loaded by `TransformersLocalRuntime` in [orchestrator/model_runtime.py](file:///c:/New%20Volume%20(D)/dev/orchestrator/model_runtime.py).
+
+2. **Local Fallback GGUF Server (`llama.cpp`)**:
+   - Model path: `models/qwen2.5-0.5b-instruct-q4_k_m.gguf`
+   - In a dedicated terminal, launch the local server:
+
+     ```bash
+     llama-server.exe -m models/qwen2.5-0.5b-instruct-q4_k_m.gguf --port 8080 --ctx-size 4096
+     ```
+
+   - Monitored by `LlamaCppLocalRuntime` with automated readiness health checks.
+
+### Step 6: Launch the Service Stack
 
 Run the following in separate terminal panes or background processes:
 
@@ -87,6 +105,14 @@ python -m uvicorn orchestrator.server:app --host 127.0.0.1 --port 8000
 ```
 
 Open your browser to `http://localhost:3000` to interact with the **Claude UI cockpit**.
+
+### Step 7: Verify System Integrity (Master Consolidated Test Suite)
+
+Run the full 104-test regression and integration suite to verify that all 7 security gates, model runtimes, and DAG autonomous execution planes are operational:
+
+```bash
+python -m pytest tests/test_execution_gateway.py tests/test_model_integration.py tests/test_model_intent_flow.py tests/test_dag_controller.py tests/test_trustworthy_execution.py tests/test_toolspec_registry.py tests/test_scope_contract.py tests/test_workspace_and_auth_gateway.py tests/test_execution_plane_and_tauri.py tests/test_tool_selection.py -q
+```
 
 ---
 

@@ -9,10 +9,10 @@
 
 1. [Introduction to ToolSpec](#1-introduction-to-toolspec)
 2. [The 16-Field ToolSpec Schema Specification](#2-the-16-field-toolspec-schema-specification)
-3. [Safety Privilege Tiers (Tier 1 vs Tier 2 vs Tier 3)](#3-safety-privilege-tiers-tier-1-vs-tier-2-vs-tier-3)
+3. [Safety Privilege Tiers](#3-safety-privilege-tiers)
 4. [ToolSpec SDK & CLI Scaffolding (`/sdk`)](#4-toolspec-sdk--cli-scaffolding-sdk)
 5. [Authoring Execution Adapters (Python & Bash)](#5-authoring-execution-adapters-python--bash)
-6. [The 7-Gate Conformance Engine](#6-the-7-gate-conformance-engine)
+6. [The 7-Gate Conformance & Authoritative Execution Gateway](#6-the-7-gate-conformance--authoritative-execution-gateway)
 7. [Testing & Certifying New Tools with Pytest](#7-testing--certifying-new-tools-with-pytest)
 8. [Example Production ToolSpec: `nmap.scan.v1`](#8-example-production-toolspec-nmapscanv1)
 
@@ -118,9 +118,31 @@ if __name__ == "__main__":
 
 ---
 
-## 6. The 7-Gate Conformance Engine
+## 6. The 7-Gate Conformance & Authoritative Execution Gateway
 
-Before any tool is accepted into the production registry, it must pass all 7 automated conformance gates implemented in [`sdk/conformance.py`](file:///c:/New%20Volume%20(D)/dev/sdk):
+In KAIRO, tool certification occurs both statically via SDK conformance and dynamically at runtime through the authoritative [`orchestrator/execution_gateway.py`](file:///c:/New%20Volume%20(D)/dev/orchestrator/execution_gateway.py):
+
+### 6.1 Runtime Authoritative Execution Gateway Gates
+
+Every operational execution path (direct tool calls, DAG controller nodes, autonomous tasks, and finding verification probes) passes through `ExecutionGateway.execute()`:
+
+```text
++---------------------------------------------------------------------------------------------------------+
+|                                    ExecutionGateway 7-Gate Pipeline                                     |
++---------------------------------------------------------------------------------------------------------+
+  [Gate 1] Tool Registration Check      -> Canonical ToolSpec exists in registry (127 TOOL_NOT_FOUND)
+  [Gate 2] Schema & Injection Defense   -> Command injection characters blocked & defaults injected (400)
+  [Gate 3] Scope Perimeter & Tier Gate  -> Target inside allowed CIDRs & tier <= max_tier (403 SCOPE_VIOLATION)
+  [Gate 4] Cryptographic Operator Token -> Valid HMAC token: KAIRO-OP-<time>-<role>-<hex> (401 UNAUTHORIZED)
+  [Gate 5] Broad Workflow Policy Gate   -> Cryptographic workflow token for Tier 3 tools (403 UNAPPROVED)
+  [Gate 6] Isolated Adapter Execution   -> Subprocess/VM sandbox execution with timeout & real exit codes
+  [Gate 7] Immutable Audit Trail        -> Complete 20-field SQLite event record written to events.db
++---------------------------------------------------------------------------------------------------------+
+```
+
+### 6.2 Static SDK Conformance Engine
+
+Before any tool is accepted into the production registry, it must also pass all 7 automated conformance checks implemented in [`sdk/conformance.py`](file:///c:/New%20Volume%20(D)/dev/sdk):
 
 ```text
 +-----------------------------------------------------------+

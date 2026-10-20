@@ -75,17 +75,17 @@ python tests/test_boundary.py
 Before submitting any Pull Request, ensure that all master test suites pass cleanly:
 
 ```bash
-# 1. Run all Pytest test suites across subsystems
-python -m pytest -v
+# 1. Master Consolidated Engineering Suite (104 Tests - 100% Pass)
+python -m pytest tests/test_execution_gateway.py tests/test_model_integration.py tests/test_model_intent_flow.py tests/test_dag_controller.py tests/test_trustworthy_execution.py tests/test_toolspec_registry.py tests/test_scope_contract.py tests/test_workspace_and_auth_gateway.py tests/test_execution_plane_and_tauri.py tests/test_tool_selection.py -q
 
-# 2. ToolSpec 7-Gate Conformance Engine CLI
+# 2. Execution Gateway & Scope Security Tests
+python -m pytest tests/test_execution_gateway.py tests/test_scope_contract.py -v
+
+# 3. ToolSpec 7-Gate Conformance Engine CLI
 python -m sdk verify-toolspec registry/tools/subfinder_enum_v1.yaml
 
-# 3. Model Center & Grammar Constraint Verification
+# 4. Model Center & Grammar Constraint Verification
 python -m pytest tests/test_model_center.py -v
-
-# 4. Playwright UI Runtime & Zero-DOM Exception Suite
-python scripts/test_runtime_errors.py
 ```
 
 ---

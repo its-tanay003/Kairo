@@ -54,6 +54,7 @@ The `/training` subsystem implements the specialized machine learning lifecycle 
 │    • Tool Registry Membership (+1.0 known tool, -1.5 hallucinated)     │
 │    • Scope Boundary Compliance (+1.0 within CIDR, -3.0 violation)      │
 │    • Task Goal Completion (+2.0 target reached, -0.5 failed)           │
+│  - Deployment Checkpoint: training/checkpoints/grpo/kairo-grpo-final   │
 └────────────────────────────────────────────────────────────────────────┘
 ```
 

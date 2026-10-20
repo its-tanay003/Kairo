@@ -12,7 +12,7 @@
    - [2.1 Agent Execution, Intent Classification & Lifecycle](#21-agent-execution-intent-classification--lifecycle)
    - [2.2 DAG Planner, Graph Execution & Prerequisite Evidence Gating](#22-dag-planner-graph-execution--prerequisite-evidence-gating)
    - [2.3 Tool Selection & Tool Memory](#23-tool-selection--tool-memory)
-   - [2.4 Scope Contract Authorization Gate](#24-scope-contract-authorization-gate)
+   - [2.4 Scope Contract & Authoritative Execution Gateway](#24-scope-contract--authoritative-execution-gateway)
    - [2.5 Self-Healing Cognitive Loop (Observer, Critic, Recovery)](#25-self-healing-cognitive-loop-observer-critic-recovery)
    - [2.6 Evidence Store, Finding Verification & Reports](#26-evidence-store-finding-verification--reports)
    - [2.7 Model Center, Telemetry, Dual-Model Routing & Hot-Switching](#27-model-center-telemetry-dual-model-routing--hot-switching)
@@ -62,22 +62,25 @@ Submits a user prompt or operational command to the autonomous agent loop:
 }
 ```
 
-#### `tool_call` (Direct Sandbox Invocation)
+#### `tool_call` (Direct Tool Invocation via ExecutionGateway)
 
-Bypasses the LLM agent loop to execute a specific ToolSpec directly in the Kali worker sandbox:
+Invokes a specific registered ToolSpec directly through the authoritative `ExecutionGateway`. Direct tool invocations are never unvetted: they must pass all 7 security gates (registry check, schema & injection validation, Scope Contract perimeter verification, cryptographic operator token check, workflow policy, sandbox execution, and SQLite audit trail):
 
 ```json
 {
   "type": "tool_call",
-  "tool": "kali.exec.v1",
+  "tool": "nmap.network_scan.v1",
   "args": {
-    "command": "nmap",
-    "args": ["-sV", "-p", "80,443,22", "192.168.1.50"]
+    "target": "192.168.1.50",
+    "ports": "80,443,22"
   },
   "sessionId": "sess_main_01",
-  "taskId": "task_dev_exec_01"
+  "taskId": "task_dev_exec_01",
+  "operatorToken": "KAIRO-OP-1792000000-admin-a1b2c3d4e5f67890"
 }
 ```
+
+If the target is outside the active Scope Contract or if the operator token is missing or forged, the `ExecutionGateway` rejects the request before adapter instantiation with structured error codes (`403 SCOPE_VIOLATION` or `401 OPERATOR_UNAUTHORIZED`).
 
 #### `subscribe_terminal` (Stream Output)
 
@@ -171,8 +174,12 @@ The FastAPI Orchestrator coordinates agent planning, process execution, model ma
 
 ### 2.1 Agent Execution, Intent Classification & Lifecycle
 
-- `POST /run`: Trigger the autonomous agent loop for a user directive. Accepts `{"message": str, "session_id": str, "prefer_llm": bool}`.
-- `POST /chat`: Unified conversational endpoint with dynamic intent classification. Automatically classifies directives, routes to local inference, executes tools when appropriate, and tracks full step provenance.
+- `POST /run`: Trigger the autonomous agent loop for a user directive. Accepts `{"message": str, "session_id": str, "prefer_llm": bool, "mode": Optional[str]}`.
+- `POST /chat`: Unified conversational endpoint with dynamic intent classification. Automatically classifies directives into one of 4 interaction modes, routes to local inference without cloud fallback, and tracks complete execution and inference provenance:
+  - **General Conversation**: Informative cybersecurity answers with zero tools executed.
+  - **Plan-Only Mode**: Structured graph decomposition without executing tools or making network requests.
+  - **Operational Task Mode**: Full autonomous DAG execution by default across all approved steps when within authorized scope.
+  - **Explicit Direct Tool Mode**: Executes a specific registered tool through `ExecutionGateway` after verifying arguments and scope.
 - `POST /intent`: Standalone intent classifier endpoint. Analyzes user directives and returns:
 
 ```json
@@ -187,13 +194,14 @@ The FastAPI Orchestrator coordinates agent planning, process execution, model ma
   },
   "provenance": {
     "step": "intent_classification",
-    "model": "rule_classifier",
+    "model": "kairo-grpo-final",
+    "backend": "transformers_local",
     "timestamp": "2026-10-20T10:30:00Z"
   }
 }
 ```
 
-- `GET /health`: Orchestrator health check, uptime, memory, and database connection status.
+- `GET /health`: Orchestrator health check, uptime, memory, database connection, and local model runtime readiness status.
 - `GET /tools`: Return all registered ToolSpecs loaded from `registry/tools/`.
 
 ---
@@ -204,14 +212,15 @@ The FastAPI Orchestrator coordinates agent planning, process execution, model ma
 - `GET /planner/plans`: List all created DAG plans across sessions.
 - `GET /planner/plans/{plan_id}`: Retrieve graph nodes, dependencies, and execution states for a specific plan.
 - `GET /planner/plans/{plan_id}/ready`: Return all unblocked nodes ready for immediate parallel or serial execution.
-- `POST /planner/plans/{plan_id}/nodes/{node_id}/status`: Update node status (`PENDING`, `READY`, `RUNNING`, `SUCCESS`, `FAILED`, `SKIPPED`).
-- `POST /planner/plans/{plan_id}/execute` or `POST /planner/plans/{plan_id}/run`: Execute all nodes in the DAG in strict topological order using the `DAGController`. Enforces:
+- `POST /planner/plans/{plan_id}/nodes/{node_id}/status`: Update node status (`PENDING`, `READY`, `RUNNING`, `SUCCESS`, `FAILED`, `SKIPPED`, `BLOCKED`).
+- `POST /planner/plans/{plan_id}/execute` or `POST /planner/plans/{plan_id}/run`: Execute all nodes in the DAG in strict topological order using the `DAGController`. All node executions route through `ExecutionGateway.execute()`. Enforces:
   - **Prerequisite Evidence Gating**: Subsequent dependent nodes (e.g. web scanners, brute-force tools) are executed only if prerequisite observations were confirmed (e.g. verified open HTTP ports).
   - **Failure Containment**: If a node fails (`exit_code != 0`), observation ingestion skips the failed run to prevent polluting downstream context.
   - **Recovery Lineage**: Failed nodes record compensatory `recovery_path` traces.
+  - **Truthful Terminal States**: Plans terminate at strictly defined, evidence-based states: `COMPLETED` (all required nodes succeeded), `PARTIAL` (some succeeded), `FAILED` (critical path failed), `BLOCKED` (stopped by policy or scope), or `INCONCLUSIVE` (insufficient evidence gathered).
 - `POST /planner/plans/{plan_id}/nodes/{node_id}/execute`: Execute a single discrete node.
-- `POST /planner/run`: Decompose and immediately execute a multi-step DAG in a single API call.
-- `GET /planner/plans/{plan_id}/report`: Generate a structured report summarizing execution of the plan.
+- `POST /planner/run`: Decompose and immediately execute a multi-step DAG in a single API call (defaults to autonomous multi-step execution).
+- `GET /planner/plans/{plan_id}/report`: Generate a structured report summarizing execution of the plan, clearly distinguishing confirmed findings, refuted findings, and unresolved checks.
 
 ---
 
@@ -223,12 +232,20 @@ The FastAPI Orchestrator coordinates agent planning, process execution, model ma
 
 ---
 
-### 2.4 Scope Contract Authorization Gate
+### 2.4 Scope Contract & Authoritative Execution Gateway
 
 - `GET /scope/active`: Retrieve current active cryptographic Scope Contract.
-- `POST /scope/contract`: Authorize and register a new Scope Contract signed with HMAC-SHA256.
+- `POST /scope/contract`: Authorize and register a new Scope Contract signed with HMAC-SHA256 or Ed25519.
 - `GET /scope/contracts`: List historical and active scope contracts.
 - `POST /scope/validate`: Cryptographically validate an execution request against active CIDR targets, tool tiers, and time windows.
+- `POST /gateway/execute`: Direct REST entry point to `ExecutionGateway.execute()`. Enforces the 7 authoritative security gates:
+  1. **Registry Verification**: Rejects unregistered tools (`127 TOOL_NOT_FOUND`).
+  2. **Schema & Injection Defense**: Rejects command injection characters and populates default parameters (`400 VALIDATION_ERROR`).
+  3. **Scope Contract Perimeter**: Validates allowed CIDRs and tool privilege tier (`403 SCOPE_VIOLATION`). Evaluated before any workflow checks.
+  4. **Cryptographic Operator Token**: Validates HMAC token `KAIRO-OP-<timestamp>-<role>-<hex>` (`401 OPERATOR_UNAUTHORIZED`).
+  5. **Broad Command Workflow Policy**: Verifies cryptographic workflow token for Tier 3 tools (`403 UNAPPROVED_COMMAND_EXECUTION`).
+  6. **Sandbox Process Execution**: Subprocess or VM worker execution with process supervision and timeout enforcement.
+  7. **Forensic Audit Logging**: 20-field SQLite event log written to `events.db`.
 
 ---
 
