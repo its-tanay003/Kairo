@@ -22,7 +22,7 @@ from typing import Any, Dict, List, Optional, Tuple
 from PIL import Image, ImageDraw, ImageFont
 
 from orchestrator.adapters.gui_base import BaseGuiAdapter, GuiControl
-from orchestrator.kali_connector import SIMULATION_NOTICE_TEXT
+from orchestrator.kali_connector import ExecutionPlaneType, SIMULATION_NOTICE_TEXT
 
 logger = logging.getLogger("orchestrator.adapters.burpsuite")
 
@@ -157,6 +157,9 @@ class BurpSuiteGuiAdapter(BaseGuiAdapter):
             "project_name": project_name,
             "proxy_endpoint": f"{self.proxy_host}:{self.proxy_port}",
             "screenshot_sha256": vis.sha256,
+            "is_simulated": True,
+            "simulation_notice": SIMULATION_NOTICE_TEXT,
+            "execution_plane": ExecutionPlaneType.SIMULATED_MOCK.value,
         }
 
     def _workflow_toggle_proxy(self, task_id: str, params: Dict[str, Any]) -> Dict[str, Any]:
@@ -185,6 +188,9 @@ class BurpSuiteGuiAdapter(BaseGuiAdapter):
             "intercept_enabled": self.intercept_enabled,
             "status_message": f"Proxy Intercept is now {state_str}",
             "screenshot_sha256": vis.sha256,
+            "is_simulated": True,
+            "simulation_notice": SIMULATION_NOTICE_TEXT,
+            "execution_plane": ExecutionPlaneType.SIMULATED_MOCK.value,
         }
 
     def _workflow_inspect_proxy_history(self, task_id: str, params: Dict[str, Any]) -> Dict[str, Any]:
@@ -212,6 +218,9 @@ class BurpSuiteGuiAdapter(BaseGuiAdapter):
             "matched_items": len(records),
             "records": records,
             "screenshot_sha256": vis.sha256,
+            "is_simulated": True,
+            "simulation_notice": SIMULATION_NOTICE_TEXT,
+            "execution_plane": ExecutionPlaneType.SIMULATED_MOCK.value,
         }
 
     def _workflow_send_to_repeater(self, task_id: str, params: Dict[str, Any]) -> Dict[str, Any]:
@@ -274,6 +283,7 @@ class BurpSuiteGuiAdapter(BaseGuiAdapter):
             "screenshot_sha256": vis.sha256,
             "is_simulated": True,
             "simulation_notice": SIMULATION_NOTICE_TEXT,
+            "execution_plane": ExecutionPlaneType.SIMULATED_MOCK.value,
         }
 
     def _workflow_export_target_sitemap(self, task_id: str, params: Dict[str, Any]) -> Dict[str, Any]:
@@ -295,6 +305,9 @@ class BurpSuiteGuiAdapter(BaseGuiAdapter):
             "site_map": dict(self.site_map),
             "endpoint_count": sum(len(v) for v in self.site_map.values()),
             "screenshot_sha256": vis.sha256,
+            "is_simulated": True,
+            "simulation_notice": SIMULATION_NOTICE_TEXT,
+            "execution_plane": ExecutionPlaneType.SIMULATED_MOCK.value,
         }
 
     # ------------------------------------------------------------------

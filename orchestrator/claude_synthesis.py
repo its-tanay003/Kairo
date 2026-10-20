@@ -127,7 +127,7 @@ def synthesize_agent_response(
             or "[SIMULATED — demo mode, not a live scan]"
         )
         sim_banner = f"> ⚠️ **{sim_notice_text}**\n\n"
-        if not res.get("reply", "").startswith("> ⚠️ **[SIMULATED"):
+        if sim_notice_text not in res.get("reply", ""):
             res["reply"] = sim_banner + res.get("reply", "")
 
         # Attach to process metadata for tool card UI
@@ -548,30 +548,57 @@ def _synthesize_web_audit(
         })
 
     is_unreachable = conn_status == "unreachable" or "unable to connect" in stdout.lower() or "connection refused" in stdout.lower()
+    is_sim = bool(
+        obs.get("is_simulated")
+        or obs.get("execution_plane") == "simulated_mock"
+        or "[SIMULATED" in stdout
+    )
 
     if exit_code == 0 and not is_unreachable:
         findings_md = ""
         if findings_list:
-            findings_md = "\n#### 🚨 Key Discovered Findings\n"
-            for f in findings_list[:8]:
-                uri = f.get("uri") or "/"
-                desc = f.get("description") or "Potential vulnerability"
-                fid = f.get("id") or f.get("osvdb") or "FINDING"
-                findings_md += f"- **`{fid}`** at `{uri}`: {desc}\n"
+            if is_sim:
+                findings_md = "\n#### 🎭 Simulated Demonstration Output\n"
+                for f in findings_list[:8]:
+                    uri = f.get("uri") or "/"
+                    desc = f.get("description") or f.get("name") or "Simulated test finding"
+                    fid = f.get("id") or f.get("cwe") or "SIMULATED"
+                    findings_md += f"- **`[SIMULATED] {fid}`** at `{uri}`: {desc}\n"
+            else:
+                findings_md = "\n#### 🚨 Key Discovered Findings\n"
+                for f in findings_list[:8]:
+                    uri = f.get("uri") or "/"
+                    desc = f.get("description") or "Potential vulnerability"
+                    fid = f.get("id") or f.get("osvdb") or "FINDING"
+                    findings_md += f"- **`{fid}`** at `{uri}`: {desc}\n"
 
-        md = f"""### 🛡️ Web Security Audit Completed
+        if is_sim:
+            posture_md = (
+                "#### 🎭 Simulation Notice & Disclaimers\n"
+                "- **Live Findings Confirmed:** 0 (mock demonstration mode active; no live vulnerability scan performed).\n"
+                "- Synthetic frames and mock outputs are watermarked and logged in Evidence Store under execution plane `simulated_mock`."
+            )
+        else:
+            posture_md = (
+                "#### 📋 Discovered Vulnerability Posture\n"
+                "- Verified against declared OWASP baseline.\n"
+                "- Findings and evidence files have been logged into the cryptographically verifiable SQLite Evidence Store."
+            )
 
-Executed **`{tool_name}`** against web target **`{target}`**.
+        target_display = f"{target} (Demo Mode)" if is_sim else target
+        alerts_display = f"{alerts_count} (Simulated Mock)" if is_sim else str(alerts_count)
+
+        md = f"""### {'🎭' if is_sim else '🛡️'} Web Security Audit Completed{' [SIMULATED]' if is_sim else ''}
+
+Executed **`{tool_name}`** against web target **`{target_display}`**.
 
 #### 📊 Audit Findings Summary
-- **Target URL:** `{target}`
-- **Security Alerts Identified:** `{alerts_count}`
+- **Target URL:** `{target_display}`
+- **Security Alerts Identified:** `{alerts_display}`
 - **Analysis Execution Time:** `{duration_s}s`
 {f"- **Web Server:** `{server_info.get('server')}`" if server_info.get('server') else ""}
 {findings_md}
-#### 📋 Discovered Vulnerability Posture
-- Verified against declared OWASP baseline.
-- Findings and evidence files have been logged into the cryptographically verifiable SQLite Evidence Store.
+{posture_md}
 
 #### 💡 Recommended Next Actions
 - Inspect the generated audit compliance report in the Advanced Console -> Audit tab.

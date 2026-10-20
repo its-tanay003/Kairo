@@ -26,6 +26,7 @@ from PIL import Image, ImageDraw, ImageFont
 
 from orchestrator.adapters.gui_base import BaseGuiAdapter, GuiControl
 from orchestrator.evidence_store import EvidenceClass, NetworkEvidence
+from orchestrator.kali_connector import ExecutionPlaneType, SIMULATION_NOTICE_TEXT
 
 logger = logging.getLogger("orchestrator.adapters.wireshark")
 
@@ -123,6 +124,9 @@ class WiresharkGuiAdapter(BaseGuiAdapter):
             "interface": self.interface,
             "status": "ready",
             "screenshot_sha256": vis.sha256,
+            "is_simulated": True,
+            "simulation_notice": SIMULATION_NOTICE_TEXT,
+            "execution_plane": ExecutionPlaneType.SIMULATED_MOCK.value,
         }
 
     def _workflow_start_capture(self, task_id: str, params: Dict[str, Any]) -> Dict[str, Any]:
@@ -147,6 +151,9 @@ class WiresharkGuiAdapter(BaseGuiAdapter):
             "capture_state": "capturing",
             "packets_count": len(self.all_packets),
             "screenshot_sha256": vis.sha256,
+            "is_simulated": True,
+            "simulation_notice": SIMULATION_NOTICE_TEXT,
+            "execution_plane": ExecutionPlaneType.SIMULATED_MOCK.value,
         }
 
     def _workflow_apply_display_filter(self, task_id: str, params: Dict[str, Any]) -> Dict[str, Any]:
@@ -176,6 +183,9 @@ class WiresharkGuiAdapter(BaseGuiAdapter):
             "matched_packets": count,
             "total_packets": total,
             "screenshot_sha256": vis.sha256,
+            "is_simulated": True,
+            "simulation_notice": SIMULATION_NOTICE_TEXT,
+            "execution_plane": ExecutionPlaneType.SIMULATED_MOCK.value,
         }
 
     def _workflow_inspect_packet(self, task_id: str, params: Dict[str, Any]) -> Dict[str, Any]:
@@ -213,6 +223,9 @@ class WiresharkGuiAdapter(BaseGuiAdapter):
             "decode_tree": decode_tree,
             "hex_dump": target_pkt["hex"],
             "screenshot_sha256": vis.sha256,
+            "is_simulated": True,
+            "simulation_notice": SIMULATION_NOTICE_TEXT,
+            "execution_plane": ExecutionPlaneType.SIMULATED_MOCK.value,
         }
 
     def _workflow_stop_and_save_pcap(self, task_id: str, params: Dict[str, Any]) -> Dict[str, Any]:
@@ -266,6 +279,9 @@ class WiresharkGuiAdapter(BaseGuiAdapter):
             "packets_saved": len(self.all_packets),
             "network_evidence_id": net_ev.evidence_id,
             "screenshot_sha256": vis.sha256,
+            "is_simulated": True,
+            "simulation_notice": SIMULATION_NOTICE_TEXT,
+            "execution_plane": ExecutionPlaneType.SIMULATED_MOCK.value,
         }
 
     # ------------------------------------------------------------------

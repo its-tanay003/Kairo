@@ -678,3 +678,83 @@ class TestHonestSimulation:
         assert plane_metrics[0]["type"] == "warning"
         assert "Simulated" in plane_metrics[0]["value"]
 
+    def test_zap_alerts_and_report_honest_simulation(self, temp_gui_env):
+        """Verifies ZAP mock alerts and exported report are labeled as honest simulations."""
+        store = temp_gui_env["store"]
+        adapter = ZapGuiAdapter(store=store)
+        adapter.launch(task_id="task_honest_zap", start_periodic=False)
+
+        # Verify all alerts carry [SIMULATED] in their name and is_simulated flag
+        alerts_res = adapter.execute_workflow("task_honest_zap", "inspect_alerts", {})
+        assert alerts_res["success"] is True
+        assert alerts_res["is_simulated"] is True
+        assert alerts_res["execution_plane"] == ExecutionPlaneType.SIMULATED_MOCK.value
+
+        for alert in alerts_res["alerts"]:
+            assert alert["name"].startswith("[SIMULATED]")
+            assert alert.get("is_simulated") is True
+            assert "synthetic" in alert.get("note", "").lower() or "demo" in alert.get("note", "").lower()
+
+        # Verify exported report contains simulation notices
+        rep_res = adapter.execute_workflow("task_honest_zap", "export_report", {})
+        assert rep_res["success"] is True
+        assert rep_res["is_simulated"] is True
+        report_file = Path(rep_res["report_filepath"])
+        assert report_file.is_file()
+        rep_data = json.loads(report_file.read_text(encoding="utf-8"))
+        assert rep_data["is_simulated"] is True
+        assert rep_data["execution_plane"] == ExecutionPlaneType.SIMULATED_MOCK.value
+        assert rep_data["simulation_notice"] == SIMULATION_NOTICE_TEXT
+
+        adapter.stop("task_honest_zap")
+
+    def test_wireshark_workflows_honest_simulation(self, temp_gui_env):
+        """Verifies Wireshark workflows explicitly return simulated mock metadata."""
+        store = temp_gui_env["store"]
+        adapter = WiresharkGuiAdapter(store=store)
+        adapter.launch(task_id="task_honest_ws", start_periodic=False)
+
+        res_cap = adapter.execute_workflow("task_honest_ws", "start_capture", {})
+        assert res_cap["is_simulated"] is True
+        assert res_cap["execution_plane"] == ExecutionPlaneType.SIMULATED_MOCK.value
+
+        res_pcap = adapter.execute_workflow("task_honest_ws", "stop_and_save_pcap", {})
+        assert res_pcap["is_simulated"] is True
+        assert res_pcap["execution_plane"] == ExecutionPlaneType.SIMULATED_MOCK.value
+        assert res_pcap["simulation_notice"] == SIMULATION_NOTICE_TEXT
+
+        adapter.stop("task_honest_ws")
+
+    def test_claude_synthesis_web_audit_honest_simulation(self):
+        """Verifies Web Security Audit synthesis suppresses fake vulnerability confirmation and highlights simulation."""
+        from orchestrator.claude_synthesis import synthesize_agent_response
+
+        res = synthesize_agent_response(
+            user_goal="Run vulnerability scan with ZAP",
+            tool_id="zap.gui.v1",
+            tool_name="OWASP ZAP",
+            inputs={"target": "http://testphp.vulnweb.com"},
+            exit_code=0,
+            stdout=f"{SIMULATION_NOTICE_TEXT}\nZAP Scan Completed",
+            duration_ms=1200.0,
+            observation={
+                "tool_id": "zap.gui.v1",
+                "is_simulated": True,
+                "execution_plane": "simulated_mock",
+                "simulation_notice": SIMULATION_NOTICE_TEXT,
+                "findings": [
+                    {"id": "CWE-89", "name": "[SIMULATED] SQL Injection (Mock Demo Alert)", "uri": "/api/v1/auth"}
+                ],
+            },
+            is_simulated=True,
+            simulation_notice=SIMULATION_NOTICE_TEXT,
+        )
+
+        reply = res["reply"]
+        assert SIMULATION_NOTICE_TEXT in reply
+        assert "Simulated Demonstration Output" in reply
+        assert "Key Discovered Findings" not in reply
+        assert "Live Findings Confirmed:** 0" in reply
+        assert res["process"]["execution_plane"] == "simulated_mock"
+
+

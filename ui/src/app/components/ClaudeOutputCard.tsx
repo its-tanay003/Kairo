@@ -1142,6 +1142,27 @@ export default function ClaudeOutputCard({
       {/* 5. The Result: Executive Synthesis & Human-Friendly Explanation */}
       {text && (
         <div className="claude-result-body">
+          {isSimulatedMock && !text.includes(simulationNoticeText) && (
+            <div
+              className="claude-simulated-chat-notice"
+              style={{
+                display: "flex",
+                alignItems: "center",
+                gap: "8px",
+                padding: "8px 12px",
+                marginBottom: "12px",
+                backgroundColor: "rgba(168, 85, 247, 0.12)",
+                borderRadius: "6px",
+                border: "1px solid rgba(168, 85, 247, 0.35)",
+                color: "#c084fc",
+                fontSize: "12px",
+                fontWeight: 600,
+              }}
+            >
+              <span>🎭</span>
+              <span>{simulationNoticeText}</span>
+            </div>
+          )}
           {isLocalHostFallback && !text.includes(fallbackNoticeText) && (
             <div
               className="claude-fallback-chat-notice"

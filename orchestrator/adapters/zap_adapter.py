@@ -24,6 +24,7 @@ from typing import Any, Dict, List, Optional
 from PIL import Image, ImageDraw, ImageFont
 
 from orchestrator.adapters.gui_base import BaseGuiAdapter, GuiControl
+from orchestrator.kali_connector import ExecutionPlaneType, SIMULATION_NOTICE_TEXT
 
 logger = logging.getLogger("orchestrator.adapters.zap")
 
@@ -65,10 +66,42 @@ class ZapGuiAdapter(BaseGuiAdapter):
         ]
 
         self.alerts: List[Dict[str, Any]] = [
-            {"risk": "High", "confidence": "High", "name": "SQL Injection - PostgreSQL / MySQL", "url": f"{self.target_url}/api/v1/auth", "cwe": 89},
-            {"risk": "Medium", "confidence": "Medium", "name": "Cross-Site Scripting (Reflected)", "url": f"{self.target_url}/search.php", "cwe": 79},
-            {"risk": "Low", "confidence": "Medium", "name": "Missing Anti-clickjacking Header", "url": f"{self.target_url}/", "cwe": 1021},
-            {"risk": "Informational", "confidence": "High", "name": "Cookie Without SameSite Attribute", "url": f"{self.target_url}/login.php", "cwe": 1275},
+            {
+                "risk": "High",
+                "confidence": "High",
+                "name": "[SIMULATED] SQL Injection (Mock Demo Alert)",
+                "url": f"{self.target_url}/api/v1/auth",
+                "cwe": 89,
+                "is_simulated": True,
+                "note": "Synthetic demo finding — no live scan executed.",
+            },
+            {
+                "risk": "Medium",
+                "confidence": "Medium",
+                "name": "[SIMULATED] Cross-Site Scripting (Reflected)",
+                "url": f"{self.target_url}/search.php",
+                "cwe": 79,
+                "is_simulated": True,
+                "note": "Synthetic demo finding — no live scan executed.",
+            },
+            {
+                "risk": "Low",
+                "confidence": "Medium",
+                "name": "[SIMULATED] Missing Anti-clickjacking Header",
+                "url": f"{self.target_url}/",
+                "cwe": 1021,
+                "is_simulated": True,
+                "note": "Synthetic demo finding — no live scan executed.",
+            },
+            {
+                "risk": "Informational",
+                "confidence": "High",
+                "name": "[SIMULATED] Cookie Without SameSite Attribute",
+                "url": f"{self.target_url}/login.php",
+                "cwe": 1275,
+                "is_simulated": True,
+                "note": "Synthetic demo finding — no live scan executed.",
+            },
         ]
 
         self._setup_controls()
@@ -124,6 +157,9 @@ class ZapGuiAdapter(BaseGuiAdapter):
             "target_url": self.target_url,
             "status": "ready",
             "screenshot_sha256": vis.sha256,
+            "is_simulated": True,
+            "simulation_notice": SIMULATION_NOTICE_TEXT,
+            "execution_plane": ExecutionPlaneType.SIMULATED_MOCK.value,
         }
 
     def _workflow_run_spider(self, task_id: str, params: Dict[str, Any]) -> Dict[str, Any]:
@@ -145,6 +181,9 @@ class ZapGuiAdapter(BaseGuiAdapter):
             "discovered_urls_count": len(self.spider_urls),
             "discovered_urls": self.spider_urls,
             "screenshot_sha256": vis.sha256,
+            "is_simulated": True,
+            "simulation_notice": SIMULATION_NOTICE_TEXT,
+            "execution_plane": ExecutionPlaneType.SIMULATED_MOCK.value,
         }
 
     def _workflow_inspect_alerts(self, task_id: str, params: Dict[str, Any]) -> Dict[str, Any]:
@@ -170,6 +209,9 @@ class ZapGuiAdapter(BaseGuiAdapter):
             "risk_summary": risk_counts,
             "alerts": self.alerts,
             "screenshot_sha256": vis.sha256,
+            "is_simulated": True,
+            "simulation_notice": SIMULATION_NOTICE_TEXT,
+            "execution_plane": ExecutionPlaneType.SIMULATED_MOCK.value,
         }
 
     def _workflow_export_report(self, task_id: str, params: Dict[str, Any]) -> Dict[str, Any]:
@@ -184,6 +226,9 @@ class ZapGuiAdapter(BaseGuiAdapter):
             "timestamp": time.strftime("%Y-%m-%dT%H:%M:%SZ"),
             "discovered_urls": self.spider_urls,
             "alerts": self.alerts,
+            "is_simulated": True,
+            "simulation_notice": SIMULATION_NOTICE_TEXT,
+            "execution_plane": ExecutionPlaneType.SIMULATED_MOCK.value,
         }
         content = json.dumps(report_payload, indent=2)
         content_bytes = content.encode("utf-8")
@@ -215,6 +260,9 @@ class ZapGuiAdapter(BaseGuiAdapter):
             "report_sha256": rep_sha256,
             "findings_count": len(self.alerts),
             "screenshot_sha256": vis.sha256,
+            "is_simulated": True,
+            "simulation_notice": SIMULATION_NOTICE_TEXT,
+            "execution_plane": ExecutionPlaneType.SIMULATED_MOCK.value,
         }
 
     def _workflow_default(self, task_id: str, params: Dict[str, Any]) -> Dict[str, Any]:
@@ -231,6 +279,9 @@ class ZapGuiAdapter(BaseGuiAdapter):
             "report_filename": rep_res.get("report_filename"),
             "report_sha256": rep_res.get("report_sha256"),
             "screenshot_sha256": rep_res.get("screenshot_sha256") or alerts_res.get("screenshot_sha256"),
+            "is_simulated": True,
+            "simulation_notice": SIMULATION_NOTICE_TEXT,
+            "execution_plane": ExecutionPlaneType.SIMULATED_MOCK.value,
         }
 
     # ------------------------------------------------------------------
