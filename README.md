@@ -1,6 +1,6 @@
 # KAIRO: Autonomous Cyber Defense & Red-Team Platform
 
-An enterprise-grade, local-first autonomous agent platform engineered for defensive auditing, red-team assessments, and automated vulnerability verification. Kairo couples specialized Small Language Models (380M to 1.5B parameters, fine-tuned via SFT, DPO, and GRPO) with deterministic tool schemas, a 7-gate conformance SDK, cryptographic CIDR scope boundaries, and isolated Kali Linux virtualization.
+An enterprise-grade, local-first autonomous agent platform engineered for defensive auditing, red-team assessments, and automated vulnerability verification. Kairo couples specialized Small Language Models (380M to 2B parameters, fine-tuned via SFT, DPO, and GRPO, including flagship Kairo Scale 2B) with deterministic tool schemas, a 7-gate conformance SDK, cryptographic CIDR scope boundaries, an authoritative Execution Gateway, and isolated Kali Linux virtualization.
 
 ---
 
@@ -19,7 +19,7 @@ An enterprise-grade, local-first autonomous agent platform engineered for defens
 | **Deployment & Setup** | [`docs/DEPLOYMENT_AND_SETUP.md`](docs/DEPLOYMENT_AND_SETUP.md) | Step-by-step local development setup, VirtualBox Kali VM provisioning, Docker lab targets, and troubleshooting |
 | **Training & Autonomous Evolution** | [`docs/TRAINING_AND_EVOLUTION.md`](docs/TRAINING_AND_EVOLUTION.md) | Continuous self-improvement loop, evolution policies, scale stages (380M to 2B), SFT, DPO, and GRPO with verifiable rewards |
 | **Evaluation & Benchmarks** | [`docs/EVALUATION_AND_BENCHMARKS.md`](docs/EVALUATION_AND_BENCHMARKS.md) | 50-task Golden & 120-task Full Benchmark suites, scoring metrics, and model leaderboard comparisons |
-| **Testing & Quality Assurance** | [`docs/TESTING_AND_QA.md`](docs/TESTING_AND_QA.md) | Master 48-suite test matrix, 7-Gate conformance certification, chaos engineering, and continuous verification |
+| **Testing & Quality Assurance** | [`docs/TESTING_AND_QA.md`](docs/TESTING_AND_QA.md) | Master 23-suite test matrix (189 verified passing tests, 100% pass rate), 7-Gate conformance certification, and chaos engineering |
 | **Contributing Guide** | [`docs/CONTRIBUTING.md`](docs/CONTRIBUTING.md) | Code style, commit standards, test requirements, 7-gate certification workflow, and pull request checklist |
 
 ### Subsystem Technical References
@@ -73,7 +73,7 @@ Kairo features an executive-grade frontend interface faithfully modeled after th
 - **Warm Dark Slate Palette**: Built on deep warm slate backgrounds (`#181816`), warm obsidian sidebars (`#141413`), stone borders (`#2d2c28`), and Anthropic's signature Terracotta Coral accent (`#d97757`).
 - **Editorial Typography**: Pairing serif headlines (`Newsreader` / `Lora`) with crisp sans-serif text (`Inter`) and monospace code formatting (`JetBrains Mono`).
 - **Signature Claude Welcome Screen**: Features the 8-point terracotta starburst spark icon, welcome greeting, and a responsive 2x2 grid of starter prompts with pre-filled scope presets.
-- **Claude Model Selector**: Header dropdown offering seamless selection between *Sonnet 3.7 Tier* (Advanced Reasoning), *Haiku 3.5 Fast* (Triage), *Llama-3-70B SFT* (Air-gapped), and *DeepSeek-R1 Reasoner*.
+- **Claude Model Selector**: Header dropdown offering seamless selection between canonical, fully local models: *Kairo Scale 2B (Custom Primary)* (GRPO reasoning weights), *Qwen2.5-0.5B (Local Fallback)* (quantized GGUF), *Kairo GRPO Final (Reasoner)*, and *Qwen3-Coder-30B (MoE Base)* with zero remote cloud dependencies.
 - **Claude 3.7 Extended Thinking Accordion**: Collapsible thinking blocks displaying real-time cognitive reasoning telemetry (`✦ Thought for 1.4s ▾`).
 - **Claude Artifact Cards**: Interactive inline tool deliverables featuring dual actions: copy raw JSON output or deep-link directly into the corresponding drawer tab (`Open in Console ↗`).
 - **Floating Pill Composer**: Rounded floating input bar (`border-radius: 20px`) with integrated cryptographic Scope Contract popover and circular terracotta send button.
@@ -84,7 +84,7 @@ Kairo features an executive-grade frontend interface faithfully modeled after th
 | Screen View | Description | Screenshot |
 | :--- | :--- | :--- |
 | **Claude Welcome Screen** | Serif typography, terracotta spark monogram, and interactive starter prompt cards | ![Claude Welcome Screen](docs/assets/screenshots/01_claude_welcome_screen.png) |
-| **Claude Model Selector** | Top bar dropdown selecting Claude models and local LLM backends | ![Claude Model Selector](docs/assets/screenshots/02_claude_model_selector.png) |
+| **Claude Model Selector** | Top bar dropdown selecting canonical local models and local LLM backends | ![Claude Model Selector](docs/assets/screenshots/02_claude_model_selector.png) |
 | **Scope Contract Modal** | Cryptographic HMAC-SHA256 authorization and CIDR containment popover | ![Scope Contract Modal](docs/assets/screenshots/03_claude_scope_popover.png) |
 | **Extended Thinking & Artifacts** | Live chat stream with collapsible thinking accordions and artifact cards | ![Chat Messages & Thinking](docs/assets/screenshots/04_claude_chat_messages.png) |
 | **Console: System Telemetry** | Real-time memory, process, and Kali sandbox hardware monitoring | ![Console System](docs/assets/screenshots/05_claude_console_system.png) |
@@ -720,9 +720,9 @@ python -m sdk verify-toolspec registry/tools/subfinder_enum_v1.yaml
 python -m pytest tests/test_dataset_curation_and_benchmark_leaderboard.py -v
 
 # ---------------------------------------------------------------------------
-# MASTER CONSOLIDATED ENGINEERING SUITE (104 Tests - 100% Pass)
+# MASTER CONSOLIDATED ENGINEERING SUITE (189 Passed, 5 Skipped, 0 Failed - 100% Pass)
 # ---------------------------------------------------------------------------
-python -m pytest tests/test_execution_gateway.py tests/test_model_integration.py tests/test_model_intent_flow.py tests/test_dag_controller.py tests/test_trustworthy_execution.py tests/test_toolspec_registry.py tests/test_scope_contract.py tests/test_workspace_and_auth_gateway.py tests/test_execution_plane_and_tauri.py tests/test_tool_selection.py -v
+python -m pytest tests/test_execution_gateway.py tests/test_model_intent_flow.py tests/test_dag_controller.py tests/test_trustworthy_execution.py tests/test_toolspec_registry.py tests/test_scope_contract.py tests/test_workspace_and_auth_gateway.py tests/test_execution_plane_and_tauri.py tests/test_tool_selection.py tests/test_tool_execution_chain.py tests/test_model_integration.py tests/test_model_center.py tests/test_boundary.py tests/test_reporter_failure_aware.py tests/test_evidence_store_and_reporter.py tests/test_observer_critic_recovery.py tests/test_planner.py tests/test_shared_projects_and_audit_explorer.py tests/test_lab_benchmark.py tests/test_snapshot_limits_artifacts.py tests/test_vm_limits.py tests/test_third_party_sdk_tool_addition.py tests/test_terminal_stream_supervisor.py -v
 
 # ---------------------------------------------------------------------------
 # 3. CORE ORCHESTRATOR & AUTONOMOUS COGNITIVE LOOP

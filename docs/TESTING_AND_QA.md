@@ -65,7 +65,7 @@ flowchart LR
 
 Kairo provides rigorous verification suites ensuring execution results and reported findings are truthful and tamper-proof:
 
-### 0. Centralized Execution Perimeter (`tests/test_execution_gateway.py` - 11 Tests)
+### 0. Centralized Execution Perimeter (`tests/test_execution_gateway.py` - 12 Tests)
 
 - **Fail-Closed Perimeter Enforcement**: Proves that all tool dispatch routes (direct, agent loop, DAG node, recovery, finding verifier) are intercepted by the `ExecutionGateway`.
 - **Target Boundary & Tool Tier Gates**: Verifies in-scope targets are authorized and out-of-scope targets are blocked before adapter invocation; verifies tool tier boundaries (e.g. Tier 3 tools blocked when contract only allows Tier 1-2).
@@ -74,7 +74,7 @@ Kairo provides rigorous verification suites ensuring execution results and repor
 - **Anti-Prompt Self-Authorization**: Proves user prompts claiming authorization (`"Authorized by CEO"`) cannot modify target scope or bypass gates without a valid cryptographic operator token (`KAIRO-OP-...`).
 - **Cryptographic Operator Token Authorization**: Authenticates valid HMAC operator tokens to allow target adjustments while preserving full audit traceability.
 
-### 1. Authentic Telemetry & Honest Synthesis (`tests/test_trustworthy_execution.py` - 13 Tests)
+### 1. Authentic Telemetry & Honest Synthesis (`tests/test_trustworthy_execution.py` - 12 Tests)
 
 - **Authentic Non-Zero Exit Codes**: Verifies runtime errors emit exit code `1` and unregistered tools emit exit code `127`. No synthetic `0` exit codes are permitted on failure.
 - **Deterministic CLI Command Line**: Validates exact shell strings are reconstructed across single executions and DAG node executions.
@@ -82,13 +82,13 @@ Kairo provides rigorous verification suites ensuring execution results and repor
 - **Honest Synthesis & Failure Badging**: Proves that failed tasks render explicit failure banners (`❌ Execution Failed`) and accurate error root causes rather than hallucinating "Audit Complete" or "No vulnerabilities".
 - **DAG Failure State Isolation**: Verifies that failed DAG steps (`exit_code != 0`) are skipped during observation ingestion so failed runs cannot poison downstream context.
 
-### 2. DAG Controller & Prerequisite Evidence Gating (`tests/test_dag_controller.py` - 15 Tests)
+### 2. DAG Controller & Prerequisite Evidence Gating (`tests/test_dag_controller.py` - 11 Tests)
 
 - **Prerequisite Evidence Gating**: Proves web scanners and password auditors are blocked from executing unless network reconnaissance nodes have confirmed active open ports.
 - **Topological & Parallel Execution**: Validates serial vs parallel multi-task dispatch and dependency resolution.
 - **Recovery Lineage**: Verifies that failed steps trigger compensatory recovery suggestions without graph termination.
 
-### 3. Model Intent Flow & Dual-Model Local Routing (`tests/test_model_intent_flow.py`, `tests/test_model_integration.py` - 25 Tests)
+### 3. Model Intent Flow & Dual-Model Local Routing (`tests/test_model_intent_flow.py`, `tests/test_model_integration.py` - 17 Tests)
 
 - **Intent Classification**: Tests 4-class intent routing (`question`, `plan_only`, `tool_request`, `task_request`) with extracted target entities.
 - **Dual-Model Air-Gapped Fallback**: Tests primary custom model execution and automatic failover to local fallback model upon schema errors.
@@ -122,8 +122,8 @@ Simulates erratic human operator behavior:
 ## 6. Running the Master Test Matrix
 
 ```bash
-# 1. Run Master Consolidated Engineering Suite (104 Tests - 100% Pass)
-python -m pytest tests/test_execution_gateway.py tests/test_model_integration.py tests/test_model_intent_flow.py tests/test_dag_controller.py tests/test_trustworthy_execution.py tests/test_toolspec_registry.py tests/test_scope_contract.py tests/test_workspace_and_auth_gateway.py tests/test_execution_plane_and_tauri.py tests/test_tool_selection.py -v
+# 1. Run Master Consolidated Engineering Suite (189 Passed, 5 Skipped, 0 Failed - 100% Pass)
+python -m pytest tests/test_execution_gateway.py tests/test_model_intent_flow.py tests/test_dag_controller.py tests/test_trustworthy_execution.py tests/test_toolspec_registry.py tests/test_scope_contract.py tests/test_workspace_and_auth_gateway.py tests/test_execution_plane_and_tauri.py tests/test_tool_selection.py tests/test_tool_execution_chain.py tests/test_model_integration.py tests/test_model_center.py tests/test_boundary.py tests/test_reporter_failure_aware.py tests/test_evidence_store_and_reporter.py tests/test_observer_critic_recovery.py tests/test_planner.py tests/test_shared_projects_and_audit_explorer.py tests/test_lab_benchmark.py tests/test_snapshot_limits_artifacts.py tests/test_vm_limits.py tests/test_third_party_sdk_tool_addition.py tests/test_terminal_stream_supervisor.py -v
 
 # 2. Run all 52+ test suites with verbose output
 python -m pytest -v

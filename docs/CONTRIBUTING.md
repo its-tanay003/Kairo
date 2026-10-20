@@ -75,8 +75,8 @@ python tests/test_boundary.py
 Before submitting any Pull Request, ensure that all master test suites pass cleanly:
 
 ```bash
-# 1. Master Consolidated Engineering Suite (104 Tests - 100% Pass)
-python -m pytest tests/test_execution_gateway.py tests/test_model_integration.py tests/test_model_intent_flow.py tests/test_dag_controller.py tests/test_trustworthy_execution.py tests/test_toolspec_registry.py tests/test_scope_contract.py tests/test_workspace_and_auth_gateway.py tests/test_execution_plane_and_tauri.py tests/test_tool_selection.py -q
+# 1. Master Consolidated Engineering Suite (189 Passed, 5 Skipped, 0 Failed - 100% Pass)
+python -m pytest tests/test_execution_gateway.py tests/test_model_intent_flow.py tests/test_dag_controller.py tests/test_trustworthy_execution.py tests/test_toolspec_registry.py tests/test_scope_contract.py tests/test_workspace_and_auth_gateway.py tests/test_execution_plane_and_tauri.py tests/test_tool_selection.py tests/test_tool_execution_chain.py tests/test_model_integration.py tests/test_model_center.py tests/test_boundary.py tests/test_reporter_failure_aware.py tests/test_evidence_store_and_reporter.py tests/test_observer_critic_recovery.py tests/test_planner.py tests/test_shared_projects_and_audit_explorer.py tests/test_lab_benchmark.py tests/test_snapshot_limits_artifacts.py tests/test_vm_limits.py tests/test_third_party_sdk_tool_addition.py tests/test_terminal_stream_supervisor.py -q
 
 # 2. Execution Gateway & Scope Security Tests
 python -m pytest tests/test_execution_gateway.py tests/test_scope_contract.py -v

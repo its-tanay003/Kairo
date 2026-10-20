@@ -119,7 +119,7 @@ Defined in [`ui/src/app/globals.css`](file:///c:/New%20Volume%20(D)/dev/ui/src/a
 
 ```text
 +-----------------------------------------------------------------------------------+
-| [ | ] ✦ Kairo   [ ✦ Kairo 3.7 (Sonnet Tier) ▾ ]       [● Ready]   [ [ | ] ⚙ Advanced ] | <- Top Bar (52px)
+| [ | ] ✦ Kairo   [ ✦ Kairo Scale 2B (Custom Primary) ▾ ]       [● Ready]   [ [ | ] ⚙ Advanced ] | <- Top Bar (52px)
 +-----------------+-----------------------------------------------------------------+
 |                 |                                                                 |
 |  Claude Sidebar |                   Central Chat Surface                          |
@@ -144,11 +144,11 @@ Defined in [`ui/src/app/globals.css`](file:///c:/New%20Volume%20(D)/dev/ui/src/a
 
 The header sits at a restrained **52px height** in `--bg-surface` (`#141413`):
 - **Left**: Sidebar collapse toggle icon, Anthropic starburst monogram in terracotta (`#d97757`), and wordmark `Kairo` with `Claude v3.0` badge.
-- **Center**: **Claude Model Selector Pill** (`✦ Kairo 3.7 (Cyber-Ops Sonnet) ▾`). Clicking reveals a warm dropdown menu with:
-  1. `Kairo 3.7 (Sonnet Tier)` (Default): Full autonomous reasoning & Kali sandbox planning.
-  2. `Kairo 3.5 (Haiku Fast)`: Ultra-low latency port scanning & recon.
-  3. `Llama-3-70B Pentest SFT`: Fine-tuned local cyber-ops model with GBNF grammar constraints.
-  4. `DeepSeek-R1 Reasoner`: Extended chain-of-thought mathematical and vulnerability analysis.
+- **Center**: **Claude Model Selector Pill** (`✦ Kairo Scale 2B (Custom Primary) ▾`). Clicking reveals a warm dropdown menu with:
+  1. `Kairo Scale 2B (Custom Primary)` (Default): Full autonomous reasoning & Kali sandbox planning with local GRPO weights.
+  2. `Qwen2.5-0.5B (Local Fallback)`: High-speed local GGUF quantized model for triage and low-latency recon.
+  3. `Kairo GRPO Final (Reasoner)`: Local fine-tuned RL reasoning checkpoint with verified rule-based rewards.
+  4. `Qwen3-Coder-30B (MoE Base)`: Local MoE fallback target for extended cybersecurity coding tasks.
 - **Right**: Clean plain-language status pill (`● Ready`) with hover telemetry tooltip, plus the **Advanced Console** button (`[ | ] ⚙ Advanced`).
 
 ---
@@ -182,7 +182,7 @@ When `messages.length === 0`, KAIRO displays the signature Anthropic Claude welc
 Rendered on the right with a warm slate background (`#282724`), subtle stone border (`#383632`), rounded corners (`18px 18px 4px 18px`), and warm ivory text (`#faf9f5`).
 
 ### 8.2 Agent Header & Persona
-Each response starts with the terracotta starburst avatar, the name **Kairo**, the `Sonnet-Grade` badge, and timestamp.
+Each response starts with the terracotta starburst avatar, the name **Kairo**, the `Local-Primary` badge, and timestamp.
 
 ### 8.3 Claude 3.7 Extended Thinking Accordion
 Reasoning, tool scoring, and recovery evaluations are encapsulated inside an expandable pill:
@@ -230,7 +230,7 @@ All screenshots are stored in [`docs/assets/screenshots/`](file:///c:/New%20Volu
 
 ### 11.2 Claude Model Selector Dropdown
 ![Claude Model Selector](file:///c:/New%20Volume%20(D)/dev/docs/assets/screenshots/02_claude_model_selector.png)
-*Figure 11.2: Model picker dropdown in top navigation bar displaying Sonnet 3.7, Haiku 3.5, Llama-3-70B, and DeepSeek-R1.*
+*Figure 11.2: Model picker dropdown in top navigation bar displaying Kairo Scale 2B (Custom Primary), Qwen2.5-0.5B (Local Fallback), Kairo GRPO Final (Reasoner), and Qwen3-Coder-30B (MoE Base).*
 
 ### 11.3 Cryptographic Scope Contract Popover
 ![Scope Contract Popover](file:///c:/New%20Volume%20(D)/dev/docs/assets/screenshots/03_claude_scope_popover.png)

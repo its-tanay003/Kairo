@@ -108,10 +108,10 @@ Open your browser to `http://localhost:3000` to interact with the **Claude UI co
 
 ### Step 7: Verify System Integrity (Master Consolidated Test Suite)
 
-Run the full 104-test regression and integration suite to verify that all 7 security gates, model runtimes, and DAG autonomous execution planes are operational:
+Run the master regression and integration suite (189 Passed, 5 Skipped, 0 Failed) to verify that all 7 security gates, model runtimes, and DAG autonomous execution planes are operational:
 
 ```bash
-python -m pytest tests/test_execution_gateway.py tests/test_model_integration.py tests/test_model_intent_flow.py tests/test_dag_controller.py tests/test_trustworthy_execution.py tests/test_toolspec_registry.py tests/test_scope_contract.py tests/test_workspace_and_auth_gateway.py tests/test_execution_plane_and_tauri.py tests/test_tool_selection.py -q
+python -m pytest tests/test_execution_gateway.py tests/test_model_intent_flow.py tests/test_dag_controller.py tests/test_trustworthy_execution.py tests/test_toolspec_registry.py tests/test_scope_contract.py tests/test_workspace_and_auth_gateway.py tests/test_execution_plane_and_tauri.py tests/test_tool_selection.py tests/test_tool_execution_chain.py tests/test_model_integration.py tests/test_model_center.py tests/test_boundary.py tests/test_reporter_failure_aware.py tests/test_evidence_store_and_reporter.py tests/test_observer_critic_recovery.py tests/test_planner.py tests/test_shared_projects_and_audit_explorer.py tests/test_lab_benchmark.py tests/test_snapshot_limits_artifacts.py tests/test_vm_limits.py tests/test_third_party_sdk_tool_addition.py tests/test_terminal_stream_supervisor.py -q
 ```
 
 ---
@@ -218,7 +218,7 @@ WantedBy=multi-user.target
 | :--- | :--- | :--- | :--- |
 | **Edge / Laptop** | 16 GB | None (CPU) | 380M – 1.5B quantized SFT models |
 | **Standard Workstation** | 32 GB | 8 GB (RTX 4060/4070) | 7B – 14B Q4 models (`llama.cpp` GPU offload) |
-| **Enterprise Server** | 64 GB+ | 24 GB+ (RTX 3090/4090/A5000) | 70B quantized models or DeepSeek-R1 full context |
+| **Enterprise Server** | 64 GB+ | 24 GB+ (RTX 3090/4090/A5000) | Qwen3-Coder-30B (MoE Base) or 70B quantized models with full local context |
 
 ---
 

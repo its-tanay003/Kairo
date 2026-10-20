@@ -111,7 +111,7 @@ Code 1 (Commands & Hashes)   : 12px / Line-height 1.45 / JetBrains Mono Medium
 - **Sidebar Toggle**: Minimalist icon button to toggle sidebar visibility.
 - **Model Selector Dropdown**: Pill located in center:
   - Displays `✦ {selectedModel}` with dropdown chevron.
-  - Options include: `Kairo 3.7 (Sonnet Tier)`, `Kairo 3.5 (Haiku Fast)`, `Llama-3-70B Pentest SFT`, and `DeepSeek-R1 Reasoner`.
+  - Options include: `Kairo Scale 2B (Custom Primary)`, `Qwen2.5-0.5B (Local Fallback)`, `Kairo GRPO Final (Reasoner)`, and `Qwen3-Coder-30B (MoE Base)`.
 - **Status Pill**: Shows real-time connection state (`● Ready`, `● Running nmap…`, `● Connecting…`). Hovering reveals tooltip detailing Model, Kali Worker, Scope Target, and Session Hash.
 - **Console Button**: Right-aligned pill with split-screen icon (`[ | ] ⚙ Advanced`).
 
