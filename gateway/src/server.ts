@@ -142,6 +142,33 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
+  // Incremental Agent Tool Card Stream endpoint: POST /agent/stream_step or POST /broadcast
+  if ((url.pathname === "/agent/stream_step" || url.pathname === "/broadcast") && req.method === "POST") {
+    try {
+      const body = await parseJsonBody(req);
+      const targetSessionId = body.sessionId || body.session_id;
+      let delivered = false;
+      for (const [clientWs, s] of sessions.entries()) {
+        if (!targetSessionId || s.sessionId === targetSessionId || s.workspaceId === body.workspaceId) {
+          if (clientWs.readyState === WebSocket.OPEN) {
+            clientWs.send(JSON.stringify(body));
+            delivered = true;
+          }
+        }
+      }
+      if (!delivered) {
+        broadcastToAll(body);
+      }
+      res.writeHead(200, { "Content-Type": "application/json" });
+      res.end(JSON.stringify({ status: "streamed", delivered }));
+      return;
+    } catch (err: any) {
+      res.writeHead(500, { "Content-Type": "application/json" });
+      res.end(JSON.stringify({ error: err.message }));
+      return;
+    }
+  }
+
   if (url.pathname === "/model-center" || url.pathname === "/models") {
     try {
       const response = await fetch(`${ORCHESTRATOR_URL}/model-center`);
@@ -904,6 +931,24 @@ wss.on("connection", async (ws: WebSocket, req) => {
             timestamp: new Date().toISOString(),
           })
         );
+        return;
+      }
+
+      // Incremental Tool Card / Agent Response Broadcast from Orchestrator via WebSocket
+      if (payload.type === "agent_response" || payload.type === "stream_tool_card") {
+        const targetSessionId = payload.sessionId || payload.session_id;
+        let delivered = false;
+        for (const [clientWs, s] of sessions.entries()) {
+          if (clientWs !== ws && (!targetSessionId || s.sessionId === targetSessionId || s.workspaceId === payload.workspaceId)) {
+            if (clientWs.readyState === WebSocket.OPEN) {
+              clientWs.send(rawText);
+              delivered = true;
+            }
+          }
+        }
+        if (!delivered) {
+          broadcastToAll(rawText, ws);
+        }
         return;
       }
 

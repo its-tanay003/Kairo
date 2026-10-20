@@ -521,6 +521,7 @@ class DAGController:
             "web_vulnerability_scan",
             "wordpress_audit",
             "wordpress_scan",
+            "wordpress_vulnerability_audit",
             "cms_scan",
             "web_spider",
             "dast_testing",
@@ -593,7 +594,20 @@ class DAGController:
                         break
 
             if not candidates:
-                candidates = [cap] if cap else ["nmap.scan.v1", "kali.exec.v1"]
+                if "wordpress" in cap or "wpscan" in cap:
+                    candidates = ["wpscan.audit.v1"]
+                elif "subdomain" in cap or "dns" in cap:
+                    candidates = ["subfinder.enum.v1", "dnsrecon.enum.v1"]
+                elif "port" in cap or "nmap" in cap or "network" in cap:
+                    candidates = ["nmap.scan.v1"]
+                elif "dir" in cap or "fuzz" in cap:
+                    candidates = ["gobuster.dir.v1", "ffuf.fuzz.v1"]
+                elif "cve" in cap or "searchsploit" in cap:
+                    candidates = ["searchsploit.search.v1"]
+                elif "nikto" in cap or "web_vuln" in cap:
+                    candidates = ["nikto.scan.v1"]
+                else:
+                    candidates = [cap] if cap else ["nmap.scan.v1", "kali.exec.v1"]
 
         # Filter out previously failed tools to enact automatic fallback
         active_candidates = [c for c in candidates if c not in previous_failures]

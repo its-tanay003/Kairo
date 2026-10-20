@@ -17,7 +17,7 @@ import json
 import logging
 import sys
 from dataclasses import dataclass, asdict
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Set, Tuple
 from pathlib import Path
 
 import time
@@ -49,10 +49,12 @@ WEIGHTS = {
 # Mapping between abstract DAG capabilities and known tool capabilities/IDs
 CAPABILITY_TOOL_AFFINITY: Dict[str, List[str]] = {
     "network_port_scan": ["nmap.scan.v1", "system_ping"],
+    "network_scan": ["nmap.scan.v1", "system_ping"],
     "port_scan": ["nmap.scan.v1"],
     "host_live_detection": ["system_ping", "nmap.scan.v1"],
     "service_detection": ["nmap.scan.v1", "whatweb.scan.v1"],
     "service_fingerprinting": ["whatweb.scan.v1", "nmap.scan.v1"],
+    "web_technology_fingerprint": ["whatweb.scan.v1", "nikto.scan.v1"],
     "dns_subdomain_discovery": ["subfinder.enum.v1", "dnsrecon.enum.v1", "dnsenum.enum.v1", "dig.lookup.v1", "gobuster.dir.v1"],
     "subdomain_discovery": ["subfinder.enum.v1", "dnsrecon.enum.v1", "dnsenum.enum.v1"],
     "subdomain_enumeration": ["subfinder.enum.v1", "dnsrecon.enum.v1", "dnsenum.enum.v1"],
@@ -63,14 +65,19 @@ CAPABILITY_TOOL_AFFINITY: Dict[str, List[str]] = {
     "whois": ["whois.lookup.v1"],
     "web_directory_enum": ["gobuster.dir.v1", "ffuf.fuzz.v1"],
     "web_directory_enumeration": ["gobuster.dir.v1", "ffuf.fuzz.v1"],
+    "web_enum": ["gobuster.dir.v1", "ffuf.fuzz.v1"],
     "web_fuzzing": ["ffuf.fuzz.v1", "gobuster.dir.v1"],
     "web_vulnerability_scan": ["nikto.scan.v1", "wpscan.audit.v1", "sqlmap.scan.v1"],
     "wordpress_audit": ["wpscan.audit.v1"],
     "wordpress_scan": ["wpscan.audit.v1"],
+    "wordpress_vulnerability_audit": ["wpscan.audit.v1"],
     "cms_scan": ["wpscan.audit.v1", "whatweb.scan.v1"],
     "filesystem_vulnerability_scan": ["trivy.fs.v1"],
     "container_fs_scan": ["trivy.fs.v1"],
     "cve_scan": ["trivy.fs.v1", "searchsploit.search.v1", "nikto.scan.v1"],
+    "vulnerability_assessment": ["nikto.scan.v1", "trivy.fs.v1", "searchsploit.search.v1"],
+    "vulnerability_surface_correlation": ["searchsploit.search.v1", "metasploit.rpc.v1", "trivy.fs.v1"],
+    "tls_security_audit": ["nikto.scan.v1", "nmap.scan.v1"],
     "sql_injection_test": ["sqlmap.scan.v1"],
     "sqli_audit": ["sqlmap.scan.v1"],
     "credential_testing": ["hydra.brute.v1"],
@@ -101,6 +108,93 @@ CAPABILITY_TOOL_AFFINITY: Dict[str, List[str]] = {
     "dast_testing": ["browser.security.v1", "zap.gui.v1", "nikto.scan.v1"],
     "dom_inspection": ["browser.security.v1"],
     "cookie_security": ["browser.security.v1"],
+}
+
+# Capability to Category mapping reflecting tool and security taxonomy
+CAPABILITY_CATEGORY_MAP: Dict[str, str] = {
+    # Network / Recon
+    "network_port_scan": "recon",
+    "network_scan": "recon",
+    "port_scan": "recon",
+    "host_live_detection": "recon",
+    "service_detection": "recon",
+    "service_fingerprinting": "recon",
+    "os_fingerprint": "recon",
+    # DNS / OSINT
+    "dns_subdomain_discovery": "recon",
+    "subdomain_discovery": "recon",
+    "subdomain_enumeration": "recon",
+    "dns_enumeration": "recon",
+    "dns_lookup": "recon",
+    "zone_transfer": "recon",
+    "domain_whois_lookup": "recon",
+    "whois": "recon",
+    # Web / Web Security
+    "web_directory_enum": "recon",
+    "web_directory_enumeration": "recon",
+    "web_enum": "recon",
+    "web_fuzzing": "recon",
+    "web_vulnerability_scan": "web_security",
+    "wordpress_audit": "web",
+    "wordpress_scan": "web",
+    "wordpress_vulnerability_audit": "web",
+    "cms_scan": "web",
+    "web_technology_fingerprint": "recon",
+    "web_proxy": "web_security",
+    "http_interception": "web_security",
+    "packet_repeater": "web_security",
+    "target_mapping": "web_security",
+    "web_spider": "web_security",
+    "browser_testing": "web_security",
+    "xss_testing": "web_security",
+    "auth_flow_testing": "web_security",
+    "dast_testing": "web_security",
+    "dom_inspection": "web_security",
+    "cookie_security": "web_security",
+    # Exploitation & Credential Auditing
+    "sql_injection_test": "exploitation",
+    "sqli_audit": "exploitation",
+    "credential_testing": "exploitation",
+    "credential_brute_force": "exploitation",
+    "password_brute_force": "exploitation",
+    "metasploit_exploit": "exploitation",
+    # Vulnerability & Analysis
+    "exploit_search": "recon",
+    "vulnerability_search": "recon",
+    "vulnerability_assessment": "analysis",
+    "vulnerability_surface_correlation": "analysis",
+    "cve_scan": "analysis",
+    "filesystem_vulnerability_scan": "analysis",
+    "container_fs_scan": "analysis",
+    "tls_security_audit": "recon",
+    # Network Traffic & Capture
+    "network_traffic_capture": "recon",
+    "packet_capture": "network_analysis",
+    "packet_analysis": "network_analysis",
+    "traffic_dissection": "network_analysis",
+    "pcap_analysis": "network_analysis",
+    # Utility / Forensics
+    "file_metadata_analysis": "recon",
+    "metadata_extraction": "recon",
+    "hash_identification": "utility",
+    # Execution
+    "command_execution": "execution",
+    "general_execution": "execution",
+    "evidence_reporting": "execution",
+}
+
+# Cross-category semantic compatibility clusters
+CATEGORY_SYNONYMS: Dict[str, Set[str]] = {
+    "web": {"web", "web_security", "web_app", "recon"},
+    "web_security": {"web_security", "web", "web_app", "recon"},
+    "web_app": {"web_app", "web", "web_security", "recon"},
+    "recon": {"recon", "osint", "network", "network_recon", "network_analysis"},
+    "network": {"network", "recon", "network_analysis"},
+    "network_analysis": {"network_analysis", "recon", "network"},
+    "exploitation": {"exploitation", "exploit", "cred_audit", "vuln_scan"},
+    "analysis": {"analysis", "vuln_scan", "recon"},
+    "utility": {"utility", "diagnostic"},
+    "execution": {"execution", "sandbox_execution"},
 }
 
 
@@ -188,6 +282,9 @@ class ToolSelectionResult:
     task_goal: str
     required_capability: Optional[str]
     session_id: str
+    plan_step: Optional[Dict[str, Any]] = None
+    intended_capability: Optional[str] = None
+    intended_category: Optional[str] = None
 
     @property
     def candidates(self) -> List[ToolCandidateScore]:
@@ -204,7 +301,7 @@ class ToolSelectionResult:
         return "No tool selected"
 
     def to_dict(self) -> Dict[str, Any]:
-        return {
+        d = {
             "selected_tool": self.selected_tool.to_dict() if self.selected_tool else None,
             "candidates": [c.to_dict() for c in self.top_candidates],
             "selection_reason": self.selection_reason,
@@ -214,6 +311,13 @@ class ToolSelectionResult:
             "required_capability": self.required_capability,
             "session_id": self.session_id,
         }
+        if self.intended_capability:
+            d["intended_capability"] = self.intended_capability
+        if self.intended_category:
+            d["intended_category"] = self.intended_category
+        if self.plan_step:
+            d["plan_step"] = self.plan_step
+        return d
 
 
 class HybridToolSelector:
@@ -235,16 +339,87 @@ class HybridToolSelector:
         target_override: Optional[str] = None,
         top_k: int = 3,
         exclude: Optional[List[str]] = None,
+        plan_step: Optional[Dict[str, Any]] = None,
+        intended_capability: Optional[str] = None,
+        intended_category: Optional[str] = None,
+        planner_output: Optional[Any] = None,
         **kwargs,
     ) -> ToolSelectionResult:
         """
         Calculates scores for all registered tools and returns top_k candidates with full breakdowns.
+        Incorporates the planner's output (intended capability, intended category, step details)
+        as a real weighted factor in the semantic_fit dimension alongside keyword boosts.
         Supports excluding specific tool IDs (used by Recovery Agent to select alternate tools).
         """
         if goal is None:
             goal = kwargs.get("intent") or kwargs.get("message") or ""
+
+        # Resolve plan_step from explicit arg or kwargs
+        if plan_step is None:
+            raw_step = kwargs.get("step") or kwargs.get("node") or kwargs.get("plan_step")
+            if isinstance(raw_step, dict):
+                plan_step = raw_step
+
+        # Resolve planner_output if provided
+        if planner_output is None:
+            raw_planner = kwargs.get("planner_output") or kwargs.get("plan")
+            if raw_planner:
+                planner_output = raw_planner
+
+        planner_rationale = ""
+        step_label = ""
+        step_description = ""
+
+        # Extract step details from planner_output if plan_step wasn't directly passed
+        if plan_step is None and isinstance(planner_output, dict):
+            planner_rationale = planner_output.get("rationale") or ""
+            nodes = planner_output.get("nodes")
+            if isinstance(nodes, list) and nodes:
+                req_node_id = kwargs.get("node_id")
+                if req_node_id:
+                    matched = next((n for n in nodes if isinstance(n, dict) and n.get("node_id") == req_node_id), None)
+                    if matched:
+                        plan_step = matched
+                if plan_step is None:
+                    matched = next((n for n in nodes if isinstance(n, dict) and n.get("status") in ("ready", "queued", "running")), nodes[0])
+                    if isinstance(matched, dict):
+                        plan_step = matched
+            elif "capability" in planner_output:
+                plan_step = planner_output
+        elif isinstance(plan_step, dict):
+            step_label = plan_step.get("label") or ""
+            step_description = plan_step.get("description") or ""
+
+        if plan_step and isinstance(plan_step, dict):
+            step_label = step_label or plan_step.get("label") or ""
+            step_description = step_description or plan_step.get("description") or ""
+
+        # Resolve intended_capability
+        if intended_capability is None:
+            intended_capability = (
+                kwargs.get("intended_capability")
+                or (plan_step.get("capability") if plan_step else None)
+                or required_capability
+                or kwargs.get("capability")
+            )
         if required_capability is None:
-            required_capability = kwargs.get("capability")
+            required_capability = intended_capability
+
+        # Resolve intended_category
+        if intended_category is None:
+            intended_category = (
+                kwargs.get("intended_category")
+                or (plan_step.get("category") if plan_step else None)
+                or kwargs.get("category")
+            )
+
+        # Context text overrides if passed in kwargs
+        if not step_label:
+            step_label = kwargs.get("step_label") or kwargs.get("label") or ""
+        if not step_description:
+            step_description = kwargs.get("step_description") or kwargs.get("description") or ""
+        if not planner_rationale:
+            planner_rationale = kwargs.get("planner_rationale") or kwargs.get("rationale") or ""
 
         tools = self.registry.list_tools()
         if not tools:
@@ -266,6 +441,11 @@ class HybridToolSelector:
                 required_capability=required_capability,
                 session_id=session_id,
                 target_override=target_override,
+                intended_capability=intended_capability,
+                intended_category=intended_category,
+                step_label=step_label,
+                step_description=step_description,
+                planner_rationale=planner_rationale,
             )
             scored_candidates.append(candidate)
 
@@ -286,6 +466,9 @@ class HybridToolSelector:
             task_goal=goal,
             required_capability=required_capability,
             session_id=session_id,
+            plan_step=plan_step,
+            intended_capability=intended_capability,
+            intended_category=intended_category,
         )
 
     def _score_tool(
@@ -295,11 +478,25 @@ class HybridToolSelector:
         required_capability: Optional[str],
         session_id: str,
         target_override: Optional[str] = None,
+        intended_capability: Optional[str] = None,
+        intended_category: Optional[str] = None,
+        step_label: str = "",
+        step_description: str = "",
+        planner_rationale: str = "",
     ) -> ToolCandidateScore:
         """Calculates the 7 hybrid factors, raw signals, and total weighted score for a tool."""
 
         # 1. Semantic Fit (weight: 0.30)
-        s_fit, raw_s_fit = self._calc_semantic_fit(tool, goal, required_capability)
+        s_fit, raw_s_fit = self._calc_semantic_fit(
+            tool=tool,
+            goal=goal,
+            required_capability=required_capability,
+            intended_capability=intended_capability,
+            intended_category=intended_category,
+            step_label=step_label,
+            step_description=step_description,
+            planner_rationale=planner_rationale,
+        )
 
         # 2. Capability Coverage (weight: 0.20)
         c_cov, raw_c_cov = self._calc_capability_coverage(tool, required_capability, goal)
@@ -371,95 +568,203 @@ class HybridToolSelector:
     # Factor 1: Semantic Fit (0.30)
     # -------------------------------------------------------------------------
     def _calc_semantic_fit(
-        self, tool: ToolSpec, goal: str, required_capability: Optional[str]
+        self,
+        tool: ToolSpec,
+        goal: str,
+        required_capability: Optional[str] = None,
+        intended_capability: Optional[str] = None,
+        intended_category: Optional[str] = None,
+        step_label: str = "",
+        step_description: str = "",
+        planner_rationale: str = "",
     ) -> Tuple[float, str]:
+        # Broad execution penalty: heavily demote shell.run.v1 and kali.exec.v1 if goal maps to security ops
+        security_ops = [
+            "scan", "port", "nmap", "dns", "subdomain", "dir", "fuzz", "cve", "vuln",
+            "sql", "sqli", "password", "brute", "whois", "dig", "traffic", "pcap",
+            "wordpress", "wpscan", "trivy", "hash", "exif", "metadata", "burp", "wireshark", "zap"
+        ]
+        target_cap = (intended_capability or required_capability or "").lower()
+        if tool.id in ("kali.exec.v1", "shell.run.v1"):
+            if any(op in goal.lower() for op in security_ops) or any(op in target_cap for op in security_ops):
+                return 0.05, "demoted: typed security tool adapter is favored for this operation"
+
         text_corpus = (
             f"{tool.id} {tool.name} {tool.category} {tool.description} "
             f"{' '.join(tool.capabilities)} {tool.docs.get('summary', '')} {tool.docs.get('usage', '')}"
         ).lower()
 
-        query_tokens = set(re.findall(r"\w+", goal.lower()))
-        matched_tokens = [tok for tok in query_tokens if tok in text_corpus and len(tok) > 2]
+        planner_text = f"{step_label} {step_description} {planner_rationale}".strip()
+        effective_cap = (intended_capability or required_capability or "").strip().lower()
+        effective_cat = (intended_category or "").strip().lower()
+        if not effective_cat and effective_cap:
+            effective_cat = CAPABILITY_CATEGORY_MAP.get(effective_cap, "")
+            if not effective_cat:
+                if any(x in effective_cap for x in ["scan", "recon", "enum", "discovery", "lookup", "whois"]):
+                    effective_cat = "recon"
+                elif any(x in effective_cap for x in ["wordpress", "web", "http", "fuzz"]):
+                    effective_cat = "web"
+                elif any(x in effective_cap for x in ["exploit", "brute", "sql", "inject"]):
+                    effective_cat = "exploitation"
+                elif any(x in effective_cap for x in ["packet", "traffic", "pcap"]):
+                    effective_cat = "network_analysis"
+                elif any(x in effective_cap for x in ["cve", "vuln", "audit", "trivy"]):
+                    effective_cat = "analysis"
 
-        # Stopword filtering
-        common_words = {"the", "and", "for", "with", "target", "run", "scan", "test", "into"}
-        content_matches = [m for m in matched_tokens if m not in common_words]
+        combined_query = f"{goal} {planner_text} {effective_cap}".strip().lower()
 
-        # Specific keyword heuristics
+        # 1. Domain Vocabulary & Text Overlap (25% weight)
+        query_tokens = set(re.findall(r"\w+", combined_query))
+        common_words = {"the", "and", "for", "with", "target", "run", "scan", "test", "into", "from", "that", "this"}
+        matched_tokens = [tok for tok in query_tokens if tok in text_corpus and len(tok) > 2 and tok not in common_words]
+        overlap_score = min(len(matched_tokens) / 3.0, 1.0) if query_tokens else 0.50
+        s_overlap = min(max(overlap_score, 0.20), 1.0)
+
+        # 2. Fast Keyword Heuristic Boosts (25% weight when planner present, 55% when absent)
         keyword_boosts = 0.0
         bonus_reasons = []
 
-        if any(w in goal.lower() for w in ["port", "nmap", "syn", "sweep"]) and "nmap" in tool.id:
+        q_lower = combined_query
+        if any(w in q_lower for w in ["port", "nmap", "syn", "sweep"]) and "nmap" in tool.id:
             keyword_boosts += 0.35
             bonus_reasons.append("port scan terms")
-        if any(w in goal.lower() for w in ["dir", "fuzz", "endpoint", "path", "route"]) and any(
+        if any(w in q_lower for w in ["dir", "fuzz", "endpoint", "path", "route"]) and any(
             x in tool.id for x in ["gobuster", "ffuf"]
         ):
             keyword_boosts += 0.35
             bonus_reasons.append("web fuzzing terms")
-        if any(w in goal.lower() for w in ["cve", "exploit", "searchsploit", "vulnerability"]) and (
+        if any(w in q_lower for w in ["cve", "exploit", "searchsploit", "vulnerability"]) and (
             "searchsploit" in tool.id or "nikto" in tool.id
         ):
             keyword_boosts += 0.35
             bonus_reasons.append("vulnerability search terms")
-        if any(w in goal.lower() for w in ["password", "brute", "ssh", "hydra", "ftp", "login"]) and "hydra" in tool.id:
+        if any(w in q_lower for w in ["password", "brute", "ssh", "hydra", "ftp", "login"]) and "hydra" in tool.id:
             keyword_boosts += 0.35
             bonus_reasons.append("credential audit terms")
-        if any(w in goal.lower() for w in ["sql", "sqli", "injection", "database"]) and "sqlmap" in tool.id:
+        if any(w in q_lower for w in ["sql", "sqli", "injection", "database"]) and "sqlmap" in tool.id:
             keyword_boosts += 0.35
             bonus_reasons.append("SQL injection terms")
-        if any(w in goal.lower() for w in ["whois", "registrar", "asn"]) and "whois" in tool.id:
+        if any(w in q_lower for w in ["whois", "registrar", "asn"]) and "whois" in tool.id:
             keyword_boosts += 0.35
             bonus_reasons.append("whois terms")
-        if any(w in goal.lower() for w in ["dns", "dig", "record", "mx", "ns"]) and "dig" in tool.id:
+        if any(w in q_lower for w in ["dns", "dig", "record", "mx", "ns"]) and "dig" in tool.id:
             keyword_boosts += 0.35
             bonus_reasons.append("DNS terms")
-        if any(w in goal.lower() for w in ["pcap", "traffic", "tcpdump", "sniff", "packet"]) and "tcpdump" in tool.id:
+        if any(w in q_lower for w in ["pcap", "traffic", "tcpdump", "sniff", "packet"]) and "tcpdump" in tool.id:
             keyword_boosts += 0.35
             bonus_reasons.append("packet capture terms")
-        if any(w in goal.lower() for w in ["exif", "metadata", "image"]) and "exiftool" in tool.id:
+        if any(w in q_lower for w in ["exif", "metadata", "image"]) and "exiftool" in tool.id:
             keyword_boosts += 0.35
             bonus_reasons.append("metadata terms")
-        if any(w in goal.lower() for w in ["hash", "md5", "sha", "identify"]) and "hashid" in tool.id:
+        if any(w in q_lower for w in ["hash", "md5", "sha", "identify"]) and "hashid" in tool.id:
             keyword_boosts += 0.35
             bonus_reasons.append("hash identification terms")
-        if any(w in goal.lower() for w in ["subfinder", "subdomain"]) and "subfinder" in tool.id:
+        if any(w in q_lower for w in ["subfinder", "subdomain"]) and "subfinder" in tool.id:
             keyword_boosts += 0.40
             bonus_reasons.append("subdomain discovery terms")
-        if any(w in goal.lower() for w in ["dnsrecon", "zone transfer", "axfr"]) and "dnsrecon" in tool.id:
+        if any(w in q_lower for w in ["dnsrecon", "zone transfer", "axfr"]) and "dnsrecon" in tool.id:
             keyword_boosts += 0.40
             bonus_reasons.append("DNSRecon/zone transfer terms")
-        if any(w in goal.lower() for w in ["trivy", "filesystem", "secret", "package", "cve"]) and "trivy" in tool.id:
+        if any(w in q_lower for w in ["trivy", "filesystem", "secret", "package", "cve"]) and "trivy" in tool.id:
             keyword_boosts += 0.40
             bonus_reasons.append("Trivy CVE/filesystem terms")
-        if any(w in goal.lower() for w in ["wpscan", "wordpress", "wp plugin", "wp theme"]) and "wpscan" in tool.id:
+        if any(w in q_lower for w in ["wpscan", "wordpress", "wp plugin", "wp theme"]) and "wpscan" in tool.id:
             keyword_boosts += 0.40
             bonus_reasons.append("WPScan WordPress terms")
-        if any(w in goal.lower() for w in ["nikto", "header", "misconfiguration", "web vuln", "missing security"]) and "nikto" in tool.id:
+        if any(w in q_lower for w in ["nikto", "header", "misconfiguration", "web vuln", "missing security"]) and "nikto" in tool.id:
             keyword_boosts += 0.40
             bonus_reasons.append("Nikto web vulnerability terms")
-        if any(w in goal.lower() for w in ["browser", "dom", "playwright", "cookie"]) and "browser" in tool.id:
+        if any(w in q_lower for w in ["browser", "dom", "playwright", "cookie"]) and "browser" in tool.id:
             keyword_boosts += 0.40
             bonus_reasons.append("browser security terms")
 
-        # Broad execution penalty: heavily demote shell.run.v1 and kali.exec.v1 if goal maps to security ops
-        if tool.id in ("kali.exec.v1", "shell.run.v1"):
-            security_ops = [
-                "scan", "port", "nmap", "dns", "subdomain", "dir", "fuzz", "cve", "vuln",
-                "sql", "sqli", "password", "brute", "whois", "dig", "traffic", "pcap",
-                "wordpress", "wpscan", "trivy", "hash", "exif", "metadata", "burp", "wireshark", "zap"
-            ]
-            if any(op in goal.lower() for op in security_ops):
-                return 0.05, "demoted: typed security tool adapter is favored for this operation"
+        s_keyword = min(0.50 + keyword_boosts, 1.0) if keyword_boosts > 0 else 0.50
 
-        base_overlap = min(len(content_matches) / 5.0, 0.65) if query_tokens else 0.2
-        score = min(max(base_overlap + keyword_boosts, 0.15), 1.0)
+        # 3. Planner Decomposition Alignment (50% weight)
+        cap_score = 0.50
+        cap_reason = ""
+        if effective_cap:
+            pref_tools = CAPABILITY_TOOL_AFFINITY.get(effective_cap, [])
+            if not pref_tools:
+                for aff_k, aff_v in CAPABILITY_TOOL_AFFINITY.items():
+                    if aff_k in effective_cap or effective_cap in aff_k:
+                        pref_tools = aff_v
+                        break
 
-        match_str = f"matched {len(content_matches)} semantic terms ({', '.join(content_matches[:4])})"
+            if tool.id in pref_tools:
+                idx = pref_tools.index(tool.id)
+                cap_score = max(1.0 - (idx * 0.10), 0.70)
+                cap_reason = f"affinity #{idx+1} for '{effective_cap}'"
+            elif any(c.replace("_", "") == effective_cap.replace("_", "") for c in tool.capabilities):
+                cap_score = 0.95
+                cap_reason = f"exact match for capability '{effective_cap}'"
+            elif any(effective_cap in c or c in effective_cap for c in tool.capabilities):
+                cap_score = 0.85
+                cap_reason = f"partial match for capability '{effective_cap}'"
+            else:
+                cap_toks = set(re.findall(r"\w+", effective_cap))
+                tool_cap_toks = set(re.findall(r"\w+", " ".join(tool.capabilities) + " " + tool.id))
+                ov = cap_toks.intersection(tool_cap_toks)
+                if ov:
+                    cap_score = 0.60 + min(0.30, len(ov) * 0.15)
+                    cap_reason = f"shared capability tokens ({', '.join(ov)})"
+                else:
+                    cap_score = 0.15
+                    cap_reason = f"no capability match for '{effective_cap}'"
+
+        cat_score = 0.50
+        cat_reason = ""
+        if effective_cat:
+            t_cat = (tool.category or "").strip().lower()
+            if t_cat == effective_cat:
+                cat_score = 1.00
+                cat_reason = f"exact category match '{t_cat}'"
+            elif t_cat in CATEGORY_SYNONYMS.get(effective_cat, set()) or effective_cat in CATEGORY_SYNONYMS.get(t_cat, set()):
+                cat_score = 0.85
+                cat_reason = f"compatible category '{t_cat}' ~ '{effective_cat}'"
+            else:
+                cat_score = 0.20
+                cat_reason = f"category mismatch '{t_cat}' != '{effective_cat}'"
+
+        ctx_score = 0.50
+        if planner_text:
+            step_toks = [tok for tok in re.findall(r"\w+", planner_text.lower()) if len(tok) > 2 and tok not in common_words]
+            if step_toks:
+                matched_step_toks = [tok for tok in step_toks if tok in text_corpus]
+                ctx_score = min(max(len(matched_step_toks) / 2.0, 0.40), 1.0)
+
+        has_planner_info = bool(effective_cap or effective_cat or planner_text)
+        if has_planner_info:
+            if effective_cap and effective_cat:
+                s_planner = (0.50 * cap_score) + (0.30 * cat_score) + (0.20 * ctx_score)
+            elif effective_cap:
+                s_planner = (0.75 * cap_score) + (0.25 * ctx_score)
+            elif effective_cat:
+                s_planner = (0.75 * cat_score) + (0.25 * ctx_score)
+            else:
+                s_planner = ctx_score
+            # Weighted synthesis: 50% planner fit + 25% keyword heuristic + 25% text overlap
+            s_fit = (0.50 * s_planner) + (0.25 * s_keyword) + (0.25 * s_overlap)
+        else:
+            # Baseline when no planner context is provided (pure goal text)
+            s_planner = 0.50
+            s_fit = (0.45 * s_overlap) + (0.55 * s_keyword)
+
+        score = min(max(s_fit, 0.15), 1.0)
+
+        # Build informative rationale
+        reasons_list = []
+        if effective_cap and cap_reason:
+            reasons_list.append(f"plan_cap:{effective_cap} ({cap_reason}) [{cap_score:.2f}]")
+        if effective_cat and cat_reason:
+            reasons_list.append(f"plan_cat:{effective_cat} ({cat_reason}) [{cat_score:.2f}]")
+        if matched_tokens:
+            reasons_list.append(f"matched {len(matched_tokens)} semantic terms ({', '.join(matched_tokens[:4])})")
         if bonus_reasons:
-            match_str += f"; keyword affinity for {', '.join(bonus_reasons)}"
+            reasons_list.append(f"kw_boost: {', '.join(bonus_reasons)} (+{keyword_boosts:.2f})")
 
-        return score, match_str
+        raw_str = "; ".join(reasons_list) if reasons_list else f"baseline semantic fit {score:.2f}"
+        return score, raw_str
 
     # -------------------------------------------------------------------------
     # Factor 2: Capability Coverage (0.20)

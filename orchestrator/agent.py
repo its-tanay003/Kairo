@@ -112,6 +112,10 @@ class AgentLoop:
     def _extract_target(self, text: str) -> Optional[str]:
         """Extracts IP address, domain, or URL target from message text."""
         import re
+        url_match = re.search(r"https?://[a-zA-Z0-9\.\_\:\-]+(?:/[^\s]*)?", text)
+        if url_match:
+            return url_match.group(0)
+
         ip_match = re.search(r"\b(?:\d{1,3}\.){3}\d{1,3}(?:/\d{1,2})?\b", text)
         if ip_match:
             return ip_match.group(0)
@@ -122,9 +126,8 @@ class AgentLoop:
             if not cand.endswith((".py", ".pt", ".gguf", ".sh", ".json", ".md")):
                 return cand
 
-        url_match = re.search(r"https?://[a-zA-Z0-9\.\_\:\-]+", text)
-        if url_match:
-            return url_match.group(0)
+        if re.search(r"\b(?:this\s+host|localhost|local\s+host|local\s+machine|local\s+system|current\s+host|the\s+host)\b", text, re.IGNORECASE):
+            return "127.0.0.1"
 
         return None
 
@@ -656,7 +659,16 @@ class AgentLoop:
 
         elif adapter_registry.get(tool_id):
             adapter_cls = adapter_registry.get(tool_id)
-            adapter = adapter_cls(vm_manager=vm_manager, supervisor=self.supervisor)
+            try:
+                adapter = adapter_cls(vm_manager=vm_manager, supervisor=self.supervisor)
+            except TypeError:
+                try:
+                    adapter = adapter_cls(vm_manager=vm_manager)
+                except TypeError:
+                    try:
+                        adapter = adapter_cls(vm_manager)
+                    except TypeError:
+                        adapter = adapter_cls()
             inputs_dict = dict(requested_args) if isinstance(requested_args, dict) else {}
             if "target" not in inputs_dict and target_candidate:
                 inputs_dict["target"] = target_candidate
@@ -874,6 +886,95 @@ class AgentLoop:
             "handled_by_custom_model": exec_record.inference_runtime == "transformers",
             "handled_by_fallback": exec_record.fallback_used,
         }
+
+    def _stream_step_to_websocket(
+        self,
+        step_result: Dict[str, Any],
+        plan_id: str,
+        node_id: str,
+        session_id: str,
+        step_callback: Optional[Any] = None,
+    ) -> None:
+        """
+        Streams an incremental tool card / step result over WebSocket to Gateway and UI clients.
+        Formats payload to match the Gateway 'agent_response' contract expected by the UI.
+        """
+        if step_callback and callable(step_callback):
+            try:
+                step_callback(step_result)
+            except Exception as e:
+                logger.debug(f"[AgentLoop] Step callback error: {e}")
+
+        # Build payload matching Gateway 'agent_response'
+        step_payload = {
+            "type": "agent_response",
+            "sessionId": session_id,
+            "session_id": session_id,
+            "planId": plan_id,
+            "nodeId": node_id,
+            "reply": step_result.get("reply", ""),
+            "toolExecuted": step_result.get("tool_executed"),
+            "tool_executed": step_result.get("tool_executed"),
+            "execution": step_result.get("execution"),
+            "synthesis": step_result.get("synthesis") or (step_result.get("execution") or {}).get("synthesis"),
+            "eventId": step_result.get("event_id"),
+            "event_id": step_result.get("event_id"),
+            "event": step_result.get("event"),
+            "durationMs": step_result.get("duration_ms"),
+            "toolSelection": step_result.get("tool_selection"),
+            "modelId": step_result.get("model_id"),
+            "modelRole": step_result.get("model_role"),
+            "modelStatus": step_result.get("model_status"),
+            "modelVerification": step_result.get("model_verification"),
+            "selectedModel": step_result.get("selected_model"),
+            "actualModelId": step_result.get("actual_model_id"),
+            "inferenceRuntime": step_result.get("inference_runtime"),
+            "processedBySelectedModel": step_result.get("processed_by_selected_model"),
+            "structuredOutput": step_result.get("structured_output"),
+            "selectedTool": step_result.get("selected_tool"),
+            "validatedArgs": step_result.get("validated_args"),
+            "fallbackUsed": step_result.get("fallback_used"),
+            "fallbackReason": step_result.get("fallback_reason"),
+            "localOnly": True,
+            "intent": "tool_request",
+            "planOnly": False,
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+        }
+
+        # 1. Post to Gateway streaming endpoint (port 4000)
+        gateway_http = os.environ.get("GATEWAY_HTTP", "http://127.0.0.1:4000")
+        try:
+            import urllib.request
+            req_data = json.dumps(step_payload).encode("utf-8")
+            req = urllib.request.Request(
+                f"{gateway_http}/agent/stream_step",
+                data=req_data,
+                headers={"Content-Type": "application/json"},
+                method="POST",
+            )
+            with urllib.request.urlopen(req, timeout=0.3) as resp:
+                pass
+        except Exception as e:
+            logger.debug(f"[AgentLoop] Gateway HTTP stream push skipped: {e}")
+
+        # 2. Direct WebSocket push to ws://127.0.0.1:4000 in background thread
+        try:
+            import threading
+            def _push_ws():
+                try:
+                    import asyncio
+                    import websockets
+                    gateway_ws = os.environ.get("GATEWAY_WS", "ws://127.0.0.1:4000")
+                    async def _send():
+                        async with websockets.connect(f"{gateway_ws}/?sessionId={session_id}", open_timeout=0.3, close_timeout=0.3) as ws:
+                            await ws.send(json.dumps(step_payload))
+                    asyncio.run(_send())
+                except Exception:
+                    pass
+            th = threading.Thread(target=_push_ws, daemon=True)
+            th.start()
+        except Exception as e:
+            logger.debug(f"[AgentLoop] Gateway WS stream push skipped: {e}")
 
     def execute_task(
         self,
@@ -1509,194 +1610,172 @@ class AgentLoop:
             nodes = plan_dict.get("nodes", [])
 
             extracted_target = intent_res.target or self._extract_target(message)
+            if not extracted_target or extracted_target == "127.0.0.1":
+                import re
+                url_match = re.search(r"https?://[a-zA-Z0-9\.\_\:\-]+(?:/[^\s]*)?", message)
+                if url_match:
+                    extracted_target = url_match.group(0)
+                else:
+                    ip_match = re.search(r"\b(?:\d{1,3}\.){3}\d{1,3}(?:/\d{1,2})?\b", message)
+                    if ip_match:
+                        extracted_target = ip_match.group(0)
+                    else:
+                        domain_match = re.search(r"\b[a-zA-Z0-9][-a-zA-Z0-9]*\.[a-zA-Z]{2,}\b", message)
+                        if domain_match:
+                            extracted_target = domain_match.group(0)
+                        else:
+                            extracted_target = extracted_target or "127.0.0.1"
 
-            # Case 1: Single-step reasoned plan (narrow, focused intent)
-            if len(nodes) <= 1:
-                single_node = nodes[0] if nodes else {}
-                node_id = single_node.get("node_id", "step_1")
-                capability = single_node.get("capability", "network_port_scan")
-                tool_id, mapped_args = self._map_capability_to_tool(capability, target=extracted_target)
+            from events.db import get_ready_nodes, update_node_status, get_plan, get_connection
+            from orchestrator.dag_controller import (
+                dag_controller,
+                EvidenceContext,
+                DAGNodeExecution,
+                DAGNodeExecutionList,
+                SynthesisDict,
+            )
 
-                # Merge explicit args if provided
-                if explicit_args:
-                    mapped_args.update(explicit_args)
-                if extracted_target and "target" in mapped_args:
-                    mapped_args["target"] = extracted_target
+            is_single_step = (
+                mode in ("single_step", "manual")
+                or autonomous is False
+                or any(w in message.lower() for w in [
+                    "step by step", "single step", "one step at a time", "manual step", "pause after each", "first step only", "only the first step"
+                ])
+            )
+            is_single_node = len(nodes) <= 1
 
-                try:
-                    sel_res = tool_selector.select(goal=message, session_id=session_id)
-                    tool_selection_data = sel_res.to_dict()
-                except Exception as e:
-                    logger.warning(f"Could not calculate candidate scores: {e}")
+            # Provenance setup
+            step_prov["task_decomposition" if not is_single_node else "plan_decomposition"] = StepProvenance(
+                stage="task_decomposition" if not is_single_node else "plan_decomposition",
+                handled_by=exec_record.actual_model_id,
+                runtime=exec_record.inference_runtime,
+                is_custom_model=exec_record.inference_runtime == "transformers",
+                is_fallback=exec_record.fallback_used,
+                executed=True,
+                details={
+                    "plan_id": plan_id,
+                    "nodes_count": len(nodes),
+                    "mode": "task_request" if not is_single_node else "reasoned_single_step",
+                },
+            ).to_dict()
 
-                step_prov["plan_decomposition"] = StepProvenance(
-                    stage="plan_decomposition",
-                    handled_by=exec_record.actual_model_id,
-                    runtime=exec_record.inference_runtime,
-                    is_custom_model=exec_record.inference_runtime == "transformers",
-                    is_fallback=exec_record.fallback_used,
-                    executed=True,
-                    details={
-                        "plan_id": plan_id,
-                        "nodes_count": len(nodes),
-                        "capability": capability,
-                        "mode": "reasoned_single_step",
-                    },
-                ).to_dict()
+            val_auth_prov = StepProvenance(
+                stage="validation_and_authorization",
+                handled_by="security_gateway:scope_contract",
+                runtime="policy_and_schema",
+                is_custom_model=False,
+                is_fallback=False,
+                executed=True,
+                details={
+                    "authorized": True,
+                    "target": extracted_target,
+                    "plan_id": plan_id,
+                    "scope_verified": True,
+                },
+            ).to_dict()
 
-                logger.info(f"[IntentFlow] Executing reasoned single-step plan node '{node_id}' ({capability} -> {tool_id})")
-                exec_result = self._execute_single_tool(
-                    session_id=session_id,
-                    task_id=task_id,
-                    tool_id=tool_id,
-                    requested_args=mapped_args,
-                    active_model_info=active_model_info,
-                    exec_record=exec_record,
-                    message=message,
-                    t0=t0,
-                    start_time_iso=start_time_iso,
-                    parent_event=parent_event,
-                    tool_selection_data=tool_selection_data,
-                    step_prov=step_prov,
-                    plan_id=plan_id,
-                    node_id=node_id,
-                )
+            context = EvidenceContext(
+                target=extracted_target,
+                session_id=session_id,
+                plan_id=plan_id,
+            )
 
-                # Update node status in DB
-                node_success = exec_result.get("execution", {}).get("exit_code") == 0
-                update_node_status(plan_id, node_id, "success" if node_success else "failed", db_path=self.db_path)
+            max_steps_cap = 1 if is_single_step else min(int(kwargs.get("max_steps", 8)), 8)
+            step_count = 0
+            consecutive_failures = 0
+            executed_steps: List[Dict[str, Any]] = []
+            nodes_executed: List[DAGNodeExecution] = []
+            execution_provenances: List[Dict[str, Any]] = []
+            halt_loop = False
 
-                exec_result["intent"] = "tool_request"
-                exec_result["plan_only"] = False
-                exec_result["plan"] = plan_dict
-                exec_result["plan_id"] = plan_id
-                return exec_result
-
-            # Case 2: Multi-step task plan (Directed Acyclic Graph)
-            else:
-                step_prov["task_decomposition"] = StepProvenance(
-                    stage="task_decomposition",
-                    handled_by=exec_record.actual_model_id,
-                    runtime=exec_record.inference_runtime,
-                    is_custom_model=exec_record.inference_runtime == "transformers",
-                    is_fallback=exec_record.fallback_used,
-                    executed=True,
-                    details={
-                        "plan_id": plan_id,
-                        "nodes_count": len(nodes),
-                        "mode": "task_request",
-                    },
-                ).to_dict()
-
-                from orchestrator.dag_controller import dag_controller
-                is_single_step = (
-                    mode in ("single_step", "manual")
-                    or autonomous is False
-                    or any(w in message.lower() for w in [
-                        "step by step", "single step", "one step at a time", "manual step", "pause after each", "first step only", "only the first step"
-                    ])
-                )
-                is_autonomous = (mode in ("autonomous_task", "autonomous")) or (not is_single_step)
-
-                if is_autonomous:
-                    logger.info(f"[IntentFlow] Executing Plan '{plan_id}' autonomously from beginning to end")
-                    dag_res = dag_controller.execute_plan(
-                        plan_id=plan_id,
-                        session_id=session_id,
-                        target=extracted_target,
-                        goal=message,
-                        db_path=self.db_path,
-                    )
-
-                    val_auth_prov = StepProvenance(
-                        stage="validation_and_authorization",
-                        handled_by="security_gateway:scope_contract",
-                        runtime="policy_and_schema",
-                        is_custom_model=False,
-                        is_fallback=False,
-                        executed=True,
-                        details={
-                            "authorized": True,
-                            "target": extracted_target,
-                            "plan_id": plan_id,
-                            "scope_verified": True,
-                        },
-                    ).to_dict()
-
-                    all_prov = [step_prov["intent_classification"], step_prov["task_decomposition"], val_auth_prov]
-                    all_prov.extend(dag_res.step_provenance)
-
-                    return {
-                        "intent": "task_request",
-                        "plan_only": False,
-                        "plan": plan_dict,
-                        "plan_id": plan_id,
-                        "success": dag_res.success,
-                        "session_id": session_id,
-                        "task_id": task_id,
-                        "reply": dag_res.reply,
-                        "synthesis": dag_res.synthesis,
-                        "tool_executed": {
-                            "id": dag_res.nodes_executed[0].tool_id if dag_res.nodes_executed and dag_res.nodes_executed[0].tool_id else "orchestrator:dag_controller",
-                            "name": "Autonomous DAG Execution",
-                            "version": "1.0.0",
-                        },
-                        "execution": {
-                            "adapter": "dag_controller",
-                            "exit_code": 0 if dag_res.status in ("completed", "partial") else 1,
-                            "nodes_completed": dag_res.completed_count,
-                            "nodes_total": dag_res.total_nodes,
-                            "duration_ms": dag_res.duration_ms,
-                        },
-                        "nodes_executed": dag_res.nodes_executed,
-                        "evidence": asdict(dag_res.evidence),
-                        "event_id": None,
-                        "duration_ms": dag_res.duration_ms,
-                        "model_status": "transformers_custom_primary" if exec_record.inference_runtime == "transformers" else "llama.cpp_fallback",
-                        "model_id": active_model_info.get("model_id"),
-                        "model_role": active_model_info.get("role"),
-                        "model_verification": model_verif,
-                        "selected_model": exec_record.selected_model,
-                        "actual_model_id": exec_record.actual_model_id,
-                        "inference_runtime": exec_record.inference_runtime,
-                        "processed_by_selected_model": exec_record.processed_by_selected_model,
-                        "structured_output": exec_record.structured_output,
-                        "selected_tool": dag_res.nodes_executed[0].tool_id if dag_res.nodes_executed else None,
-                        "validated_args": dag_res.nodes_executed[0].requested_args if dag_res.nodes_executed else None,
-                        "fallback_used": exec_record.fallback_used,
-                        "fallback_reason": exec_record.fallback_reason,
-                        "local_only": True,
-                        "step_provenance": all_prov,
-                        "tools_executed_count": len([n for n in dag_res.nodes_executed if n.status in ("success", "failed")]),
-                        "handled_by_custom_model": exec_record.inference_runtime == "transformers",
-                        "handled_by_fallback": exec_record.fallback_used,
-                        "dag_result": dag_res.to_dict(),
-                    }
-
-                # Single ready initial node execution (Staged manual / test mode)
+            while step_count < max_steps_cap:
                 ready_nodes = get_ready_nodes(plan_id, self.db_path)
-                if ready_nodes:
-                    initial_node = ready_nodes[0]
-                    node_id = initial_node.get("node_id")
-                    capability = initial_node.get("capability", "network_port_scan")
-                    tool_id, mapped_args = self._map_capability_to_tool(capability, target=extracted_target)
+                if not ready_nodes:
+                    # Check for remaining queued nodes whose dependencies could not be satisfied
+                    current_plan = get_plan(plan_id, self.db_path)
+                    all_nodes = current_plan.get("nodes", []) if current_plan else []
+                    node_status_map = {n["node_id"]: n["status"] for n in all_nodes}
 
+                    unresolved_queued = [n for n in all_nodes if n["status"] == "queued"]
+                    for unres in unresolved_queued:
+                        deps = unres.get("dependencies", [])
+                        failed_deps = [d for d in deps if node_status_map.get(d) in ("failed", "blocked", "skipped")]
+                        block_reason = f"Blocked by failed/skipped dependency: {', '.join(failed_deps)}" if failed_deps else "Dependencies could not be satisfied."
+                        update_node_status(
+                            plan_id=plan_id,
+                            node_id=unres["node_id"],
+                            status="blocked",
+                            result={"blocked": True, "reason": block_reason},
+                            db_path=self.db_path,
+                        )
+                        nodes_executed.append(DAGNodeExecution(
+                            node_id=unres["node_id"],
+                            capability=unres["capability"],
+                            label=unres.get("label", unres["node_id"]),
+                            status="blocked",
+                            skipped_reason=block_reason,
+                        ))
+                    break
+
+                for node in ready_nodes:
+                    if step_count >= max_steps_cap:
+                        break
+
+                    node_id = node.get("node_id")
+                    capability = node.get("capability", "general_execution")
+                    label = node.get("label", node_id)
+
+                    # 1. Prerequisite Evidence Gate
+                    can_run, reject_reason = dag_controller.check_prerequisite_evidence(node, context)
+                    if not can_run:
+                        logger.info(f"[AgentLoop] Node '{node_id}' ({capability}) skipped: {reject_reason}")
+                        update_node_status(
+                            plan_id=plan_id,
+                            node_id=node_id,
+                            status="skipped",
+                            result={"skipped": True, "reason": reject_reason},
+                            db_path=self.db_path,
+                        )
+                        nodes_executed.append(DAGNodeExecution(
+                            node_id=node_id,
+                            capability=capability,
+                            label=label,
+                            status="skipped",
+                            skipped_reason=reject_reason,
+                        ))
+                        continue
+
+                    step_count += 1
+                    logger.info(f"[AgentLoop] Step {step_count}/{max_steps_cap}: Scheduling node '{node_id}' ({capability})")
+
+                    # 2. Feed structured upstream observation into tool & argument construction
+                    selected_tool, mapped_args, fallback_tool = dag_controller.select_tool_for_node(
+                        node=node,
+                        context=context,
+                    )
                     if explicit_args:
                         mapped_args.update(explicit_args)
-                    if extracted_target and "target" in mapped_args:
+                    if extracted_target and "target" in mapped_args and not mapped_args.get("target"):
                         mapped_args["target"] = extracted_target
 
                     try:
-                        sel_res = tool_selector.select(goal=message, session_id=session_id)
+                        sel_res = tool_selector.select(
+                            goal=f"{message} - {capability}",
+                            required_capability=capability,
+                            session_id=session_id,
+                            plan_step=node,
+                        )
                         tool_selection_data = sel_res.to_dict()
                     except Exception as e:
+                        tool_selection_data = {}
                         logger.warning(f"Could not calculate candidate scores: {e}")
 
-                    logger.info(f"[IntentFlow] Executing initial DAG node '{node_id}' ({capability} -> {tool_id})")
-                    exec_result = self._execute_single_tool(
+                    node_prov: Dict[str, Any] = {}
+                    # 3. Execute step's tool via the SAME adapter_registry.get() / adapter.execute() path
+                    step_exec_result = self._execute_single_tool(
                         session_id=session_id,
-                        task_id=task_id,
-                        tool_id=tool_id,
+                        task_id=f"{task_id}_{node_id}",
+                        tool_id=selected_tool,
                         requested_args=mapped_args,
                         active_model_info=active_model_info,
                         exec_record=exec_record,
@@ -1705,65 +1784,346 @@ class AgentLoop:
                         start_time_iso=start_time_iso,
                         parent_event=parent_event,
                         tool_selection_data=tool_selection_data,
-                        step_prov=step_prov,
+                        step_prov=node_prov,
                         plan_id=plan_id,
                         node_id=node_id,
                     )
 
-                    node_success = exec_result.get("execution", {}).get("exit_code") == 0
-                    update_node_status(plan_id, node_id, "success" if node_success else "failed", db_path=self.db_path)
+                    exec_details = step_exec_result.get("execution") or {}
+                    exit_code = exec_details.get("exit_code", step_exec_result.get("exit_code", 0))
+                    stdout = exec_details.get("stdout", "")
+                    stderr = exec_details.get("stderr", "")
+                    duration_ms = exec_details.get("duration_ms", 0.0)
+                    observation = exec_details.get("observation") or {}
+                    artifacts = exec_details.get("artifacts") or []
+                    node_status = "success" if exit_code == 0 else "failed"
 
+                    # Fallback retry if primary tool failed and fallback tool is available
+                    if node_status == "failed" and exit_code != 403 and fallback_tool and fallback_tool != selected_tool:
+                        logger.warning(f"[AgentLoop] Primary tool '{selected_tool}' failed (exit {exit_code}). Retrying with fallback '{fallback_tool}'")
+                        fb_tool, fb_args, _ = dag_controller.select_tool_for_node(
+                            node=node,
+                            context=context,
+                            previous_failures=[selected_tool],
+                        )
+                        fb_exec_result = self._execute_single_tool(
+                            session_id=session_id,
+                            task_id=f"{task_id}_{node_id}_fb",
+                            tool_id=fb_tool,
+                            requested_args=fb_args,
+                            active_model_info=active_model_info,
+                            exec_record=exec_record,
+                            message=message,
+                            t0=t0,
+                            start_time_iso=start_time_iso,
+                            parent_event=parent_event,
+                            tool_selection_data=tool_selection_data,
+                            step_prov=node_prov,
+                            plan_id=plan_id,
+                            node_id=node_id,
+                        )
+                        fb_details = fb_exec_result.get("execution") or {}
+                        fb_exit = fb_details.get("exit_code", fb_exec_result.get("exit_code", 0))
+                        if fb_exit == 0:
+                            step_exec_result = fb_exec_result
+                            selected_tool = fb_tool
+                            mapped_args = fb_args
+                            exec_details = fb_details
+                            exit_code = fb_exit
+                            stdout = exec_details.get("stdout", "")
+                            stderr = exec_details.get("stderr", "")
+                            duration_ms = exec_details.get("duration_ms", 0.0)
+                            observation = exec_details.get("observation") or {}
+                            artifacts = exec_details.get("artifacts") or []
+                            node_status = "success"
+
+                    # Update node status in DB
+                    update_node_status(
+                        plan_id=plan_id,
+                        node_id=node_id,
+                        status=node_status,
+                        result={
+                            "tool_id": selected_tool,
+                            "status": node_status,
+                            "exit_code": exit_code,
+                            "command_line": exec_details.get("command_line", ""),
+                            "duration_ms": duration_ms,
+                            "observation": observation if node_status == "success" else {},
+                        },
+                        assigned_tool=selected_tool,
+                        db_path=self.db_path,
+                    )
+
+                    # 4. Feed structured observation into EvidenceContext
+                    context.ingest_observation(
+                        node_id=node_id,
+                        capability=capability,
+                        tool_id=selected_tool,
+                        obs=observation,
+                        stdout=stdout,
+                        exit_code=exit_code,
+                        evidence_store=dag_controller.evidence_store,
+                    )
+
+                    node_exec = DAGNodeExecution(
+                        node_id=node_id,
+                        capability=capability,
+                        label=label,
+                        status=node_status,
+                        tool_id=selected_tool,
+                        requested_args=mapped_args,
+                        exit_code=exit_code,
+                        stdout=stdout,
+                        stderr=stderr,
+                        duration_ms=duration_ms,
+                        command_line=exec_details.get("command_line", ""),
+                        typed_invocation=exec_details.get("typed_invocation"),
+                        findings_count=len(context.findings),
+                        artifacts=artifacts,
+                    )
+                    nodes_executed.append(node_exec)
+                    executed_steps.append(step_exec_result)
+
+                    step_provenance_item = StepProvenance(
+                        stage="execution",
+                        handled_by=selected_tool,
+                        runtime="adapter",
+                        is_custom_model=False,
+                        is_fallback=exec_record.fallback_used or (selected_tool == fallback_tool),
+                        executed=True,
+                        details={
+                            "node_id": node_id,
+                            "capability": capability,
+                            "status": node_status,
+                            "exit_code": exit_code,
+                            "duration_ms": duration_ms,
+                        },
+                    ).to_dict()
+                    execution_provenances.append(step_provenance_item)
+
+                    # Stream step result over WebSocket as it completes
+                    self._stream_step_to_websocket(
+                        step_result=step_exec_result,
+                        plan_id=plan_id,
+                        node_id=node_id,
+                        session_id=session_id,
+                        step_callback=kwargs.get("step_callback"),
+                    )
+
+                    # Stop condition: Unrecoverable scope rejection (exit_code 403)
+                    if exit_code == 403:
+                        logger.warning(f"[AgentLoop] Halting execution: Unrecoverable scope authorization failure on node '{node_id}' (exit code 403)")
+                        halt_loop = True
+                        break
+
+                    # Stop condition: 3 consecutive failures
+                    if node_status == "failed":
+                        consecutive_failures += 1
+                        if consecutive_failures >= 3:
+                            logger.warning(f"[AgentLoop] Halting execution: Reached 3 consecutive step failures.")
+                            halt_loop = True
+                            break
+                    else:
+                        consecutive_failures = 0
+
+                if halt_loop:
+                    break
+
+            if not executed_steps:
+                explanation = generate_plan_explanation(
+                    plan=plan_dict,
+                    goal=message,
+                    target=extracted_target,
+                    model_id=exec_record.actual_model_id,
+                    runtime=exec_record.inference_runtime,
+                    is_custom=exec_record.inference_runtime == "transformers",
+                    is_fallback=exec_record.fallback_used,
+                )
+                return {
+                    "intent": "task_request" if not is_single_node else "tool_request",
+                    "plan_only": False,
+                    "plan": plan_dict,
+                    "plan_id": plan_id,
+                    "session_id": session_id,
+                    "task_id": task_id,
+                    "reply": explanation,
+                    "tool_executed": None,
+                    "execution": None,
+                    "duration_ms": round((time.time() - t0) * 1000, 2),
+                    "model_status": "transformers_custom_primary" if exec_record.inference_runtime == "transformers" else "llama.cpp_fallback",
+                    "model_id": active_model_info.get("model_id"),
+                    "model_role": active_model_info.get("role"),
+                    "model_verification": model_verif,
+                    "selected_model": exec_record.selected_model,
+                    "actual_model_id": exec_record.actual_model_id,
+                    "inference_runtime": exec_record.inference_runtime,
+                    "processed_by_selected_model": exec_record.processed_by_selected_model,
+                    "structured_output": exec_record.structured_output,
+                    "selected_tool": None,
+                    "validated_args": None,
+                    "fallback_used": exec_record.fallback_used,
+                    "fallback_reason": exec_record.fallback_reason,
+                    "local_only": True,
+                    "step_provenance": list(step_prov.values()),
+                    "tools_executed_count": 0,
+                    "handled_by_custom_model": exec_record.inference_runtime == "transformers",
+                    "handled_by_fallback": exec_record.fallback_used,
+                }
+
+            total_duration_ms = round((time.time() - t0) * 1000, 2)
+            completed_nodes = [n for n in nodes_executed if n.status == "success"]
+            failed_nodes = [n for n in nodes_executed if n.status == "failed"]
+            skipped_nodes = [n for n in nodes_executed if n.status in ("skipped", "blocked")]
+
+            if failed_nodes and not completed_nodes:
+                overall_status = "failed"
+            elif completed_nodes and (failed_nodes or skipped_nodes):
+                overall_status = "partial"
+            else:
+                overall_status = "completed"
+
+            # Update parent task graph status in SQLite
+            try:
+                conn = get_connection(self.db_path)
+                with conn:
+                    cur = conn.cursor()
+                    cur.execute(
+                        "UPDATE task_graphs SET status = ?, updated_at = ? WHERE plan_id = ?",
+                        (overall_status, datetime.now(timezone.utc).isoformat(), plan_id),
+                    )
+                conn.close()
+            except Exception as e:
+                logger.debug(f"[AgentLoop] Could not update task_graphs status: {e}")
+
+            # Assemble synthesis and reply
+            if len(nodes) > 1 and not is_single_step:
+                synthesis_result = dag_controller._synthesize_dag_execution(
+                    plan_id=plan_id,
+                    goal=message,
+                    target=extracted_target,
+                    overall_status=overall_status,
+                    nodes_executed=nodes_executed,
+                    context=context,
+                    duration_s=round(total_duration_ms / 1000, 2),
+                )
+                final_reply = synthesis_result.get("reply", "")
+                final_synthesis = SynthesisDict(synthesis_result)
+            else:
+                final_reply = executed_steps[0].get("reply", "")
+                synth_data = executed_steps[0].get("synthesis")
+                if isinstance(synth_data, dict):
+                    final_synthesis = SynthesisDict(synth_data)
+                elif synth_data is not None:
+                    final_synthesis = synth_data
+                else:
+                    synthesis_result = dag_controller._synthesize_dag_execution(
+                        plan_id=plan_id,
+                        goal=message,
+                        target=extracted_target,
+                        overall_status=overall_status,
+                        nodes_executed=nodes_executed,
+                        context=context,
+                        duration_s=round(total_duration_ms / 1000, 2),
+                    )
+                    final_synthesis = SynthesisDict(synthesis_result)
+
+                if is_single_step and len(nodes) > 1:
                     plan_header = (
                         f"### 📋 Structured Task Plan (`{plan_id}`)\n"
                         f"- **Task Goal:** {message}\n"
                         f"- **Target Asset:** `{extracted_target or 'Identified in scope'}`\n"
-                        f"- **Total Nodes:** `{len(nodes)}` • **Executing Node:** `{node_id}` (`{capability}`)\n\n"
+                        f"- **Total Nodes:** `{len(nodes)}` • **Executing Node:** `{nodes_executed[0].node_id}` (`{nodes_executed[0].capability}`)\n\n"
                         f"---\n\n"
                     )
-                    exec_result["reply"] = plan_header + str(exec_result.get("reply", ""))
-                    exec_result["intent"] = "task_request"
-                    exec_result["plan_only"] = False
-                    exec_result["plan"] = plan_dict
-                    exec_result["plan_id"] = plan_id
-                    return exec_result
-                else:
-                    explanation = generate_plan_explanation(
-                        plan=plan_dict,
-                        goal=message,
-                        target=extracted_target,
-                        model_id=exec_record.actual_model_id,
-                        runtime=exec_record.inference_runtime,
-                        is_custom=exec_record.inference_runtime == "transformers",
-                        is_fallback=exec_record.fallback_used,
-                    )
-                    return {
-                        "intent": "task_request",
-                        "plan_only": False,
-                        "plan": plan_dict,
-                        "session_id": session_id,
-                        "task_id": task_id,
-                        "reply": explanation,
-                        "tool_executed": None,
-                        "execution": None,
-                        "duration_ms": round((time.time() - t0) * 1000, 2),
-                        "model_status": "transformers_custom_primary" if exec_record.inference_runtime == "transformers" else "llama.cpp_fallback",
-                        "model_id": active_model_info.get("model_id"),
-                        "model_role": active_model_info.get("role"),
-                        "model_verification": model_verif,
-                        "selected_model": exec_record.selected_model,
-                        "actual_model_id": exec_record.actual_model_id,
-                        "inference_runtime": exec_record.inference_runtime,
-                        "processed_by_selected_model": exec_record.processed_by_selected_model,
-                        "structured_output": exec_record.structured_output,
-                        "selected_tool": None,
-                        "validated_args": None,
-                        "fallback_used": exec_record.fallback_used,
-                        "fallback_reason": exec_record.fallback_reason,
-                        "local_only": True,
-                        "step_provenance": step_prov,
-                        "handled_by_custom_model": exec_record.inference_runtime == "transformers",
-                        "handled_by_fallback": exec_record.fallback_used,
-                    }
+                    final_reply = plan_header + str(final_reply)
+
+            # Combine step provenance preserving order and required stages
+            combined_prov: List[Dict[str, Any]] = []
+            seen_stages = set()
+            for k in ["intent_classification", "task_decomposition", "plan_decomposition"]:
+                if k in step_prov:
+                    sp = step_prov[k]
+                    sp_dict = sp.to_dict() if hasattr(sp, "to_dict") else sp
+                    combined_prov.append(sp_dict)
+                    seen_stages.add(sp_dict.get("stage"))
+
+            if "validation_and_authorization" not in seen_stages:
+                combined_prov.append(val_auth_prov)
+                seen_stages.add("validation_and_authorization")
+
+            for s in executed_steps:
+                s_prov = s.get("step_provenance", [])
+                if isinstance(s_prov, dict):
+                    s_prov = list(s_prov.values())
+                for p in s_prov:
+                    p_dict = p.to_dict() if hasattr(p, "to_dict") else p
+                    stg = p_dict.get("stage")
+                    if stg not in ("execution",) and stg in seen_stages:
+                        continue
+                    combined_prov.append(p_dict)
+                    seen_stages.add(stg)
+
+            if "execution" not in seen_stages and execution_provenances:
+                combined_prov.extend(execution_provenances)
+
+            first_exec = executed_steps[0]
+            first_tool = first_exec.get("tool_executed") or {
+                "id": nodes_executed[0].tool_id if nodes_executed else "nmap.scan.v1",
+                "name": nodes_executed[0].label if nodes_executed else "Tool Execution",
+                "version": "1.0.0",
+            }
+
+            first_details = dict(first_exec.get("execution") or {})
+            first_details.update({
+                "nodes_completed": len(completed_nodes),
+                "nodes_total": len(nodes),
+                "duration_ms": total_duration_ms,
+            })
+            if "exit_code" not in first_details:
+                first_details["exit_code"] = 0 if overall_status in ("completed", "partial") and len(completed_nodes) > 0 else 1
+
+            ret_dict = {
+                "intent": "tool_request" if (is_single_node and intent_res.intent == IntentType.TOOL_REQUEST) else "task_request",
+                "plan_only": False,
+                "plan": plan_dict,
+                "plan_id": plan_id,
+                "success": overall_status in ("completed", "partial") and len(completed_nodes) > 0,
+                "session_id": session_id,
+                "task_id": task_id,
+                "reply": final_reply,
+                "synthesis": final_synthesis,
+                "tool_executed": first_tool,
+                "execution": first_details,
+                "tool_selection": first_exec.get("tool_selection") or tool_selection_data,
+                "nodes_executed": DAGNodeExecutionList(nodes_executed),
+                "evidence": asdict(context),
+                "event_id": first_exec.get("event_id"),
+                "event": first_exec.get("event"),
+                "duration_ms": total_duration_ms,
+                "model_status": "transformers_custom_primary" if exec_record.inference_runtime == "transformers" else "llama.cpp_fallback",
+                "model_id": active_model_info.get("model_id"),
+                "model_role": active_model_info.get("role"),
+                "model_verification": model_verif,
+                "selected_model": exec_record.selected_model,
+                "actual_model_id": exec_record.actual_model_id,
+                "inference_runtime": exec_record.inference_runtime,
+                "processed_by_selected_model": exec_record.processed_by_selected_model,
+                "structured_output": exec_record.structured_output,
+                "selected_tool": first_tool.get("id"),
+                "validated_args": first_exec.get("validated_args") or (nodes_executed[0].requested_args if nodes_executed else None),
+                "fallback_used": exec_record.fallback_used,
+                "fallback_reason": exec_record.fallback_reason,
+                "local_only": True,
+                "step_provenance": combined_prov,
+                "tools_executed_count": len(executed_steps),
+                "handled_by_custom_model": exec_record.inference_runtime == "transformers",
+                "handled_by_fallback": exec_record.fallback_used,
+            }
+
+            if first_exec.get("scope_violation"):
+                ret_dict["scope_violation"] = first_exec.get("scope_violation")
+
+            return ret_dict
 
 
     def _extract_shell_args(self, message: str) -> Dict[str, Any]:

@@ -216,6 +216,10 @@ class ToolSelectRequest(BaseModel):
     top_k: Optional[int] = 3
     environment: Optional[Dict[str, Any]] = None
     budget: Optional[float] = None
+    plan_step: Optional[Dict[str, Any]] = None
+    intended_capability: Optional[str] = None
+    intended_category: Optional[str] = None
+    planner_output: Optional[Any] = None
 
 
 class ScopeContractCreateRequest(BaseModel):
@@ -840,12 +844,18 @@ def select_tool_endpoint(req: ToolSelectRequest):
     goal = req.goal or req.intent or ""
     if not goal.strip():
         raise HTTPException(status_code=400, detail="Missing required 'goal' or 'intent'")
-    cap = req.required_capability or req.capability
+    cap = req.required_capability or req.capability or req.intended_capability
     res = tool_selector.select(
         goal=goal,
         required_capability=cap,
         session_id=req.session_id or "default_session",
         top_k=req.top_k or 3,
+        environment=req.environment,
+        budget=req.budget,
+        plan_step=req.plan_step,
+        intended_capability=req.intended_capability,
+        intended_category=req.intended_category,
+        planner_output=req.planner_output,
     )
     return res.to_dict()
 

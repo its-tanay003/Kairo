@@ -75,6 +75,7 @@ class CognitiveEngine:
             required_capability=capability,
             session_id=session_id,
             top_k=3,
+            plan_step=node,
         )
         current_tool = sel.selected_tool.tool_id
         current_args = dict(sel.selected_tool.inferred_args)

@@ -336,7 +336,9 @@ class IntentClassifier:
         task_indicators = [
             "audit", "penetration", "pentest", "assessment", "comprehensive",
             "reconnaissance", "investigate", "test", "vulnerability", "surface",
-            "explore", "workflow", "analyze attack surface", "full scan"
+            "explore", "workflow", "analyze attack surface", "full scan",
+            "find out", "what's running", "whats running", "running on", "outdated",
+            "risky", "inspect", "discover", "check",
         ]
         is_task = any(ind in lower for ind in task_indicators) or (target is not None)
 
@@ -369,6 +371,11 @@ class IntentClassifier:
         )
 
     def _extract_target(self, text: str) -> Optional[str]:
+        # URL match
+        url_match = re.search(r"https?://[a-zA-Z0-9\.\_\:\-]+(?:/[^\s]*)?", text)
+        if url_match:
+            return url_match.group(0)
+
         # IP / CIDR match (e.g. 192.168.1.50 or 10.0.0.0/24)
         ip_match = re.search(r"\b(?:\d{1,3}\.){3}\d{1,3}(?:/\d{1,2})?\b", text)
         if ip_match:
@@ -381,10 +388,9 @@ class IntentClassifier:
             if not cand.endswith((".py", ".pt", ".gguf", ".sh", ".json", ".md")):
                 return cand
 
-        # URL match
-        url_match = re.search(r"https?://[a-zA-Z0-9\.\_\:\-]+", text)
-        if url_match:
-            return url_match.group(0)
+        # Host / localhost / local machine match
+        if re.search(r"\b(?:this\s+host|localhost|local\s+host|local\s+machine|local\s+system|current\s+host|the\s+host)\b", text, re.IGNORECASE):
+            return "127.0.0.1"
 
         return None
 

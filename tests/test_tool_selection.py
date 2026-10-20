@@ -292,5 +292,133 @@ class TestFastApiToolEndpoints(unittest.TestCase):
         self.assertGreaterEqual(data["reliability_score"], 0.9)
 
 
+class TestPlannerDrivenSemanticFit(unittest.TestCase):
+    """Verifies that planner output (capability, category, step context) acts as a weighted factor
+    in semantic_fit alongside fast keyword heuristics, implementing the true blueprint scoring formula.
+    """
+
+    def setUp(self):
+        self.temp_db_fd, self.temp_db_path = tempfile.mkstemp(suffix=".db")
+        os.close(self.temp_db_fd)
+        init_db(self.temp_db_path)
+        self.selector = HybridToolSelector(db_path=self.temp_db_path)
+        self.client = TestClient(app)
+
+    def tearDown(self):
+        if os.path.exists(self.temp_db_path):
+            try:
+                os.remove(self.temp_db_path)
+            except OSError:
+                pass
+
+    def test_planner_capability_and_category_boost_semantic_fit(self):
+        """Assures planner step intended_capability and intended_category boost specialized tool semantic fit."""
+        # Generic goal that has no tool-specific keyword boost
+        generic_goal = "Analyze the target application security posture"
+
+        # Without planner step
+        res_without_plan = self.selector.select(goal=generic_goal)
+        wpscan_score_without = next(
+            (c.semantic_fit for c in res_without_plan.candidates if "wpscan" in c.tool_id),
+            0.0,
+        )
+
+        # With planner step specifying wordpress_vulnerability_audit
+        plan_step = {
+            "node_id": "step_wp",
+            "capability": "wordpress_vulnerability_audit",
+            "category": "web_security",
+            "label": "Audit WordPress plugins and core themes",
+            "description": "Enumerate known CVEs and insecure themes on WordPress blog",
+        }
+        res_with_plan = self.selector.select(
+            goal=generic_goal,
+            plan_step=plan_step,
+        )
+        wpscan_cand_with = next(
+            (c for c in res_with_plan.candidates if "wpscan" in c.tool_id),
+            None,
+        )
+        self.assertIsNotNone(wpscan_cand_with)
+        self.assertGreater(wpscan_cand_with.semantic_fit, wpscan_score_without)
+        self.assertGreaterEqual(wpscan_cand_with.semantic_fit, 0.70)
+        self.assertEqual(res_with_plan.selected_tool.tool_id, "wpscan.audit.v1")
+
+        # Verify raw signal includes planner rationale
+        sem_signal = wpscan_cand_with.raw_signals.get("semantic_fit", "")
+        self.assertIn("plan_cap:wordpress_vulnerability_audit", sem_signal)
+
+    def test_planner_intent_breaks_ambiguous_keyword_ties(self):
+        """When query keywords conflict or mention multiple tools, planner intent directs selection."""
+        # Goal mentions both scanning ports and discovering subdomains
+        ambiguous_goal = "Discover subdomains and scan ports on target domain"
+
+        # Planner indicates this step is specifically subdomain enumeration
+        plan_step = {
+            "node_id": "step_recon",
+            "capability": "subdomain_enumeration",
+            "category": "recon",
+            "label": "Passive subdomain discovery",
+            "description": "Find all related subdomains using certificate transparency and public APIs",
+        }
+        res = self.selector.select(
+            goal=ambiguous_goal,
+            plan_step=plan_step,
+        )
+        # A subdomain enumeration tool (e.g. dnsenum or subfinder) should win over nmap
+        self.assertIn(res.selected_tool.tool_id, ["dnsenum.enum.v1", "subfinder.enum.v1"])
+        self.assertNotIn("nmap", res.selected_tool.tool_id)
+
+    def test_keyword_boosts_remain_active_when_planner_context_absent(self):
+        """Assures existing fast keyword boosts remain functional as a signal when plan_step is omitted."""
+        res_keyword = self.selector.select(
+            goal="Test for SQL injection vulnerabilities using sqlmap automated exploitation",
+        )
+        self.assertIn("sqlmap", res_keyword.selected_tool.tool_id)
+        sqlmap_cand = res_keyword.selected_tool
+        self.assertGreaterEqual(sqlmap_cand.semantic_fit, 0.70)
+        self.assertIn("kw_boost", sqlmap_cand.raw_signals.get("semantic_fit", ""))
+
+    def test_broad_execution_penalty_applied_for_security_plan_step(self):
+        """Assures generic execution tools (kali.exec.v1, shell.run.v1) receive penalty when security task is planned."""
+        plan_step = {
+            "node_id": "step_vuln",
+            "capability": "vulnerability_assessment",
+            "category": "web_security",
+            "label": "Scan web vulnerabilities",
+            "description": "Identify XSS and SQL injection endpoints",
+        }
+        res = self.selector.select(
+            goal="Identify security vulnerabilities",
+            plan_step=plan_step,
+        )
+        for cand in res.candidates:
+            if cand.tool_id in ("kali.exec.v1", "shell.run.v1"):
+                self.assertLessEqual(cand.semantic_fit, 0.15)
+
+    def test_fastapi_select_with_planner_context(self):
+        """Assures POST /tools/select accepts plan_step and incorporates it into returned candidate scores."""
+        payload = {
+            "goal": "Scan network boundaries",
+            "plan_step": {
+                "capability": "network_port_scan",
+                "category": "recon",
+                "label": "TCP port discovery",
+                "description": "Discover open ports on target host",
+            },
+            "intended_capability": "network_port_scan",
+            "intended_category": "recon",
+        }
+        resp = self.client.post("/tools/select", json=payload)
+        self.assertEqual(resp.status_code, 200)
+        data = resp.json()
+        self.assertIn("nmap", data["selected_tool"]["tool_id"])
+        # Check plan_step was recorded in response
+        self.assertIn("plan_step", data)
+        self.assertEqual(data["plan_step"]["capability"], "network_port_scan")
+        self.assertEqual(data["intended_capability"], "network_port_scan")
+
+
 if __name__ == "__main__":
     unittest.main()
+
