@@ -426,57 +426,58 @@ def get_plan(plan_id: str, db_path: Optional[Path | str] = None) -> Optional[Dic
     """Retrieves a complete task graph DAG with all its nodes and statuses."""
     init_db(db_path)
     conn = get_connection(db_path)
-    with conn:
-        cursor = conn.cursor()
-        cursor.execute("SELECT * FROM task_graphs WHERE plan_id = ?", (plan_id,))
-        graph_row = cursor.fetchone()
-        if not graph_row:
-            conn.close()
-            return None
+    try:
+        with conn:
+            cursor = conn.cursor()
+            cursor.execute("SELECT * FROM task_graphs WHERE plan_id = ?", (plan_id,))
+            graph_row = cursor.fetchone()
+            if not graph_row:
+                return None
 
-        graph_dict = dict(graph_row)
-        cursor.execute("SELECT * FROM task_nodes WHERE plan_id = ? ORDER BY id ASC", (plan_id,))
-        node_rows = cursor.fetchall()
+            graph_dict = dict(graph_row)
+            cursor.execute("SELECT * FROM task_nodes WHERE plan_id = ? ORDER BY id ASC", (plan_id,))
+            node_rows = cursor.fetchall()
 
-        nodes = []
-        for r in node_rows:
-            nd = dict(r)
-            try:
-                nd["dependencies"] = json.loads(nd.get("dependencies") or "[]")
-            except Exception:
-                nd["dependencies"] = []
-            nodes.append(nd)
+            nodes = []
+            for r in node_rows:
+                nd = dict(r)
+                try:
+                    nd["dependencies"] = json.loads(nd.get("dependencies") or "[]")
+                except Exception:
+                    nd["dependencies"] = []
+                nodes.append(nd)
 
-        roots = [n["node_id"] for n in nodes if not n["dependencies"]]
-        convergences = [n["node_id"] for n in nodes if len(n["dependencies"]) >= 2]
-        depths: Dict[str, int] = {r: 0 for r in roots}
+            roots = [n["node_id"] for n in nodes if not n["dependencies"]]
+            convergences = [n["node_id"] for n in nodes if len(n["dependencies"]) >= 2]
+            depths: Dict[str, int] = {r: 0 for r in roots}
 
-        # Topological depth propagation
-        changed = True
-        iterations = 0
-        while changed and iterations < len(nodes) + 2:
-            changed = False
-            iterations += 1
+            # Topological depth propagation
+            changed = True
+            iterations = 0
+            while changed and iterations < len(nodes) + 2:
+                changed = False
+                iterations += 1
+                for n in nodes:
+                    nid = n["node_id"]
+                    deps = n["dependencies"]
+                    if deps and all(d in depths for d in deps):
+                        max_dep = max(depths[d] for d in deps)
+                        if nid not in depths or depths[nid] != max_dep + 1:
+                            depths[nid] = max_dep + 1
+                            changed = True
+
             for n in nodes:
-                nid = n["node_id"]
-                deps = n["dependencies"]
-                if deps and all(d in depths for d in deps):
-                    max_dep = max(depths[d] for d in deps)
-                    if nid not in depths or depths[nid] != max_dep + 1:
-                        depths[nid] = max_dep + 1
-                        changed = True
+                n["depth_level"] = depths.get(n["node_id"], 0)
 
-        for n in nodes:
-            n["depth_level"] = depths.get(n["node_id"], 0)
-
-        graph_dict["total_nodes"] = len(nodes)
-        graph_dict["is_dag"] = True
-        graph_dict["parallel_roots"] = roots
-        graph_dict["convergence_nodes"] = convergences
-        graph_dict["depth_levels"] = depths
-        graph_dict["nodes"] = nodes
-    conn.close()
-    return graph_dict
+            graph_dict["total_nodes"] = len(nodes)
+            graph_dict["is_dag"] = True
+            graph_dict["parallel_roots"] = roots
+            graph_dict["convergence_nodes"] = convergences
+            graph_dict["depth_levels"] = depths
+            graph_dict["nodes"] = nodes
+            return graph_dict
+    finally:
+        conn.close()
 
 
 def list_plans(limit: int = 20, db_path: Optional[Path | str] = None) -> List[Dict[str, Any]]:
@@ -507,7 +508,7 @@ def update_node_status(
     conn = get_connection(db_path)
     now_iso = datetime.now(timezone.utc).isoformat()
     started_at = now_iso if status == "running" else None
-    completed_at = now_iso if status in ("success", "warning", "failed") else None
+    completed_at = now_iso if status in ("success", "warning", "failed", "skipped", "blocked") else None
     res_str = json.dumps(result) if isinstance(result, (dict, list)) else (str(result) if result is not None else None)
 
     with conn:
@@ -540,13 +541,15 @@ def update_node_status(
         cursor.execute("SELECT status FROM task_nodes WHERE plan_id = ?", (plan_id,))
         node_statuses = [r[0] for r in cursor.fetchall()]
         if node_statuses:
-            if all(s == "success" for s in node_statuses):
-                new_plan_status = "completed"
-            elif any(s == "failed" for s in node_statuses):
-                new_plan_status = "failed"
+            has_queued_or_running = any(s in ("queued", "running") for s in node_statuses)
+            if not has_queued_or_running:
+                if any(s in ("failed", "blocked") for s in node_statuses):
+                    new_plan_status = "failed" if all(s in ("failed", "blocked", "skipped") for s in node_statuses) else "completed"
+                else:
+                    new_plan_status = "completed"
             elif any(s == "running" for s in node_statuses):
                 new_plan_status = "running"
-            elif any(s in ("success", "warning") for s in node_statuses):
+            elif any(s in ("success", "warning", "skipped", "failed", "blocked") for s in node_statuses):
                 new_plan_status = "in_progress"
             else:
                 new_plan_status = "queued"

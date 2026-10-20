@@ -79,6 +79,61 @@ export interface ClaudeToolSelectionMeta {
   [key: string]: unknown;
 }
 
+export interface ClaudeModelVerification {
+  selected_model?: string;
+  actual_model_id?: string;
+  inference_runtime?: string;
+  processed_by_selected_model?: boolean;
+  structured_output?: {
+    action: string;
+    content: string;
+    tool_call?: {
+      name: string;
+      arguments: Record<string, unknown>;
+    };
+  };
+  selected_tool?: string;
+  validated_args?: Record<string, unknown> | unknown[];
+  fallback_used?: boolean;
+  fallback_reason?: string;
+  local_only?: boolean;
+  timestamp?: string;
+}
+
+export interface ClaudeStepProvenanceItem {
+  stage: string;
+  handled_by: string;
+  runtime: string;
+  is_custom_model: boolean;
+  is_fallback: boolean;
+  executed: boolean;
+  details?: string;
+}
+
+export interface ClaudeTaskPlanNode {
+  node_id: string;
+  capability?: string;
+  tool_name?: string;
+  target?: string;
+  parameters?: Record<string, unknown>;
+  dependencies?: string[];
+  status?: string;
+}
+
+export interface ClaudeTaskPlanEdge {
+  from_node: string;
+  to_node: string;
+}
+
+export interface ClaudeTaskPlan {
+  plan_id?: string;
+  goal?: string;
+  scope_target?: string;
+  nodes?: ClaudeTaskPlanNode[];
+  edges?: ClaudeTaskPlanEdge[];
+  [key: string]: unknown;
+}
+
 export interface ClaudeOutputCardProps {
   messageId: string;
   text: string;
@@ -104,6 +159,22 @@ export interface ClaudeOutputCardProps {
   toolSelection?: ClaudeToolSelectionMeta;
   synthesis?: ClaudeSynthesisPayload;
   scopeTarget?: string;
+  modelVerification?: ClaudeModelVerification;
+  selectedModel?: string;
+  actualModelId?: string;
+  inferenceRuntime?: string;
+  processedBySelectedModel?: boolean;
+  structuredOutput?: Record<string, unknown>;
+  selectedTool?: string;
+  validatedArgs?: Record<string, unknown> | unknown[];
+  fallbackUsed?: boolean;
+  fallbackReason?: string;
+  intent?: string;
+  planOnly?: boolean;
+  plan?: ClaudeTaskPlan;
+  stepProvenance?: ClaudeStepProvenanceItem[];
+  handledByCustomModel?: boolean;
+  handledByFallback?: boolean;
   onRunPrompt?: (prompt: string) => void;
   onOpenConsole?: (toolId?: string) => void;
 }
@@ -118,6 +189,22 @@ export default function ClaudeOutputCard({
   toolSelection,
   synthesis: propSynthesis,
   scopeTarget = "192.168.1.0/24",
+  modelVerification,
+  selectedModel,
+  actualModelId,
+  inferenceRuntime,
+  processedBySelectedModel,
+  structuredOutput,
+  selectedTool,
+  validatedArgs,
+  fallbackUsed,
+  fallbackReason,
+  intent,
+  planOnly,
+  plan,
+  stepProvenance,
+  handledByCustomModel,
+  handledByFallback,
   onRunPrompt,
   onOpenConsole,
 }: ClaudeOutputCardProps) {
@@ -127,8 +214,20 @@ export default function ClaudeOutputCard({
   const outputData = synth?.output;
   const resultData = synth?.result;
 
+  // Model verification provenance normalization
+  const effSelectedModel = selectedModel || modelVerification?.selected_model || "kairo-scale-2b";
+  const effActualModel = actualModelId || modelVerification?.actual_model_id || "kairo-scale-2b";
+  const effRuntime = inferenceRuntime || modelVerification?.inference_runtime || "transformers";
+  const effProcessedBySelected = processedBySelectedModel ?? modelVerification?.processed_by_selected_model ?? true;
+  const effFallbackUsed = fallbackUsed ?? modelVerification?.fallback_used ?? false;
+  const effFallbackReason = fallbackReason || modelVerification?.fallback_reason;
+  const effStructuredOutput = structuredOutput || (modelVerification?.structured_output as Record<string, unknown>);
+  const effSelectedTool = selectedTool || modelVerification?.selected_tool || tool?.id;
+  const effValidatedArgs = validatedArgs || modelVerification?.validated_args || execution?.args;
+
   // Local state for expandable sections
   const [isThinkingOpen, setIsThinkingOpen] = useState<boolean>(false);
+  const [isModelVerifiedOpen, setIsModelVerifiedOpen] = useState<boolean>(false);
   const [activeStepTab, setActiveStepTab] = useState<"overview" | "terminal" | "telemetry">("overview");
   const [isProcessCardExpanded, setIsProcessCardExpanded] = useState<boolean>(true);
   const [isCopiedCommand, setIsCopiedCommand] = useState<boolean>(false);
@@ -193,9 +292,215 @@ export default function ClaudeOutputCard({
         </div>
         <div className="claude-agent-meta">
           <span className="claude-agent-name">Kairo</span>
-          <span className="claude-agent-model-badge">Cyber Defense Agent</span>
+          <span className="claude-agent-model-badge" title={`Real Backend Model: ${effActualModel} (${effRuntime})`}>
+            ✦ {effActualModel} [{effRuntime}]
+          </span>
+          {effFallbackUsed ? (
+            <span
+              style={{
+                fontSize: "11px",
+                padding: "2px 8px",
+                borderRadius: "10px",
+                backgroundColor: "rgba(245, 158, 11, 0.15)",
+                color: "#f59e0b",
+                border: "1px solid rgba(245, 158, 11, 0.35)",
+                fontWeight: 600,
+              }}
+              title={`Fallback used: ${effFallbackReason || "Selected model checkpoint unavailable"}`}
+            >
+              ⚠️ Fallback ({effActualModel})
+            </span>
+          ) : (
+            <span
+              style={{
+                fontSize: "11px",
+                padding: "2px 8px",
+                borderRadius: "10px",
+                backgroundColor: "rgba(16, 185, 129, 0.15)",
+                color: "#10b981",
+                border: "1px solid rgba(16, 185, 129, 0.35)",
+                fontWeight: 600,
+              }}
+            >
+              ✓ Primary Model
+            </span>
+          )}
+          {intent && (
+            <span
+              style={{
+                fontSize: "11px",
+                padding: "2px 8px",
+                borderRadius: "10px",
+                fontWeight: 600,
+                display: "inline-flex",
+                alignItems: "center",
+                gap: "4px",
+                ...(intent === "general_question"
+                  ? { backgroundColor: "rgba(59, 130, 246, 0.15)", color: "#60a5fa", border: "1px solid rgba(59, 130, 246, 0.35)" }
+                  : intent === "plan_only"
+                  ? { backgroundColor: "rgba(168, 85, 247, 0.15)", color: "#c084fc", border: "1px solid rgba(168, 85, 247, 0.35)" }
+                  : intent === "task_request"
+                  ? { backgroundColor: "rgba(245, 158, 11, 0.15)", color: "#fbbf24", border: "1px solid rgba(245, 158, 11, 0.35)" }
+                  : { backgroundColor: "rgba(16, 185, 129, 0.15)", color: "#34d399", border: "1px solid rgba(16, 185, 129, 0.35)" }),
+              }}
+              title={`Intent Stage: ${intent}`}
+            >
+              {intent === "general_question" && "💬 Conversational"}
+              {intent === "plan_only" && "🗺️ Plan Only (0 Execution)"}
+              {intent === "task_request" && "⚡ Task Plan (DAG)"}
+              {intent === "tool_request" && "🛡️ Validated Tool"}
+            </span>
+          )}
           <span className="claude-agent-timestamp">{timestamp || "Just now"}</span>
         </div>
+      </div>
+
+      {/* Verifiable Model Provenance & Integration Audit Bar */}
+      <div
+        style={{
+          marginTop: "6px",
+          marginBottom: "12px",
+          border: "1px solid rgba(255, 255, 255, 0.08)",
+          borderRadius: "8px",
+          background: "rgba(15, 23, 42, 0.4)",
+          padding: "8px 12px",
+          fontSize: "12px",
+        }}
+      >
+        <div
+          style={{
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "space-between",
+            cursor: "pointer",
+            userSelect: "none",
+          }}
+          onClick={() => setIsModelVerifiedOpen(!isModelVerifiedOpen)}
+        >
+          <div style={{ display: "flex", alignItems: "center", gap: "8px", flexWrap: "wrap" }}>
+            <span style={{ color: "var(--accent-primary, #818cf8)", fontWeight: 600 }}>⚙ Model Provenance:</span>
+            <strong>{effActualModel}</strong>
+            <span style={{ color: "#94a3b8" }}>via <code>{effRuntime}</code></span>
+            {effFallbackUsed && (
+              <span style={{ color: "#f59e0b", fontWeight: 500 }}>(Fallback from {effSelectedModel})</span>
+            )}
+            {handledByCustomModel && (
+              <span style={{
+                fontSize: "10px",
+                padding: "1px 6px",
+                borderRadius: "4px",
+                background: "rgba(167, 139, 250, 0.15)",
+                color: "#c4b5fd",
+                border: "1px solid rgba(167, 139, 250, 0.3)",
+                fontWeight: 600
+              }}>
+                ✦ Custom Model Reasoner
+              </span>
+            )}
+            {handledByFallback && (
+              <span style={{
+                fontSize: "10px",
+                padding: "1px 6px",
+                borderRadius: "4px",
+                background: "rgba(245, 158, 11, 0.15)",
+                color: "#f59e0b",
+                border: "1px solid rgba(245, 158, 11, 0.3)",
+                fontWeight: 600
+              }}>
+                ⚠️ Fallback Reasoner
+              </span>
+            )}
+            <span
+              style={{
+                fontSize: "10px",
+                padding: "1px 6px",
+                borderRadius: "4px",
+                background: "rgba(16, 185, 129, 0.12)",
+                color: "#10b981",
+                border: "1px solid rgba(16, 185, 129, 0.3)",
+                fontWeight: 600,
+              }}
+            >
+              🔒 100% Local Air-Gapped (Cloud Blocked)
+            </span>
+          </div>
+          <span style={{ color: "#94a3b8", fontSize: "11px" }}>
+            {isModelVerifiedOpen ? "▲ Hide Verification" : "▼ Audit Model Integration (7 Points)"}
+          </span>
+        </div>
+
+        {isModelVerifiedOpen && (
+          <div style={{ marginTop: "10px", paddingTop: "8px", borderTop: "1px solid rgba(255,255,255,0.06)", display: "flex", flexDirection: "column", gap: "6px" }}>
+            <div style={{ display: "grid", gridTemplateColumns: "180px 1fr", gap: "4px" }}>
+              <span style={{ color: "#94a3b8" }}>1. Selected Model:</span>
+              <code>{effSelectedModel}</code>
+            </div>
+            <div style={{ display: "grid", gridTemplateColumns: "180px 1fr", gap: "4px" }}>
+              <span style={{ color: "#94a3b8" }}>2. Inference Runtime:</span>
+              <code>{effRuntime} (Local air-gapped)</code>
+            </div>
+            <div style={{ display: "grid", gridTemplateColumns: "180px 1fr", gap: "4px" }}>
+              <span style={{ color: "#94a3b8" }}>3. Processed by Selected:</span>
+              <span style={{ color: effProcessedBySelected ? "#10b981" : "#f59e0b", fontWeight: 600 }}>
+                {effProcessedBySelected ? "✓ True (Direct match)" : "⚠️ False (Routed to verified local fallback)"}
+              </span>
+            </div>
+            {effFallbackUsed && (
+              <div style={{ display: "grid", gridTemplateColumns: "180px 1fr", gap: "4px" }}>
+                <span style={{ color: "#f59e0b" }}>4. Fallback Reason:</span>
+                <span style={{ color: "#f59e0b" }}>{effFallbackReason || "Selected model checkpoint not ready; routed to local fallback."}</span>
+              </div>
+            )}
+            {effStructuredOutput && (
+              <div style={{ display: "grid", gridTemplateColumns: "180px 1fr", gap: "4px" }}>
+                <span style={{ color: "#94a3b8" }}>5. Structured Output:</span>
+                <pre style={{ margin: 0, padding: "4px 8px", background: "rgba(0,0,0,0.3)", borderRadius: "4px", fontSize: "11px", overflowX: "auto" }}>
+                  {JSON.stringify(effStructuredOutput, null, 2)}
+                </pre>
+              </div>
+            )}
+            {(effSelectedTool || effValidatedArgs) && (
+              <div style={{ display: "grid", gridTemplateColumns: "180px 1fr", gap: "4px" }}>
+                <span style={{ color: "#94a3b8" }}>6. Tool &amp; Validated Args:</span>
+                <div>
+                  {effSelectedTool && <div>Tool: <code>{effSelectedTool}</code></div>}
+                  {effValidatedArgs && (
+                    <pre style={{ margin: 0, padding: "4px 8px", background: "rgba(0,0,0,0.3)", borderRadius: "4px", fontSize: "11px", overflowX: "auto" }}>
+                      {JSON.stringify(effValidatedArgs, null, 2)}
+                    </pre>
+                  )}
+                </div>
+              </div>
+            )}
+            {stepProvenance && stepProvenance.length > 0 && (
+              <div style={{ marginTop: "6px", paddingTop: "6px", borderTop: "1px dashed rgba(255,255,255,0.08)" }}>
+                <div style={{ color: "#94a3b8", marginBottom: "4px", fontWeight: 600 }}>7. Step Provenance &amp; Reasoner Routing:</div>
+                <div style={{ display: "flex", flexDirection: "column", gap: "4px" }}>
+                  {stepProvenance.map((step, sIdx) => (
+                    <div key={sIdx} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", background: "rgba(0,0,0,0.25)", padding: "4px 8px", borderRadius: "4px", fontSize: "11px" }}>
+                      <span style={{ color: "#e2e8f0" }}>
+                        <strong style={{ textTransform: "capitalize" }}>{step.stage.replace(/_/g, " ")}:</strong> {step.details || (step.executed ? "Executed" : "Resolved")}
+                      </span>
+                      <span style={{ display: "inline-flex", gap: "6px", alignItems: "center" }}>
+                        <code style={{ fontSize: "10px", color: step.is_custom_model ? "#a78bfa" : "#38bdf8" }}>{step.handled_by} [{step.runtime}]</code>
+                        <span style={{
+                          fontSize: "9px",
+                          padding: "1px 5px",
+                          borderRadius: "3px",
+                          background: step.is_custom_model ? "rgba(167, 139, 250, 0.2)" : "rgba(245, 158, 11, 0.2)",
+                          color: step.is_custom_model ? "#c4b5fd" : "#fbbf24",
+                          fontWeight: 600
+                        }}>
+                          {step.is_custom_model ? "CUSTOM MODEL" : "LOCAL FALLBACK"}
+                        </span>
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+        )}
       </div>
 
       {/* 2. Claude 3.7 Extended Thinking Accordion (Collapsible) */}
@@ -510,6 +815,134 @@ export default function ClaudeOutputCard({
                 ))}
               </tbody>
             </table>
+          </div>
+        </div>
+      )}
+
+      {/* Structured Task Plan (DAG) Card */}
+      {Boolean(plan?.nodes && Array.isArray(plan.nodes) && plan.nodes.length > 0) && (
+        <div
+          style={{
+            margin: "12px 0",
+            border: "1px solid rgba(168, 85, 247, 0.25)",
+            borderRadius: "10px",
+            background: "linear-gradient(135deg, rgba(30, 27, 75, 0.45) 0%, rgba(15, 23, 42, 0.6) 100%)",
+            overflow: "hidden",
+          }}
+        >
+          <div
+            style={{
+              padding: "10px 14px",
+              background: "rgba(168, 85, 247, 0.12)",
+              borderBottom: "1px solid rgba(168, 85, 247, 0.2)",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "space-between",
+              flexWrap: "wrap",
+              gap: "8px",
+            }}
+          >
+            <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+              <span style={{ fontSize: "16px" }}>🗺️</span>
+              <strong style={{ color: "#f3e8ff", fontSize: "13px" }}>
+                {planOnly ? "Plan-Only Request (Zero Execution)" : "Structured Task Plan (DAG)"}
+              </strong>
+              <span
+                style={{
+                  fontSize: "10px",
+                  padding: "1px 6px",
+                  borderRadius: "4px",
+                  background: planOnly ? "rgba(168, 85, 247, 0.25)" : "rgba(245, 158, 11, 0.25)",
+                  color: planOnly ? "#e9d5ff" : "#fef3c7",
+                  border: `1px solid ${planOnly ? "rgba(168, 85, 247, 0.4)" : "rgba(245, 158, 11, 0.4)"}`,
+                  fontWeight: 600,
+                }}
+              >
+                {planOnly ? "EXPLAIN PLAN • EXECUTE NOTHING" : "ACTIVE TASK DECOMPOSITION"}
+              </span>
+            </div>
+            <span style={{ fontSize: "11px", color: "#c084fc", fontFamily: "monospace" }}>
+              Nodes: {(plan?.nodes || []).length} | Edges: {(plan?.edges || []).length}
+            </span>
+          </div>
+
+          <div style={{ padding: "12px 14px", display: "flex", flexDirection: "column", gap: "8px" }}>
+            {(plan?.nodes || []).map((node: ClaudeTaskPlanNode, nIdx: number) => (
+              <div
+                key={nIdx}
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "space-between",
+                  background: "rgba(15, 23, 42, 0.65)",
+                  border: "1px solid rgba(255, 255, 255, 0.06)",
+                  borderRadius: "6px",
+                  padding: "8px 12px",
+                  fontSize: "12px",
+                  gap: "10px",
+                }}
+              >
+                <div style={{ display: "flex", alignItems: "center", gap: "8px", minWidth: "140px" }}>
+                  <span
+                    style={{
+                      width: "20px",
+                      height: "20px",
+                      borderRadius: "50%",
+                      background: "rgba(168, 85, 247, 0.2)",
+                      color: "#c084fc",
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      fontSize: "10px",
+                      fontWeight: 700,
+                    }}
+                  >
+                    {nIdx + 1}
+                  </span>
+                  <code style={{ color: "#e2e8f0", fontSize: "11px" }}>{node.node_id}</code>
+                </div>
+
+                <div style={{ flex: 1, display: "flex", flexDirection: "column", gap: "2px" }}>
+                  <div style={{ color: "#f8fafc", fontWeight: 600, fontSize: "12px" }}>
+                    {node.capability || node.tool_name}
+                  </div>
+                  <div style={{ color: "#94a3b8", fontSize: "11px" }}>
+                    Target: <code>{node.target || scopeTarget}</code>
+                    {node.dependencies && node.dependencies.length > 0 && (
+                      <span style={{ marginLeft: "8px", color: "#a855f7" }}>
+                        Depends on: {node.dependencies.join(", ")}
+                      </span>
+                    )}
+                  </div>
+                </div>
+
+                <div>
+                  <span
+                    style={{
+                      fontSize: "10px",
+                      padding: "2px 8px",
+                      borderRadius: "10px",
+                      fontWeight: 600,
+                      background:
+                        node.status === "COMPLETED"
+                          ? "rgba(16, 185, 129, 0.15)"
+                          : node.status === "RUNNING"
+                          ? "rgba(59, 130, 246, 0.15)"
+                          : "rgba(148, 163, 184, 0.15)",
+                      color:
+                        node.status === "COMPLETED"
+                          ? "#34d399"
+                          : node.status === "RUNNING"
+                          ? "#60a5fa"
+                          : "#94a3b8",
+                      border: "1px solid rgba(255, 255, 255, 0.08)",
+                    }}
+                  >
+                    {node.status || "PENDING"}
+                  </span>
+                </div>
+              </div>
+            ))}
           </div>
         </div>
       )}

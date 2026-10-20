@@ -233,8 +233,8 @@ def _synthesize_nmap_scan(
     exit_code: int,
     stdout: str,
     stderr: str,
-    observation: Optional[Dict[str, Any]],
-    duration_s: float,
+    observation: Optional[Dict[str, Any]] = None,
+    duration_s: float = 1.0,
 ) -> Dict[str, Any]:
     target = inputs.get("target") or "target.local"
     ports_input = inputs.get("ports", "1-1024")
@@ -243,7 +243,14 @@ def _synthesize_nmap_scan(
     obs = observation or {}
     hosts = obs.get("hosts", [])
     hosts_found = obs.get("hosts_found", len(hosts))
-    open_ports_count = obs.get("open_ports", 0)
+    raw_open_ports = obs.get("open_ports", 0)
+    if isinstance(raw_open_ports, list):
+        open_ports_count = len(raw_open_ports)
+    else:
+        try:
+            open_ports_count = int(raw_open_ports or 0)
+        except (ValueError, TypeError):
+            open_ports_count = 0
 
     # Fallback parsing from stdout if observation is empty
     if not hosts and stdout:
@@ -278,20 +285,21 @@ def _synthesize_nmap_scan(
 
     # Build natural language synthesis
     if exit_code != 0:
-        md = f"""### ⚠️ Nmap Port Scan Notice
+        findings_rows = []
+        md = f"""### ❌ Execution Failed: Nmap Port Scan (Exit Code {exit_code})
 
 The port scan against **`{target}`** exited with code `{exit_code}`.
 
 #### 🔍 Execution Details:
 - **Target:** `{target}`
 - **Requested Ports:** `{ports_input}`
-- **Stderr:** {stderr.strip() or 'Host unreachable or network packet dropped.'}
+- **Stderr:** {stderr.strip() or 'Execution failed or host unreachable.'}
 
 #### 💡 Suggested Resolution:
 Verify that the host `{target}` is powered on and that ICMP/SYN packets are permitted by your local firewall.
 """
         status_type = "failed"
-        headline = f"Port scan against {target} failed"
+        headline = f"Port scan against {target} failed (Exit {exit_code})"
     elif hosts_found == 0:
         md = f"""### 🔍 Network Reconnaissance Findings
 
@@ -396,8 +404,12 @@ The target host `{target}` did not respond to standard TCP probe packets. It may
         "result": {
             "headline": headline,
             "status": status_type,
-            "security_posture": f"{open_ports_count} Open Ports Discovered" if open_ports_count > 0 else "No Open Ports Exposed",
+            "security_posture": f"Scan Failed (Exit Code {exit_code})" if exit_code != 0 else (f"{open_ports_count} Open Ports Discovered" if open_ports_count > 0 else "No Open Ports Exposed"),
             "key_takeaways": [
+                f"Nmap scan against {target} failed with exit code {exit_code}.",
+                f"Error diagnostics: {stderr.strip() or 'Execution terminated prematurely.'}",
+                "No findings were recorded because execution did not complete successfully.",
+            ] if exit_code != 0 else [
                 f"Scanned target {target} across ports {ports_input}.",
                 f"Identified {hosts_found} responding host(s).",
                 f"Total open service ports: {open_ports_count}.",
@@ -441,8 +453,8 @@ def _synthesize_web_audit(
     exit_code: int,
     stdout: str,
     stderr: str,
-    observation: Optional[Dict[str, Any]],
-    duration_s: float,
+    observation: Optional[Dict[str, Any]] = None,
+    duration_s: float = 1.0,
 ) -> Dict[str, Any]:
     target = inputs.get("target") or inputs.get("url") or inputs.get("host") or "target.local"
     obs = observation or {}
@@ -504,16 +516,17 @@ Executed **`{tool_name}`** against **`{target}`**, but the target server did not
 - If testing a local dev server, ensure it is listening on `0.0.0.0` or test against an active HTTP/HTTPS endpoint.
 """
     else:
-        md = f"""### ⚠️ Web Security Audit Notice
+        findings_rows = []
+        md = f"""### ❌ Execution Failed: Web Application Audit ({tool_name})
 
-The scan using **`{tool_name}`** completed with exit code `{exit_code}`.
+The scan using **`{tool_name}`** failed with exit code `{exit_code}`.
 
 #### 🔍 Execution Details:
 - **Target:** `{target}`
-- **Diagnostic Output:** {stdout[:300] if stdout else stderr[:300] or 'No error stream captured.'}
+- **Diagnostic Output:** {stderr.strip() or stdout.strip() or 'Tool execution terminated with error.'}
 
 #### 💡 Resolution:
-Ensure the target web server `{target}` is running and accepting HTTP/HTTPS connections on its configured port.
+Ensure the target web server `{target}` is running and accepting HTTP/HTTPS connections on its configured port, and that tool dependencies are installed.
 """
 
     return {
@@ -532,7 +545,7 @@ Ensure the target web server `{target}` is running and accepting HTTP/HTTPS conn
         },
         "output": {
             "summary_metrics": [
-                {"label": "Alerts Found", "value": str(alerts_count), "type": "warning" if alerts_count > 0 else ("neutral" if is_unreachable else "success")},
+                {"label": "Alerts Found", "value": str(alerts_count if exit_code == 0 else 0), "type": "warning" if alerts_count > 0 else ("neutral" if is_unreachable else "success")},
                 {"label": "Target", "value": target, "type": "info"},
                 {"label": "Duration", "value": f"{duration_s}s", "type": "neutral"},
             ],
@@ -542,10 +555,14 @@ Ensure the target web server `{target}` is running and accepting HTTP/HTTPS conn
             "has_raw_terminal": bool(stdout.strip() or stderr.strip()),
         },
         "result": {
-            "headline": f"Web audit of {target} finished with {alerts_count} alert(s)" if not is_unreachable else f"Target {target} unreachable on port {inputs.get('port', 80)}",
-            "status": "clean" if (exit_code == 0 and not is_unreachable) else "warning",
-            "security_posture": "Audit Completed" if not is_unreachable else "Host Unreachable",
+            "headline": f"Web audit of {target} failed (Exit {exit_code})" if exit_code != 0 else (f"Web audit of {target} finished with {alerts_count} alert(s)" if not is_unreachable else f"Target {target} unreachable on port {inputs.get('port', 80)}"),
+            "status": "clean" if (exit_code == 0 and not is_unreachable) else "failed",
+            "security_posture": f"Audit Failed (Exit Code {exit_code})" if exit_code != 0 else ("Audit Completed" if not is_unreachable else "Host Unreachable"),
             "key_takeaways": [
+                f"Web audit against {target} failed with exit code {exit_code}.",
+                f"Error diagnostics: {stderr.strip() or stdout.strip() or 'Non-zero exit encountered.'}",
+                "No security alerts or findings were registered from this failed execution.",
+            ] if exit_code != 0 else [
                 f"Scanned web target {target}.",
                 f"Generated evidence artifacts in local store.",
             ],
@@ -569,7 +586,18 @@ def _synthesize_domain_recon(
     domain = inputs.get("domain") or inputs.get("target") or "example.com"
     clean_lines = [l.strip() for l in stdout.splitlines() if l.strip() and not l.startswith("%")][:15]
 
-    md = f"""### 🌐 Domain & DNS Reconnaissance
+    if exit_code != 0:
+        md = f"""### ❌ Domain Reconnaissance Failed (Exit Code {exit_code})
+
+Query for **`{domain}`** via `{tool_name}` failed with exit code `{exit_code}`.
+
+#### 🔍 Error Details:
+```text
+{stderr.strip() or stdout.strip() or 'Query failed or host unreachable.'}
+```
+"""
+    else:
+        md = f"""### 🌐 Domain & DNS Reconnaissance
 
 Gathered intelligence for **`{domain}`** via `{tool_name}` in **{duration_s}s**.
 
@@ -608,10 +636,13 @@ Gathered intelligence for **`{domain}`** via `{tool_name}` in **{duration_s}s**.
             "has_raw_terminal": bool(stdout.strip()),
         },
         "result": {
-            "headline": f"Domain records queried for {domain}",
-            "status": "clean",
-            "security_posture": "Reconnaissance Complete",
-            "key_takeaways": [f"Retrieved DNS/WHOIS data for {domain}."],
+            "headline": f"Domain query failed for {domain} (Exit {exit_code})" if exit_code != 0 else f"Domain records queried for {domain}",
+            "status": "clean" if exit_code == 0 else "failed",
+            "security_posture": f"Reconnaissance Failed (Exit Code {exit_code})" if exit_code != 0 else "Reconnaissance Complete",
+            "key_takeaways": [
+                f"Domain query for {domain} failed with exit code {exit_code}.",
+                f"Error output: {stderr.strip() or 'No records returned or host not found.'}",
+            ] if exit_code != 0 else [f"Retrieved DNS/WHOIS data for {domain}."],
             "recommended_actions": [
                 {"label": f"Scan {domain}", "prompt": f"Perform comprehensive reconnaissance and port discovery against {domain}"},
             ],
@@ -655,7 +686,7 @@ Successfully executed **`{cmd_line}`** via `{tool_name}` in **{duration_s}s**.
 - **Execution Supervisor:** Sandboxed isolation with resource monitoring.
 """
     else:
-        md = f"""### ⚠️ Command Execution Completed with Warnings
+        md = f"""### ❌ Execution Failed (Exit Code {exit_code})
 
 Executed **`{cmd_line}`** with exit code **`{exit_code}`**.
 
@@ -690,10 +721,14 @@ Executed **`{cmd_line}`** with exit code **`{exit_code}`**.
             "has_raw_terminal": bool(stdout.strip() or stderr.strip()),
         },
         "result": {
-            "headline": f"Command '{cmd}' finished with exit code {exit_code}",
-            "status": "clean" if exit_code == 0 else "warning",
-            "security_posture": "Execution Verified",
-            "key_takeaways": [f"Executed {cmd_line}."],
+            "headline": f"Command '{cmd}' failed with exit code {exit_code}" if exit_code != 0 else f"Command '{cmd}' finished with exit code {exit_code}",
+            "status": "clean" if exit_code == 0 else "failed",
+            "security_posture": f"Execution Failed (Exit Code {exit_code})" if exit_code != 0 else "Execution Verified",
+            "key_takeaways": [
+                f"Command execution failed with exit code {exit_code}.",
+                f"Error output: {stderr.strip() or stdout_preview or 'Non-zero exit code encountered.'}",
+                "No findings or artifacts were produced from this failed run.",
+            ] if exit_code != 0 else [f"Executed {cmd_line}."],
             "recommended_actions": [],
         },
     }

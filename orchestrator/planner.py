@@ -159,11 +159,14 @@ class Planner:
         goal: str,
         session_id: Optional[str] = None,
         prefer_llm: bool = True,
+        db_path: Optional[Path | str] = None,
+        record_event: bool = False,
     ) -> Dict[str, Any]:
         """
         Decomposes a natural language goal into a validated DAG plan.
-        Stores the graph in the SQLite event store and records an audit event.
+        Stores the graph in the SQLite event store.
         """
+        effective_db = db_path or self.db_path
         session_id = session_id or f"sess_plan_{uuid.uuid4().hex[:6]}"
         plan_id = f"plan_{int(time.time())}_{uuid.uuid4().hex[:4]}"
 
@@ -218,30 +221,31 @@ class Planner:
             },
         )
 
-        insert_plan(plan_dag, self.db_path)
+        insert_plan(plan_dag, effective_db)
 
-        # 5. Insert Event into SQLite Event Store
-        event = Event.create(
-            session_id=session_id,
-            task_id=plan_id,
-            actor="orchestrator:planner",
-            tool_id="planner.dag.v1",
-            tool_version="1.0.0",
-            requested_args={"goal": goal},
-            normalized_args={
-                "plan_id": plan_id,
-                "node_count": len(plan_nodes),
-                "parallel_roots": len([n for n in plan_nodes if not n.dependencies]),
-                "max_depth": max(depths.values()) if depths else 0,
-            },
-            result_summary=f"Decomposed goal into DAG plan '{plan_id}' with {len(plan_nodes)} capability nodes across {max(depths.values()) + 1} execution levels.",
-            artifact_refs=[f"dag://{plan_id}"],
-            confidence=0.98,
-        )
-        insert_event(event, self.db_path)
+        # 5. Optionally insert Event into SQLite Event Store
+        if record_event:
+            event = Event.create(
+                session_id=session_id,
+                task_id=plan_id,
+                actor="orchestrator:planner",
+                tool_id="planner.dag.v1",
+                tool_version="1.0.0",
+                requested_args={"goal": goal},
+                normalized_args={
+                    "plan_id": plan_id,
+                    "node_count": len(plan_nodes),
+                    "parallel_roots": len([n for n in plan_nodes if not n.dependencies]),
+                    "max_depth": max(depths.values()) if depths else 0,
+                },
+                result_summary=f"Decomposed goal into DAG plan '{plan_id}' with {len(plan_nodes)} capability nodes across {max(depths.values()) + 1} execution levels.",
+                artifact_refs=[f"dag://{plan_id}"],
+                confidence=0.98,
+            )
+            insert_event(event, effective_db)
 
         # Retrieve saved plan with full metadata
-        saved_plan = get_plan(plan_id, self.db_path)
+        saved_plan = get_plan(plan_id, effective_db)
         return saved_plan or dag_dict
 
     def _generate_with_llama(self, goal: str, plan_id: str) -> Dict[str, Any]:

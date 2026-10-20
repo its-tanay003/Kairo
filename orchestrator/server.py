@@ -6,10 +6,14 @@ and activate SIGKILL kill switch for running supervisor processes.
 from datetime import datetime, timezone
 from pathlib import Path
 import json
+import logging
 import os
 import sys
 import time
 from typing import Any, Dict, List, Optional, Union
+import uuid
+
+logger = logging.getLogger("kairo.server")
 
 # Ensure monorepo root in path
 ROOT_DIR = Path(__file__).resolve().parent.parent
@@ -149,6 +153,14 @@ class PlanNodeStatusRequest(BaseModel):
     status: str
     result: Optional[Any] = None
     assigned_tool: Optional[str] = None
+
+
+class PlanExecuteRequest(BaseModel):
+    session_id: Optional[str] = None
+    target: Optional[str] = None
+    goal: Optional[str] = None
+    max_steps: Optional[int] = 50
+    stop_on_critical_failure: Optional[bool] = True
 
 
 class ToolSelectRequest(BaseModel):
@@ -629,7 +641,7 @@ def planner_decompose(req: PlanDecomposeRequest):
     """Decomposes a natural language goal into a validated DAG plan stored in the event store."""
     if not req.goal or not req.goal.strip():
         raise HTTPException(status_code=400, detail="Missing required 'goal'")
-    plan = planner.decompose(goal=req.goal, session_id=req.session_id, prefer_llm=req.prefer_llm)
+    plan = planner.decompose(goal=req.goal, session_id=req.session_id, prefer_llm=req.prefer_llm, db_path=agent.db_path)
     return plan
 
 
@@ -651,7 +663,7 @@ def get_planner_plan(plan_id: str):
 @app.post("/planner/plans/{plan_id}/nodes/{node_id}/status")
 def update_planner_node_status(plan_id: str, node_id: str, req: PlanNodeStatusRequest):
     """Updates status for a specific DAG node (queued, running, success, warning, failed)."""
-    valid_statuses = ("queued", "running", "success", "warning", "failed")
+    valid_statuses = ("queued", "running", "success", "warning", "failed", "skipped", "blocked")
     if req.status not in valid_statuses:
         raise HTTPException(status_code=400, detail=f"Status must be one of {valid_statuses}")
     ok = update_node_status(
@@ -672,6 +684,49 @@ def get_planner_ready_nodes(plan_id: str):
     """Returns all queued nodes whose dependencies are satisfied and ready for parallel execution."""
     ready = get_ready_nodes(plan_id, db_path=agent.db_path)
     return {"plan_id": plan_id, "ready_count": len(ready), "ready_nodes": ready}
+
+
+@app.post("/planner/plans/{plan_id}/run")
+@app.post("/planner/plans/{plan_id}/execute")
+def run_planner_plan(plan_id: str, req: Optional[PlanExecuteRequest] = None):
+    """Autonomously executes a multi-step task graph from beginning to end."""
+    from orchestrator.dag_controller import dag_controller
+    req = req or PlanExecuteRequest()
+    sess_id = req.session_id or f"sess_dag_{uuid.uuid4().hex[:6]}"
+    try:
+        res = dag_controller.execute_plan(
+            plan_id=plan_id,
+            session_id=sess_id,
+            target=req.target,
+            goal=req.goal,
+            max_steps=req.max_steps or 50,
+            stop_on_critical_failure=req.stop_on_critical_failure if req.stop_on_critical_failure is not None else True,
+            db_path=agent.db_path,
+        )
+        return res.to_dict()
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    except Exception as e:
+        logger.error(f"Autonomous plan execution failed: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/planner/run")
+def run_planner_goal(req: PlanDecomposeRequest):
+    """Decomposes a goal into a DAG plan and executes it autonomously from start to finish."""
+    from orchestrator.dag_controller import dag_controller
+    if not req.goal or not req.goal.strip():
+        raise HTTPException(status_code=400, detail="Missing required 'goal'")
+    plan = planner.decompose(goal=req.goal, session_id=req.session_id, prefer_llm=req.prefer_llm, db_path=agent.db_path)
+    plan_id = plan["plan_id"]
+    sess_id = req.session_id or plan.get("session_id") or f"sess_dag_{uuid.uuid4().hex[:6]}"
+    res = dag_controller.execute_plan(
+        plan_id=plan_id,
+        session_id=sess_id,
+        goal=req.goal,
+        db_path=agent.db_path,
+    )
+    return res.to_dict()
 
 
 # Hybrid Tool Selection & Tool Memory Endpoints
@@ -1994,8 +2049,68 @@ def evaluate_completed_jobs_now():
 
 
 
+# ==============================================================================
+# TRUSTWORTHY EXECUTION & FINDINGS VERIFICATION ENDPOINTS
+# ==============================================================================
+
+class VerifyFindingRequest(BaseModel):
+    allowed_targets: Optional[List[str]] = None
+
+
+@app.get("/findings")
+def list_findings_endpoint(
+    session_id: Optional[str] = None,
+    plan_id: Optional[str] = None,
+    affected_asset: Optional[str] = None,
+    severity: Optional[str] = None,
+    verified_only: Optional[bool] = False,
+):
+    """Lists security findings from the EvidenceStore with verification status."""
+    from orchestrator.evidence_store import EvidenceStore
+    store = EvidenceStore(db_path=agent.db_path)
+    findings = store.list_findings(
+        session_id=session_id,
+        plan_id=plan_id,
+        affected_asset=affected_asset,
+        severity=severity,
+    )
+    if verified_only:
+        findings = [f for f in findings if f.verified]
+    return {
+        "findings": [f.to_dict() for f in findings],
+        "count": len(findings),
+    }
+
+
+@app.get("/findings/{finding_id}")
+def get_finding_endpoint(finding_id: str):
+    """Retrieves a single security finding with verification details and evidence references."""
+    from orchestrator.evidence_store import EvidenceStore
+    store = EvidenceStore(db_path=agent.db_path)
+    finding = store.get_finding(finding_id)
+    if not finding:
+        raise HTTPException(status_code=404, detail=f"Finding '{finding_id}' not found.")
+    return finding.to_dict()
+
+
+@app.post("/findings/{finding_id}/verify")
+def verify_single_finding_endpoint(finding_id: str, req: Optional[VerifyFindingRequest] = None):
+    """
+    Executes an authorized verification check against the finding's target asset.
+    Gated by the active ScopeContract: out-of-scope targets are blocked.
+    """
+    from orchestrator.finding_verifier import FindingVerifier
+    verifier = FindingVerifier(db_path=agent.db_path)
+    allowed = req.allowed_targets if req else None
+    result = verifier.verify_finding(finding_id, allowed_targets=allowed)
+    if "error" in result and result.get("status") == "not_found":
+        raise HTTPException(status_code=404, detail=result["error"])
+    return result
+
+
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run("orchestrator.server:app", host="127.0.0.1", port=8000, reload=False)
+
 
 

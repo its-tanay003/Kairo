@@ -8,7 +8,7 @@ import AuditExplorer from "./components/AuditExplorer";
 import DatasetCurationPanel from "./components/DatasetCurationPanel";
 import BenchmarkLeaderboard from "./components/BenchmarkLeaderboard";
 import ModelEvolutionPanel from "./components/ModelEvolutionPanel";
-import ClaudeOutputCard, { ClaudeSynthesisPayload, ClaudeToolSelectionMeta } from "./components/ClaudeOutputCard";
+import ClaudeOutputCard, { ClaudeSynthesisPayload, ClaudeToolSelectionMeta, ClaudeTaskPlan, ClaudeStepProvenanceItem } from "./components/ClaudeOutputCard";
 
 interface EventRecord {
   id?: number;
@@ -116,6 +116,41 @@ interface ChatMessage {
   synthesis?: ClaudeSynthesisPayload;
   modelId?: string;
   modelRole?: string;
+  modelVerification?: {
+    selected_model?: string;
+    actual_model_id?: string;
+    inference_runtime?: string;
+    processed_by_selected_model?: boolean;
+    structured_output?: {
+      action: string;
+      content: string;
+      tool_call?: {
+        name: string;
+        arguments: Record<string, unknown>;
+      };
+    };
+    selected_tool?: string;
+    validated_args?: Record<string, unknown> | unknown[];
+    fallback_used?: boolean;
+    fallback_reason?: string;
+    local_only?: boolean;
+    timestamp?: string;
+  };
+  selectedModel?: string;
+  actualModelId?: string;
+  inferenceRuntime?: string;
+  processedBySelectedModel?: boolean;
+  structuredOutput?: Record<string, unknown>;
+  selectedTool?: string;
+  validatedArgs?: Record<string, unknown> | unknown[];
+  fallbackUsed?: boolean;
+  fallbackReason?: string;
+  intent?: string;
+  planOnly?: boolean;
+  plan?: ClaudeTaskPlan;
+  stepProvenance?: ClaudeStepProvenanceItem[];
+  handledByCustomModel?: boolean;
+  handledByFallback?: boolean;
 }
 
 export interface ModelOption {
@@ -176,6 +211,20 @@ interface ModelCenterStatus {
   role: string;
   server_status: string;
   server_url: string;
+  ready?: boolean;
+  is_primary_custom?: boolean;
+  real_backend_status?: {
+    active_model_id: string;
+    runtime: string;
+    role: string;
+    ready: boolean;
+    is_primary_custom: boolean;
+    custom_primary_ready: boolean;
+    fallback_ready: boolean;
+    fallback_model_id: string;
+    local_only: boolean;
+    cloud_prevented: boolean;
+  };
   vram?: {
     total_mb: number;
     used_mb: number;
@@ -515,6 +564,22 @@ export default function Home() {
                   synthesis: data.synthesis || data.execution?.synthesis,
                   modelId: data.modelId,
                   modelRole: data.modelRole,
+                  modelVerification: data.modelVerification,
+                  selectedModel: data.selectedModel,
+                  actualModelId: data.actualModelId || data.modelId,
+                  inferenceRuntime: data.inferenceRuntime,
+                  processedBySelectedModel: data.processedBySelectedModel,
+                  structuredOutput: data.structuredOutput,
+                  selectedTool: data.selectedTool,
+                  validatedArgs: data.validatedArgs,
+                  fallbackUsed: data.fallbackUsed,
+                  fallbackReason: data.fallbackReason,
+                  intent: data.intent,
+                  planOnly: data.planOnly,
+                  plan: data.plan,
+                  stepProvenance: data.stepProvenance,
+                  handledByCustomModel: data.handledByCustomModel,
+                  handledByFallback: data.handledByFallback,
                 },
               ];
             });
@@ -721,7 +786,7 @@ export default function Home() {
           </div>
         </div>
 
-        {/* Center: Claude Model Selector */}
+        {/* Center: Claude Model Selector with Real Backend Status */}
         <div className="top-bar-center">
           <div className="model-picker-container">
             <button
@@ -731,6 +796,28 @@ export default function Home() {
             >
               <span className="model-pill-spark">✦</span>
               <span>{selectedModel}</span>
+              {modelCenter?.real_backend_status && (
+                <span
+                  style={{
+                    fontSize: "10px",
+                    padding: "2px 6px",
+                    borderRadius: "6px",
+                    background: modelCenter.real_backend_status.is_primary_custom
+                      ? "rgba(16, 185, 129, 0.2)"
+                      : "rgba(245, 158, 11, 0.2)",
+                    color: modelCenter.real_backend_status.is_primary_custom ? "#10b981" : "#f59e0b",
+                    border: `1px solid ${
+                      modelCenter.real_backend_status.is_primary_custom
+                        ? "rgba(16, 185, 129, 0.4)"
+                        : "rgba(245, 158, 11, 0.4)"
+                    }`,
+                    fontWeight: 600,
+                  }}
+                  title={`Real Backend Model: ${modelCenter.real_backend_status.active_model_id} (${modelCenter.real_backend_status.runtime})`}
+                >
+                  Backend: {modelCenter.real_backend_status.active_model_id} [{modelCenter.real_backend_status.runtime}]
+                </span>
+              )}
               <span className="model-pill-chevron">{showModelMenu ? "▲" : "▼"}</span>
             </button>
             {showModelMenu && (
@@ -740,6 +827,8 @@ export default function Home() {
                     selectedModelId === opt.id ||
                     selectedModel === opt.name ||
                     selectedModel.toLowerCase().includes(opt.id.toLowerCase());
+                  const isCustomPrimary = opt.id === "kairo-scale-2b";
+                  const isLocalFallback = opt.id === "Qwen2.5-0.5B-Instruct";
                   return (
                     <button
                       key={opt.id}
@@ -748,7 +837,17 @@ export default function Home() {
                     >
                       <div className="model-item-title">
                         <span>{opt.shortName}</span>
-                        {opt.badge && (
+                        {isCustomPrimary && (
+                          <span style={{ fontSize: "10px", color: "#10b981", border: "1px solid rgba(16,185,129,0.3)", padding: "1px 5px", borderRadius: "4px" }}>
+                            Primary Custom
+                          </span>
+                        )}
+                        {isLocalFallback && (
+                          <span style={{ fontSize: "10px", color: "#38bdf8", border: "1px solid rgba(56,189,248,0.3)", padding: "1px 5px", borderRadius: "4px" }}>
+                            Local Fallback
+                          </span>
+                        )}
+                        {opt.badge && !isCustomPrimary && !isLocalFallback && (
                           <span
                             className={opt.badgeClass || ""}
                             style={opt.badgeColor ? { fontSize: "10px", color: opt.badgeColor } : undefined}
@@ -782,8 +881,30 @@ export default function Home() {
             {showStatusTooltip && (
               <div key="status-tooltip" className="status-tooltip">
                 <div className="status-tooltip-row">
-                  <span>Model Engine</span>
-                  <strong>{modelCenter?.model_id || selectedModel}</strong>
+                  <span>Selected Model (UI)</span>
+                  <strong>{selectedModel}</strong>
+                </div>
+                <div className="status-tooltip-row">
+                  <span>Real Backend Model</span>
+                  <strong style={{ color: modelCenter?.real_backend_status?.is_primary_custom ? "#10b981" : "#f59e0b" }}>
+                    {modelCenter?.real_backend_status?.active_model_id || modelCenter?.model_id || "kairo-scale-2b"}
+                  </strong>
+                </div>
+                <div className="status-tooltip-row">
+                  <span>Inference Runtime</span>
+                  <strong>{modelCenter?.real_backend_status?.runtime || modelCenter?.runtime || "transformers"}</strong>
+                </div>
+                <div className="status-tooltip-row">
+                  <span>Air-Gapped Privacy</span>
+                  <strong style={{ color: "#10b981" }}>100% Local (Cloud Blocked)</strong>
+                </div>
+                <div className="status-tooltip-row">
+                  <span>Primary Custom Status</span>
+                  <strong>{modelCenter?.real_backend_status?.custom_primary_ready ? "Available (1.98B)" : "Unavailable"}</strong>
+                </div>
+                <div className="status-tooltip-row">
+                  <span>Local Fallback</span>
+                  <strong>{modelCenter?.real_backend_status?.fallback_model_id || "Qwen2.5-0.5B-Instruct"}</strong>
                 </div>
                 <div className="status-tooltip-row">
                   <span>Kali Worker VM</span>
@@ -971,6 +1092,22 @@ export default function Home() {
                         toolSelection={(m.toolSelection as unknown) as ClaudeToolSelectionMeta}
                         synthesis={m.synthesis || m.execution?.synthesis}
                         scopeTarget={scopeInfo.target}
+                        modelVerification={m.modelVerification}
+                        selectedModel={m.selectedModel}
+                        actualModelId={m.actualModelId || m.modelId}
+                        inferenceRuntime={m.inferenceRuntime}
+                        processedBySelectedModel={m.processedBySelectedModel}
+                        structuredOutput={m.structuredOutput}
+                        selectedTool={m.selectedTool}
+                        validatedArgs={m.validatedArgs}
+                        fallbackUsed={m.fallbackUsed}
+                        fallbackReason={m.fallbackReason}
+                        intent={m.intent}
+                        planOnly={m.planOnly}
+                        plan={m.plan}
+                        stepProvenance={m.stepProvenance}
+                        handledByCustomModel={m.handledByCustomModel}
+                        handledByFallback={m.handledByFallback}
                         onRunPrompt={(prompt) => {
                           setInputVal(prompt);
                           textareaRef.current?.focus();

@@ -178,3 +178,8 @@ class NmapAdapter(ToolAdapter):
         if current_host:
             hosts.append(current_host)
         return {"tool": "nmap", "hosts": hosts, "hosts_found": len(hosts), "mode": "text_fallback"}
+
+
+# Alias for backward compatibility and test mock targeting
+NmapScanV1Adapter = NmapAdapter
+

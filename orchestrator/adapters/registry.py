@@ -72,8 +72,21 @@ class AdapterRegistry:
         except Exception as e:
             logger.debug(f"[AdapterRegistry] Dynamic SDK discovery notice: {e}")
 
-    def get(self, tool_id: str) -> Optional[Type[ToolAdapter]]:
-        return self._adapters.get(tool_id)
+    def get(self, tool_id: str, default: Optional[Type[ToolAdapter]] = None) -> Optional[Type[ToolAdapter]]:
+        return self._adapters.get(tool_id, default)
+
+    def __getitem__(self, tool_id: str) -> Type[ToolAdapter]:
+        return self._adapters[tool_id]
+
+    def __setitem__(self, tool_id: str, adapter_cls: Type[ToolAdapter]):
+        self._adapters[tool_id] = adapter_cls
+
+    def __delitem__(self, tool_id: str):
+        if tool_id in self._adapters:
+            del self._adapters[tool_id]
+
+    def __contains__(self, tool_id: str) -> bool:
+        return tool_id in self._adapters
 
     def get_instance(self, tool_id: str) -> Optional[ToolAdapter]:
         cls = self.get(tool_id)

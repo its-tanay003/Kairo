@@ -322,17 +322,41 @@ class ModelCenter:
         context_length = active_meta.get("context_length", 32768) if active_meta else 32768
         role = active_meta.get("role", "primary") if active_meta else "primary"
 
+        # Check readiness of active model and custom primary model
+        from orchestrator.model_integration import model_integration
+        readiness_report = model_integration.check_model_readiness(active_meta or model_id)
+        fallback_meta = self.get_model_by_role("fallback") or {"model_id": "Qwen2.5-0.5B-Instruct", "runtime": "llama.cpp"}
+        fallback_readiness = model_integration.check_model_readiness(fallback_meta)
+
+        # Primary custom model readiness
+        custom_primary = self.get_model_by_role("primary-custom") or self.get_model_by_role("primary-custom-scaled-tier-c") or {"model_id": "kairo-scale-2b"}
+        custom_readiness = model_integration.check_model_readiness(custom_primary)
+
         return {
             "model_id": model_id,
             "runtime": runtime,
             "quantization": quantization,
             "context_length": context_length,
             "role": role,
-            "server_status": "online" if llama_running else "offline",
+            "server_status": "online" if (runtime == "transformers" and readiness_report.ready) or llama_running else ("standby" if readiness_report.ready else "offline"),
             "server_url": llama_url,
             "vram": vram,
             "ram": ram,
             "models_catalog": models,
+            "real_backend_status": {
+                "active_model_id": model_id,
+                "runtime": runtime,
+                "role": role,
+                "ready": readiness_report.ready,
+                "error": readiness_report.error,
+                "is_primary_custom": readiness_report.is_primary_custom,
+                "custom_primary_ready": custom_readiness.ready,
+                "fallback_ready": fallback_readiness.ready,
+                "fallback_model_id": fallback_meta.get("model_id", "Qwen2.5-0.5B-Instruct"),
+                "local_only": True,
+                "cloud_prevented": True,
+            },
+            "readiness": readiness_report.to_dict(),
         }
 
 

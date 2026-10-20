@@ -8,8 +8,13 @@ from pydantic import BaseModel, Field
 
 class ToolCallPayload(BaseModel):
     tool_id: str = Field(..., description="Target tool ID from registry")
+    name: Optional[str] = Field(None, description="Standard function call name alias")
     tool_version: Optional[str] = Field("1.0.0", description="Semantic version of the tool")
     arguments: Dict[str, Any] = Field(default_factory=dict, description="Arguments conforming to ToolSpec")
+
+    def model_post_init(self, __context: Any) -> None:
+        if not self.name:
+            self.name = self.tool_id
 
 
 class LLMResponse(BaseModel):

@@ -249,6 +249,10 @@ class Finding:
     created_at: str = field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
     tags: List[str] = field(default_factory=list)
     metadata: Dict[str, Any] = field(default_factory=dict)
+    verified: bool = False
+    verification_status: str = "unverified"  # "unverified", "verified", "refuted", "inconclusive", "blocked_out_of_scope"
+    verification_details: Optional[Dict[str, Any]] = None
+    verified_at: Optional[str] = None
 
     def to_dict(self) -> Dict[str, Any]:
         return {
@@ -269,6 +273,10 @@ class Finding:
             "created_at": self.created_at,
             "tags": self.tags,
             "metadata": self.metadata,
+            "verified": self.verified,
+            "verification_status": self.verification_status,
+            "verification_details": self.verification_details,
+            "verified_at": self.verified_at,
         }
 
     @classmethod
@@ -291,6 +299,15 @@ class Finding:
                 raw_meta = json.loads(raw_meta)
             except Exception:
                 raw_meta = {}
+        raw_ver_details = data.get("verification_details")
+        if isinstance(raw_ver_details, str):
+            try:
+                raw_ver_details = json.loads(raw_ver_details)
+            except Exception:
+                raw_ver_details = None
+        raw_verified = data.get("verified", False)
+        if isinstance(raw_verified, (int, str)):
+            raw_verified = bool(int(raw_verified)) if str(raw_verified).isdigit() else str(raw_verified).lower() in ("true", "1")
 
         return cls(
             id=data.get("id") or f"find_{uuid.uuid4().hex[:10]}",
@@ -310,6 +327,10 @@ class Finding:
             created_at=data.get("created_at") or datetime.now(timezone.utc).isoformat(),
             tags=raw_tags,
             metadata=raw_meta,
+            verified=bool(raw_verified),
+            verification_status=data.get("verification_status", "unverified"),
+            verification_details=raw_ver_details,
+            verified_at=data.get("verified_at"),
         )
 
 
@@ -353,13 +374,28 @@ class EvidenceStore:
                 discovering_node_id TEXT,
                 created_at TEXT NOT NULL,
                 tags TEXT NOT NULL DEFAULT '[]',
-                metadata TEXT
+                metadata TEXT,
+                verified INTEGER NOT NULL DEFAULT 0,
+                verification_status TEXT NOT NULL DEFAULT 'unverified',
+                verification_details TEXT,
+                verified_at TEXT
             );
             """)
+            cursor.execute("PRAGMA table_info(findings)")
+            cols = [col[1] for col in cursor.fetchall()]
+            if "verified" not in cols:
+                cursor.execute("ALTER TABLE findings ADD COLUMN verified INTEGER NOT NULL DEFAULT 0;")
+            if "verification_status" not in cols:
+                cursor.execute("ALTER TABLE findings ADD COLUMN verification_status TEXT NOT NULL DEFAULT 'unverified';")
+            if "verification_details" not in cols:
+                cursor.execute("ALTER TABLE findings ADD COLUMN verification_details TEXT;")
+            if "verified_at" not in cols:
+                cursor.execute("ALTER TABLE findings ADD COLUMN verified_at TEXT;")
             cursor.execute("CREATE INDEX IF NOT EXISTS idx_findings_session ON findings(session_id);")
             cursor.execute("CREATE INDEX IF NOT EXISTS idx_findings_plan ON findings(plan_id);")
             cursor.execute("CREATE INDEX IF NOT EXISTS idx_findings_asset ON findings(affected_asset);")
             cursor.execute("CREATE INDEX IF NOT EXISTS idx_findings_severity ON findings(severity);")
+            cursor.execute("CREATE INDEX IF NOT EXISTS idx_findings_verified ON findings(verified);")
         conn.close()
 
     def store_evidence(self, evidence: BaseEvidence) -> BaseEvidence:
@@ -683,11 +719,13 @@ class EvidenceStore:
         INSERT OR REPLACE INTO findings (
             id, session_id, task_id, plan_id, title, affected_asset, severity,
             confidence_score, evidence_references, recovery_path, description,
-            remediation, discovering_tool, discovering_node_id, created_at, tags, metadata
+            remediation, discovering_tool, discovering_node_id, created_at, tags, metadata,
+            verified, verification_status, verification_details, verified_at
         ) VALUES (
             :id, :session_id, :task_id, :plan_id, :title, :affected_asset, :severity,
             :confidence_score, :evidence_references, :recovery_path, :description,
-            :remediation, :discovering_tool, :discovering_node_id, :created_at, :tags, :metadata
+            :remediation, :discovering_tool, :discovering_node_id, :created_at, :tags, :metadata,
+            :verified, :verification_status, :verification_details, :verified_at
         )
         """
         recovery_path_serialized = (
@@ -695,6 +733,12 @@ class EvidenceStore:
             if isinstance(finding.recovery_path, str)
             else json.dumps(finding.recovery_path) if finding.recovery_path is not None
             else None
+        )
+
+        verification_details_serialized = (
+            json.dumps(finding.verification_details)
+            if finding.verification_details is not None and not isinstance(finding.verification_details, str)
+            else finding.verification_details
         )
 
         data = {
@@ -715,6 +759,10 @@ class EvidenceStore:
             "created_at": finding.created_at,
             "tags": json.dumps(finding.tags),
             "metadata": json.dumps(finding.metadata),
+            "verified": 1 if finding.verified else 0,
+            "verification_status": finding.verification_status,
+            "verification_details": verification_details_serialized,
+            "verified_at": finding.verified_at,
         }
 
         with conn:
@@ -722,6 +770,29 @@ class EvidenceStore:
             cursor.execute(query, data)
         conn.close()
         return finding
+
+    # Alias for convenience across controllers
+    add_finding = store_finding
+
+    def update_finding_verification(
+        self,
+        finding_id: str,
+        verified: bool,
+        verification_status: str,
+        verification_details: Optional[Dict[str, Any]] = None,
+        confidence_score: Optional[float] = None,
+    ) -> Optional[Finding]:
+        """Updates verification status and details for an existing finding."""
+        finding = self.get_finding(finding_id)
+        if not finding:
+            return None
+        finding.verified = verified
+        finding.verification_status = verification_status
+        finding.verification_details = verification_details
+        finding.verified_at = datetime.now(timezone.utc).isoformat()
+        if confidence_score is not None:
+            finding.confidence_score = confidence_score
+        return self.store_finding(finding)
 
     def get_finding(self, finding_id: str) -> Optional[Finding]:
         """Retrieves a single finding by ID."""
