@@ -435,6 +435,9 @@ class HybridToolSelector:
         if any(w in goal.lower() for w in ["wpscan", "wordpress", "wp plugin", "wp theme"]) and "wpscan" in tool.id:
             keyword_boosts += 0.40
             bonus_reasons.append("WPScan WordPress terms")
+        if any(w in goal.lower() for w in ["nikto", "header", "misconfiguration", "web vuln", "missing security"]) and "nikto" in tool.id:
+            keyword_boosts += 0.40
+            bonus_reasons.append("Nikto web vulnerability terms")
         if any(w in goal.lower() for w in ["browser", "dom", "playwright", "cookie"]) and "browser" in tool.id:
             keyword_boosts += 0.40
             bonus_reasons.append("browser security terms")

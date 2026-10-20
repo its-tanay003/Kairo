@@ -143,8 +143,10 @@ class AgentLoop:
                 target_candidate = ip_match.group(0)
             else:
                 dm = re.search(r'\b[a-zA-Z0-9][-a-zA-Z0-9]*\.[a-zA-Z]{2,}\b', message)
-                if dm and not dm.group(0).endswith((".py", ".sh", ".json", ".pt")):
-                    target_candidate = dm.group(0)
+                if dm:
+                    cand = dm.group(0)
+                    if not cand.endswith((".py", ".sh", ".json", ".pt", ".yaml", ".yml", ".v1", ".v2")) and not cand.startswith(("shell.", "nmap.", "nikto.", "whatweb.", "wpscan.", "nuclei.", "sqlmap.", "kali.")):
+                        target_candidate = cand
 
         scope_check = validate_scope_request(target=target_candidate, tool_id=tool_id, db_path=self.db_path)
         if not scope_check.get("authorized", False):
@@ -849,7 +851,9 @@ class AgentLoop:
         explicit_args: Optional[Dict[str, Any]] = None,
         model_id: Optional[str] = None,
         user_message: Optional[str] = None,
-        autonomous: bool = False,
+        autonomous: Optional[bool] = None,
+        mode: Optional[str] = None,
+        **kwargs: Any,
     ) -> Dict[str, Any]:
         message = message or user_message or ""
         task_id = task_id or f"task_{uuid.uuid4().hex[:8]}"
@@ -1441,12 +1445,18 @@ class AgentLoop:
 
             # Check if autonomous multi-step execution is requested
             from orchestrator.dag_controller import dag_controller
-            # Autonomous multi-step execution is the default for operational task requests
-            # unless explicitly requested in single-step / manual mode
-            is_single_step = autonomous is False or any(w in message.lower() for w in [
-                "step by step", "single step", "one step at a time", "manual step", "pause after each"
-            ])
-            is_autonomous = not is_single_step
+            # Explicit execution modes:
+            # Modes: "conversation", "plan_only", "autonomous_task", "single_step", "direct_tool"
+            # When the user explicitly requests an operational task and authorization is available,
+            # autonomous multi-step execution is the default.
+            is_single_step = (
+                mode in ("single_step", "manual")
+                or autonomous is False
+                or any(w in message.lower() for w in [
+                    "step by step", "single step", "one step at a time", "manual step", "pause after each", "first step only", "only the first step"
+                ])
+            )
+            is_autonomous = (mode in ("autonomous_task", "autonomous")) or (not is_single_step)
 
             if is_autonomous:
                 logger.info(f"[IntentFlow] Executing Plan '{plan_id}' autonomously from beginning to end")
@@ -1458,7 +1468,22 @@ class AgentLoop:
                     db_path=self.db_path,
                 )
 
-                all_prov = [step_prov["intent_classification"], step_prov["task_decomposition"]]
+                val_auth_prov = StepProvenance(
+                    stage="validation_and_authorization",
+                    handled_by="security_gateway:scope_contract",
+                    runtime="policy_and_schema",
+                    is_custom_model=False,
+                    is_fallback=False,
+                    executed=True,
+                    details={
+                        "authorized": True,
+                        "target": intent_res.target,
+                        "plan_id": plan_id,
+                        "scope_verified": True,
+                    },
+                ).to_dict()
+
+                all_prov = [step_prov["intent_classification"], step_prov["task_decomposition"], val_auth_prov]
                 all_prov.extend(dag_res.step_provenance)
 
                 return {

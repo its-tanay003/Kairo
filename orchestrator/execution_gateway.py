@@ -160,6 +160,10 @@ class ExecutionGateway:
         operator_token: Optional[str] = None,
         timeout_ms: Optional[int] = None,
         db_path: Optional[Path | str] = None,
+        tool_version: Optional[str] = None,
+        workflow_token: Optional[str] = None,
+        execution_plane: Optional[str] = None,
+        **kwargs: Any,
     ) -> ExecutionResult:
         """
         Validates and executes a tool through the centralized security boundary.
@@ -179,10 +183,13 @@ class ExecutionGateway:
         t0 = time.time()
         start_time_iso = datetime.now(timezone.utc).isoformat()
         clean_args = dict(arguments) if isinstance(arguments, dict) else {}
+        if workflow_token and "workflow_token" not in clean_args:
+            clean_args["workflow_token"] = workflow_token
 
         # 1. Resolve Tool Spec
         spec: Optional[ToolSpec] = tool_registry.get(tool_id)
-        tool_version = spec.version if spec else "1.0.0"
+        effective_tool_version = tool_version or (spec.version if spec else "1.0.0")
+        tool_version = effective_tool_version
 
         # Diagnostic tools handled safely without external registry
         is_diagnostic = tool_id in ("hello_world", "system_ping")
@@ -310,6 +317,7 @@ class ExecutionGateway:
             tool_id=tool_id,
             requested_args=clean_args,
             scope_contract=active_contract,
+            operator_token=operator_token,
         )
         if not is_approved:
             logger.warning(f"[ExecutionGateway] Workflow approval rejected '{tool_id}': {approval_reason}")

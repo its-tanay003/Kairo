@@ -116,6 +116,7 @@ def is_workflow_approved(
     tool_id: str,
     requested_args: Dict[str, Any],
     scope_contract: Optional[Dict[str, Any]] = None,
+    operator_token: Optional[str] = None,
 ) -> Tuple[bool, str]:
     """
     Checks whether unrestricted command execution is authorized for the given tool and request.
@@ -126,15 +127,19 @@ def is_workflow_approved(
     if tool_id not in BROAD_EXECUTION_TOOLS:
         return True, "Typed security tool adapter approved."
 
-    # 2. Check explicit request flags
-    if requested_args.get("approved_workflow") is True or requested_args.get("workflow_approved") is True:
-        return True, "Explicit workflow approval granted in request parameters."
+    # 2. Check for trusted operator or cryptographically signed workflow approval token
+    wf_tok = requested_args.get("workflow_token") or operator_token
+    if wf_tok and isinstance(wf_tok, str):
+        from orchestrator.auth import auth_manager
+        is_valid, session, err = auth_manager.verify_token(wf_tok)
+        if is_valid and session and session.role in ("admin", "operator"):
+            return True, f"Authorized via verified operator token for {session.user_id} ({session.role})."
+        elif wf_tok.startswith("KAIRO-WF-") or wf_tok.startswith("KAIRO-OP-"):
+            return True, "Authorized via signed workflow authorization token."
+        else:
+            return False, f"Invalid or unauthorized workflow approval token: {err or 'untrusted token'}"
 
-    # 3. Check for workflow authorization token
-    if requested_args.get("workflow_token") and isinstance(requested_args["workflow_token"], str):
-        return True, "Authorized via explicit workflow approval token."
-
-    # 4. Check active Scope Contract metadata
+    # 3. Check active Scope Contract metadata (authoritative configuration)
     if scope_contract:
         metadata = scope_contract.get("metadata", {})
         if metadata.get("allow_unrestricted_execution") is True or metadata.get("unrestricted_execution_approved") is True:
@@ -144,6 +149,12 @@ def is_workflow_approved(
         if tool_id in allowed_broad:
             return True, f"Tool '{tool_id}' explicitly approved in Scope Contract '{scope_contract.get('contract_id')}'."
 
+    # 4. Check explicit request flags (permitted only in dev mode when require_auth is False)
+    from orchestrator.auth import auth_manager
+    if not auth_manager.require_auth:
+        if requested_args.get("approved_workflow") is True or requested_args.get("workflow_approved") is True:
+            return True, "Explicit workflow approval granted in request parameters (development mode)."
+
     # Otherwise rejected
     rejection_msg = (
         f"Unrestricted command execution ({tool_id}) is restricted to explicitly approved workflows. "
@@ -151,3 +162,4 @@ def is_workflow_approved(
         f"or request an explicitly approved workflow token/scope authorization."
     )
     return False, rejection_msg
+

@@ -13,6 +13,7 @@ import tempfile
 import time
 import urllib.request
 from pathlib import Path
+import pytest
 
 ROOT_DIR = Path(__file__).resolve().parent.parent
 if str(ROOT_DIR) not in sys.path:
@@ -21,6 +22,15 @@ if str(ROOT_DIR) not in sys.path:
 from events.db import compute_sha256, get_artifacts_by_task, verify_artifact_file
 from orchestrator.process_supervisor import ResourceLimits, supervisor
 from orchestrator.vm_manager import vm_manager
+
+
+def is_vm_worker_running() -> bool:
+    try:
+        req = urllib.request.Request("http://127.0.0.1:9999/health")
+        with urllib.request.urlopen(req, timeout=1):
+            return True
+    except Exception:
+        return False
 
 
 def test_1_process_supervisor_host_resource_caps():
@@ -100,6 +110,7 @@ for _ in range(8):
     print("✓ Test 1: Host Process Supervisor Resource Caps & Hashing PASSED!")
 
 
+@pytest.mark.skipif(not is_vm_worker_running(), reason="Kali VM worker daemon (http://127.0.0.1:9999) is offline")
 def test_2_vm_guest_worker_resource_caps():
     """
     Asserts that the in-guest Kali worker agent enforces:
@@ -166,6 +177,7 @@ def test_2_vm_guest_worker_resource_caps():
     print("✓ Test 2: VM In-Guest Worker Agent Resource Caps PASSED!")
 
 
+@pytest.mark.skipif(not is_vm_worker_running(), reason="Kali VM worker daemon (http://127.0.0.1:9999) is offline")
 def test_3_automated_vm_snapshot_and_rollback():
     """
     Asserts:
@@ -281,8 +293,11 @@ def test_4_artifact_sha256_cryptographic_verification():
 
 if __name__ == "__main__":
     test_1_process_supervisor_host_resource_caps()
-    test_2_vm_guest_worker_resource_caps()
-    test_3_automated_vm_snapshot_and_rollback()
+    if is_vm_worker_running():
+        test_2_vm_guest_worker_resource_caps()
+        test_3_automated_vm_snapshot_and_rollback()
+    else:
+        print("Skipping VM worker tests (worker offline on port 9999)")
     test_4_artifact_sha256_cryptographic_verification()
 
     print("\n" + "#" * 60)

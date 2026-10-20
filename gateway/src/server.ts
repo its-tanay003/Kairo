@@ -664,11 +664,12 @@ function broadcastToAll(message: string | object, excludeWs?: WebSocket) {
 }
 
 function broadcastToWorkspace(workspaceId: string | undefined, message: string | object, excludeWs?: WebSocket) {
+  if (!workspaceId) return;
   const msgStr = typeof message === "string" ? message : JSON.stringify(message);
   for (const s of sessions.values()) {
     if (s.ws.readyState === WebSocket.OPEN) {
       if (excludeWs && s.ws === excludeWs) continue;
-      if (!workspaceId || !s.workspaceId || s.workspaceId === workspaceId) {
+      if (s.workspaceId === workspaceId) {
         s.ws.send(msgStr);
       }
     }
@@ -865,9 +866,9 @@ wss.on("connection", async (ws: WebSocket, req) => {
     })
   );
 
-  // If connected to a pre-existing workspace, broadcast peer_joined to other active clients
+  // If connected to a pre-existing workspace, broadcast peer_joined to other active clients in that workspace
   if (reqWorkspaceId) {
-    broadcastToAll({
+    broadcastToWorkspace(reqWorkspaceId, {
       type: "peer_joined",
       sessionId,
       clientType,
@@ -943,7 +944,7 @@ wss.on("connection", async (ws: WebSocket, req) => {
                 timestamp: new Date().toISOString(),
               })
             );
-            broadcastToAll({
+            broadcastToWorkspace(wid, {
               type: "peer_joined",
               sessionId,
               clientType: session.clientType,
@@ -1430,7 +1431,7 @@ wss.on("connection", async (ws: WebSocket, req) => {
           console.warn("[Gateway] Scope validation warning for tool_call:", e.message);
         }
 
-        broadcastToAll({
+        sendToSessionOrWorkspace(session, {
           type: "user_message_broadcast",
           senderSessionId: customSessionId,
           clientType: session.clientType,
@@ -1461,6 +1462,8 @@ wss.on("connection", async (ws: WebSocket, req) => {
               task_id: taskId,
               explicit_tool: toolId,
               explicit_args: toolArgs,
+              operator_token: session.token,
+              workflow_token: (payload as any).workflow_token || session.token,
             }),
           });
 
@@ -1708,7 +1711,7 @@ wss.on("connection", async (ws: WebSocket, req) => {
             body: JSON.stringify({ name: payload.name, description: payload.description || "" }),
           });
           const data = (await response.json()) as any;
-          broadcastToAll({
+          sendToSessionOrWorkspace(session, {
             type: "vm_snapshot_result",
             data,
             timestamp: new Date().toISOString(),
@@ -1732,7 +1735,7 @@ wss.on("connection", async (ws: WebSocket, req) => {
             body: JSON.stringify({ name: payload.name || "kairo_worker_ready" }),
           });
           const data = (await response.json()) as any;
-          broadcastToAll({
+          sendToSessionOrWorkspace(session, {
             type: "vm_rollback_result",
             data,
             timestamp: new Date().toISOString(),
@@ -1761,7 +1764,7 @@ wss.on("connection", async (ws: WebSocket, req) => {
             }),
           });
           const plan = (await response.json()) as any;
-          broadcastToAll({
+          sendToSessionOrWorkspace(session, {
             type: "planner_plan_created",
             plan,
             timestamp: new Date().toISOString(),
@@ -1816,7 +1819,7 @@ wss.on("connection", async (ws: WebSocket, req) => {
             }),
           });
           const plan = (await response.json()) as any;
-          broadcastToAll({
+          sendToSessionOrWorkspace(session, {
             type: "planner_plan_updated",
             plan,
             timestamp: new Date().toISOString(),
@@ -1889,7 +1892,7 @@ wss.on("connection", async (ws: WebSocket, req) => {
           if (data.workspace) {
             session.workspaceId = data.workspace.workspace_id;
           }
-          broadcastToAll({
+          sendToSessionOrWorkspace(session, {
             type: "workspace_provisioned",
             sessionId,
             workspace: data.workspace,
@@ -1963,7 +1966,7 @@ wss.on("connection", async (ws: WebSocket, req) => {
           if (session.workspaceId === wid) {
             session.workspaceId = undefined;
           }
-          broadcastToAll({
+          sendToSessionOrWorkspace(session, {
             type: "workspace_terminated",
             sessionId,
             workspaceId: wid,

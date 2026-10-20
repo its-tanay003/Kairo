@@ -167,39 +167,39 @@ export interface ModelOption {
 export const AVAILABLE_MODELS: ModelOption[] = [
   {
     id: "kairo-scale-2b",
-    name: "Kairo 3.7 (Cyber-Ops Sonnet)",
-    shortName: "Kairo 3.7 (Sonnet Tier)",
-    badge: "Default",
+    name: "Kairo Scale 2B (Custom Primary)",
+    shortName: "Kairo Scale 2B",
+    badge: "Custom Model",
     badgeClass: "wordmark-badge",
-    desc: "High-capability autonomous planning & Kali VM reasoning",
+    desc: "Locally-trained 2B causal architecture with GRPO alignment",
     role: "primary-custom-scaled-tier-c",
   },
   {
     id: "Qwen2.5-0.5B-Instruct",
-    name: "Kairo 3.5 (Haiku Fast)",
-    shortName: "Kairo 3.5 (Haiku Fast)",
-    badge: "⚡ Low Latency",
+    name: "Qwen2.5-0.5B (Local Fallback)",
+    shortName: "Qwen2.5-0.5B Fallback",
+    badge: "⚡ Fast GGUF",
     badgeColor: "var(--accent-green)",
-    desc: "High-speed port discovery & initial banner reconnaissance",
+    desc: "Lightweight quantized GGUF local model for fast offline triage",
     role: "fallback",
   },
   {
-    id: "Qwen3-Coder-30B-A3B-Instruct",
-    name: "Llama-3-70B Pentest SFT",
-    shortName: "Llama-3-70B Pentest SFT",
-    badge: "Fine-Tuned",
-    badgeColor: "var(--accent-blue)",
-    desc: "Local 70B cyber-ops weights with strict grammar constraints",
-    role: "primary",
+    id: "kairo-scale-2b-grpo",
+    name: "Kairo GRPO Final (Reasoner)",
+    shortName: "Kairo GRPO Reasoner",
+    badge: "RL Aligned",
+    badgeColor: "var(--accent-amber)",
+    desc: "Kairo 2B checkpoint reinforced with Schema and Verifier rewards",
+    role: "primary-custom-scaled-grpo",
   },
   {
-    id: "kairo-scale-2b-grpo",
-    name: "DeepSeek-R1 Reasoner",
-    shortName: "DeepSeek-R1 Reasoner",
-    badge: "Thinking",
-    badgeColor: "var(--accent-amber)",
-    desc: "Deep chain-of-thought mathematical and exploit analysis",
-    role: "primary-custom-scaled-grpo",
+    id: "Qwen3-Coder-30B-A3B-Instruct",
+    name: "Qwen3-Coder-30B (MoE Base)",
+    shortName: "Qwen3-Coder-30B",
+    badge: "Advanced",
+    badgeColor: "var(--accent-blue)",
+    desc: "Large local Mixture-of-Experts coder model for advanced exploit generation",
+    role: "primary",
   },
 ];
 
@@ -288,7 +288,7 @@ export default function Home() {
   const [expandedEventId, setExpandedEventId] = useState<number | null>(null);
   const [devCustomCmd, setDevCustomCmd] = useState<string>("");
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState<boolean>(false);
-  const [selectedModel, setSelectedModel] = useState<string>("Kairo 3.7 (Cyber-Ops Sonnet)");
+  const [selectedModel, setSelectedModel] = useState<string>("Kairo Scale 2B (Custom Primary)");
   const [selectedModelId, setSelectedModelId] = useState<string>("kairo-scale-2b");
   const [showModelMenu, setShowModelMenu] = useState<boolean>(false);
 

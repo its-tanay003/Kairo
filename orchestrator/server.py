@@ -20,10 +20,11 @@ ROOT_DIR = Path(__file__).resolve().parent.parent
 if str(ROOT_DIR) not in sys.path:
     sys.path.insert(0, str(ROOT_DIR))
 
-from fastapi import FastAPI, HTTPException, Response
+from fastapi import FastAPI, HTTPException, Response, Header
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from orchestrator.vnc_server import vnc_server
+from orchestrator.execution_gateway import execution_gateway, ExecutionGateway
 
 from dataclasses import asdict
 from events.db import (
@@ -89,9 +90,22 @@ from orchestrator.model_evolution_controller import evolution_controller
 
 app = FastAPI(title="Agent Orchestrator Service", version="1.0.0")
 
+allowed_origins_env = os.environ.get("KAIRO_ALLOWED_ORIGINS", "")
+if allowed_origins_env.strip():
+    allowed_origins = [o.strip() for o in allowed_origins_env.split(",") if o.strip()]
+else:
+    allowed_origins = [
+        "http://localhost:3000",
+        "http://127.0.0.1:3000",
+        "http://localhost:3001",
+        "http://127.0.0.1:3001",
+        "tauri://localhost",
+        "http://tauri.localhost",
+    ]
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=allowed_origins if os.environ.get("KAIRO_SECURE_CORS", "false").lower() in ("true", "1") else ["*"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -108,6 +122,8 @@ class RunRequest(BaseModel):
     explicit_tool: Optional[str] = None
     explicit_args: Optional[Dict[str, Any]] = None
     model_id: Optional[str] = None
+    autonomous: Optional[bool] = None
+    mode: Optional[str] = None
 
 
 class KillRequest(BaseModel):
@@ -135,6 +151,34 @@ class VMExecuteRequest(BaseModel):
     rollback_on_failure: Optional[bool] = False
     resource_limits: Optional[Dict[str, Any]] = None
     artifact_dir: Optional[str] = None
+    operator_token: Optional[str] = None
+    workflow_token: Optional[str] = None
+    target: Optional[str] = None
+
+
+class GatewayExecuteRequest(BaseModel):
+    session_id: str
+    task_id: str
+    tool_id: str
+    tool_version: Optional[str] = "1.0.0"
+    arguments: Dict[str, Any]
+    target: Optional[str] = None
+    operator_token: Optional[str] = None
+    workflow_token: Optional[str] = None
+    timeout_ms: Optional[int] = None
+    execution_plane: Optional[str] = "auto"
+
+
+class ChatRequest(BaseModel):
+    session_id: str
+    message: str
+    task_id: Optional[str] = None
+    parent_event: Optional[str] = None
+    explicit_tool: Optional[str] = None
+    explicit_args: Optional[Dict[str, Any]] = None
+    model_id: Optional[str] = None
+    autonomous: Optional[bool] = None
+    mode: Optional[str] = None
 
 
 class ArtifactVerifyRequest(BaseModel):
@@ -179,7 +223,8 @@ class ScopeContractCreateRequest(BaseModel):
     network_scope: str = "authorized_lab"
     time_window: str = "8h"
     allowed_tool_tiers: List[int] = [1, 2, 3]
-    authorized_by: str = "secops_lead@kairo.internal"
+    authorized_by: Optional[str] = "secops_lead@kairo.internal"
+    operator_token: Optional[str] = None
     metadata: Optional[Dict[str, Any]] = None
 
 
@@ -375,9 +420,16 @@ def terminate_workspace_endpoint(workspace_id: str, purge_storage: bool = False)
     return res
 
 
-@app.post("/run")
-def run_loop(req: RunRequest):
+@app.post("/chat")
+def chat_endpoint(req: ChatRequest):
+    """Unified conversational AI and operational task execution endpoint."""
     try:
+        autonomous_flag = req.autonomous
+        if req.mode in ("autonomous_task", "autonomous"):
+            autonomous_flag = True
+        elif req.mode in ("single_step", "manual"):
+            autonomous_flag = False
+
         result = agent.execute_task(
             session_id=req.session_id,
             message=req.message,
@@ -386,10 +438,80 @@ def run_loop(req: RunRequest):
             explicit_tool=req.explicit_tool,
             explicit_args=req.explicit_args,
             model_id=req.model_id,
+            autonomous=autonomous_flag,
+            mode=req.mode,
         )
         return result
     except Exception as e:
+        logger.exception(f"Chat endpoint error: {e}")
         raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/run")
+def run_loop(req: RunRequest):
+    """Execution endpoint aliased to /chat for backward compatibility."""
+    try:
+        autonomous_flag = req.autonomous
+        if req.mode in ("autonomous_task", "autonomous"):
+            autonomous_flag = True
+        elif req.mode in ("single_step", "manual"):
+            autonomous_flag = False
+
+        result = agent.execute_task(
+            session_id=req.session_id,
+            message=req.message,
+            task_id=req.task_id,
+            parent_event=req.parent_event,
+            explicit_tool=req.explicit_tool,
+            explicit_args=req.explicit_args,
+            model_id=req.model_id,
+            autonomous=autonomous_flag,
+            mode=req.mode,
+        )
+        return result
+    except Exception as e:
+        logger.exception(f"Run loop error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/gateway/execute")
+def gateway_execute_endpoint(req: GatewayExecuteRequest):
+    """Direct authoritative tool execution through centralized ExecutionGateway."""
+    exec_res = execution_gateway.execute(
+        tool_id=req.tool_id,
+        arguments=req.arguments,
+        session_id=req.session_id,
+        task_id=req.task_id,
+        target=req.target,
+        operator_token=req.operator_token,
+        workflow_token=req.workflow_token,
+        tool_version=req.tool_version or "1.0.0",
+        execution_plane=req.execution_plane or "auto",
+        timeout_ms=req.timeout_ms,
+        db_path=agent.db_path,
+    )
+    if not exec_res.authorized:
+        status_code = 403 if ("SCOPE" in (exec_res.rejection_reason or "") or "WORKFLOW" in (exec_res.rejection_reason or "")) else 400
+        raise HTTPException(
+            status_code=status_code,
+            detail=exec_res.rejection_reason or exec_res.stderr or "Execution rejected by ExecutionGateway.",
+        )
+    return {
+        "tool_id": exec_res.tool_id,
+        "tool_version": exec_res.tool_version,
+        "task_id": exec_res.task_id,
+        "session_id": exec_res.session_id,
+        "target": exec_res.target,
+        "authorized": exec_res.authorized,
+        "status": exec_res.status,
+        "exit_code": exec_res.exit_code,
+        "stdout": exec_res.stdout,
+        "stderr": exec_res.stderr,
+        "duration_ms": exec_res.duration_ms,
+        "observation": exec_res.observation,
+        "artifacts": exec_res.artifacts,
+        "event_id": exec_res.event_id,
+    }
 
 
 @app.post("/kill")
@@ -517,90 +639,72 @@ def vm_rollback(req: VMRollbackRequest):
 
 
 @app.post("/vm/execute")
-def vm_execute(req: VMExecuteRequest):
-    """Executes a typed ToolSpec command inside the Kali VM via guest Worker Agent."""
+def vm_execute(
+    req: VMExecuteRequest,
+    authorization: Optional[str] = Header(None),
+):
+    """Executes a typed ToolSpec command inside the Kali VM via centralized ExecutionGateway."""
     tid = req.task_id or f"task_vm_{int(time.time()*1000)}"
-    start_iso = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
-    result = vm_manager.execute_in_vm(
-        task_id=tid,
+
+    # Resolve operator token
+    token = req.operator_token
+    if not token and authorization:
+        parts = authorization.split()
+        token = parts[1] if len(parts) == 2 and parts[0].lower() == "bearer" else authorization
+
+    wf_token = req.workflow_token or token
+
+    clean_args = {
+        "command": req.command,
+        "args": req.args or [],
+        "cwd": req.cwd or "/home/kali",
+        "snapshot_before": bool(req.snapshot_before),
+        "rollback_after": bool(req.rollback_after),
+        "rollback_on_failure": bool(req.rollback_on_failure),
+        "resource_limits": req.resource_limits,
+        "artifact_dir": req.artifact_dir,
+    }
+    if wf_token:
+        clean_args["workflow_token"] = wf_token
+
+    exec_res = execution_gateway.execute(
         tool_id="kali.exec.v1",
-        tool_version="1.0.0",
-        args={"command": req.command, "args": req.args or [], "cwd": req.cwd or "/home/kali"},
-        snapshot_before=bool(req.snapshot_before),
-        rollback_after=bool(req.rollback_after),
-        rollback_on_failure=bool(req.rollback_on_failure),
-        resource_limits=req.resource_limits,
-        artifact_dir=req.artifact_dir,
+        arguments=clean_args,
+        session_id=req.session_id or "vm_session",
+        task_id=tid,
+        target=req.target or "127.0.0.1",
+        operator_token=token,
+        workflow_token=wf_token,
         timeout_ms=int(req.timeout_ms or 30000),
+        db_path=agent.db_path,
+        execution_target="vm",
     )
-    end_iso = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
 
-    # Compile artifact references with SHA-256 for evidence integrity
-    artifact_refs = []
-    for art in result.get("artifacts", []):
-        artifact_refs.append(f"sha256:{art.get('sha256')}:{art.get('filename')}")
-    if result.get("snapshot_name"):
-        artifact_refs.append(f"snapshot://{result.get('snapshot_name')}")
-    if result.get("rolled_back"):
-        artifact_refs.append(f"rollback://{result.get('rollback_info', {}).get('snapshot_restored', 'kairo_worker_ready')}")
-
-    # Log to SQLite event store (Task 0.1 schema)
-    try:
-        summary_msg = f"VM execution of '{req.command}' finished with exit code {result.get('exit_code')}"
-        if result.get("rolled_back"):
-            summary_msg += " (VM rolled back to clean state)"
-        if result.get("resource_limit_exceeded"):
-            summary_msg += f" (RESOURCE CAP VIOLATION: {result.get('violation_reason')})"
-
-        event = Event.create(
-            session_id=req.session_id or "vm_session",
-            task_id=tid,
-            actor="worker_agent@kali_vm",
-            tool_id="kali.exec.v1",
-            tool_version="1.0.0",
-            requested_args={
-                "command": req.command,
-                "args": req.args or [],
-                "cwd": req.cwd or "/home/kali",
-                "snapshot_before": req.snapshot_before,
-                "rollback_after": req.rollback_after,
-                "rollback_on_failure": req.rollback_on_failure,
-                "resource_limits": req.resource_limits,
-            },
-            normalized_args={"command": req.command, "args": req.args or [], "cwd": req.cwd or "/home/kali"},
-            process_id=result.get("process_id"),
-            start_time=start_iso,
-            end_time=end_iso,
-            exit_code=result.get("exit_code"),
-            stdout_ref=f"inline://{result.get('stdout', '')[:120]}" if result.get("stdout") else None,
-            stderr_ref=f"inline://{result.get('stderr', '')[:120]}" if result.get("stderr") else None,
-            artifact_refs=artifact_refs,
-            screenshots=[],
-            network_context={"ip": "127.0.0.1", "port_ssh": 2222, "port_worker": 9999, "vm": "kali-linux-2026.1-virtualbox-amd64"},
-            result_summary=summary_msg,
-            confidence=1.0,
-            parent_event=None,
-            timestamp=start_iso,
+    if not exec_res.authorized:
+        status_code = 403 if ("SCOPE" in (exec_res.rejection_reason or "") or "WORKFLOW" in (exec_res.rejection_reason or "")) else 400
+        raise HTTPException(
+            status_code=status_code,
+            detail=exec_res.rejection_reason or exec_res.stderr or "VM execution rejected by ExecutionGateway.",
         )
-        insert_event(event, agent.db_path)
-    except Exception as e:
-        print(f"[Orchestrator] Warning: could not log event: {e}")
 
-    # Update Tool Memory store
-    try:
-        record_tool_execution(
-            tool_id="kali.exec.v1",
-            success=(result.get("exit_code") == 0),
-            duration_ms=float(result.get("duration_ms") or 0.0),
-            exit_code=result.get("exit_code"),
-            timed_out=bool(result.get("timed_out")),
-            metadata={"command": req.command, "task_id": tid},
-            db_path=agent.db_path,
-        )
-    except Exception as e:
-        print(f"[Orchestrator] Warning: could not update tool memory: {e}")
-
-    return result
+    response = {
+        "task_id": tid,
+        "tool_id": "kali.exec.v1",
+        "authorized": exec_res.authorized,
+        "status": exec_res.status,
+        "exit_code": exec_res.exit_code,
+        "stdout": exec_res.stdout,
+        "stderr": exec_res.stderr,
+        "duration_ms": exec_res.duration_ms,
+        "artifacts": exec_res.artifacts,
+        "observation": exec_res.observation,
+        "event_id": exec_res.event_id,
+    }
+    if isinstance(exec_res.observation, dict):
+        for k, v in exec_res.observation.items():
+            if k not in response:
+                response[k] = v
+    return response
 
 
 @app.get("/artifacts/{task_id}")
@@ -773,22 +877,33 @@ def get_active_scope_endpoint():
 
 
 @app.post("/scope/contract")
-def create_scope_contract_endpoint(req: ScopeContractCreateRequest):
-    """Creates, cryptographically signs, and activates a new Scope Contract."""
+def create_scope_contract_endpoint(
+    req: ScopeContractCreateRequest,
+    authorization: Optional[str] = Header(None),
+):
+    """Creates, cryptographically signs, and activates a new Scope Contract under operator authorization."""
     if not req.targets:
         raise HTTPException(status_code=400, detail="Scope Contract must specify at least one target or CIDR subnet")
     if not req.allowed_tool_tiers:
         raise HTTPException(status_code=400, detail="Scope Contract must allow at least one tool tier [1, 2, or 3]")
 
-    contract = create_scope_contract(
+    token = req.operator_token
+    if not token and authorization:
+        parts = authorization.split()
+        token = parts[1] if len(parts) == 2 and parts[0].lower() == "bearer" else authorization
+
+    success, contract, message = execution_gateway.authorize_scope_modification(
         targets=req.targets,
+        operator_token=token,
         network_scope=req.network_scope,
         time_window=req.time_window,
         allowed_tool_tiers=req.allowed_tool_tiers,
-        authorized_by=req.authorized_by,
         metadata=req.metadata,
         db_path=agent.db_path,
     )
+    if not success:
+        status_code = 401 if "OPERATOR_AUTH_REQUIRED" in message else (403 if "INSUFFICIENT_PRIVILEGE" in message else 400)
+        raise HTTPException(status_code=status_code, detail=message)
     return contract
 
 

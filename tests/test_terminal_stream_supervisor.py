@@ -56,9 +56,11 @@ def check_services():
         print("  ✗ Kali Worker offline:", e)
         return False
 
-    return True
+import pytest
 
 
+@pytest.mark.skipif(not check_services(), reason="Live Orchestrator, Gateway, or Kali Worker service is offline")
+@pytest.mark.anyio
 async def test_live_streaming_and_controls():
     print("\n========================================================")
     print("TESTING KAIRO LIVE STREAMING & PROCESS SUPERVISOR")

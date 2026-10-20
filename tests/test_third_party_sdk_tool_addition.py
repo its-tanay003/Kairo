@@ -227,7 +227,10 @@ def test_leaderboard_runs_contain_model_attribution():
         assert "model_name" in run
         assert "model_badge" in run
         assert "model_tier" in run
-        assert run["model_id"] in ["kairo-dpo-1b", "kairo-sft-1b", "kairo-grpo-1.5b", "kairo-base-380m"]
+        assert run["model_id"] in [
+            "kairo-dpo-1b", "kairo-sft-1b", "kairo-grpo-1.5b", "kairo-base-380m",
+            "kairo-scale-2b", "kairo-scale-2b-sft", "kairo-scale-2b-grpo", "Qwen2.5-0.5B-Instruct", "Qwen3-Coder-30B-A3B-Instruct"
+        ]
 
 
 def test_leaderboard_api_endpoint_delivers_version_score_history(client):

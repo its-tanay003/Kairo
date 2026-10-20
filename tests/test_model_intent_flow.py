@@ -255,11 +255,11 @@ class TestFlowTaskRequest:
             assert result["plan"] is not None
             assert len(result["plan"]["nodes"]) >= 2
 
-            # 2. Execution occurred for ready initial node
+            # 2. Execution occurred for ready initial node (autonomous executes all eligible steps by default)
             assert result["tool_executed"] is not None
             assert result["tool_executed"]["id"] in ("nmap.scan.v1", "network_port_scan")
             assert result["execution"]["exit_code"] == 0
-            assert result["tools_executed_count"] == 1
+            assert result["tools_executed_count"] >= 1
 
             # 3. Step Provenance covers full flow: intent -> decomposition -> validation -> execution
             prov = result["step_provenance"]
