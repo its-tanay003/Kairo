@@ -45,6 +45,7 @@ from events.db import (
 )
 from orchestrator.adapters.registry import adapter_registry
 from orchestrator.auth import auth_manager
+from orchestrator.kali_connector import ExecutionPlaneType, SIMULATION_NOTICE_TEXT
 from orchestrator.process_supervisor import ProcessResult, ProcessSupervisor, get_supervisor
 from orchestrator.validation import BROAD_EXECUTION_TOOLS, is_workflow_approved, validate_tool_arguments
 from orchestrator.vm_manager import VMManager, get_vm_manager
@@ -74,6 +75,9 @@ class ExecutionResult:
     command_line: str = ""
     actor: str = "orchestrator:gateway"
     provenance: Optional[Dict[str, Any]] = None
+    is_simulated: bool = False
+    simulation_notice: Optional[str] = None
+    execution_plane: Optional[str] = None
 
     def to_dict(self) -> Dict[str, Any]:
         return asdict(self)
@@ -361,6 +365,8 @@ class ExecutionGateway:
         recorded_cmd = ""
         fallback_notice: Optional[str] = None
         local_fallback: bool = False
+        is_simulated: bool = False
+        simulation_notice: Optional[str] = None
 
         try:
             if tool_id == "hello_world":
@@ -493,6 +499,18 @@ class ExecutionGateway:
                 execution_plane = getattr(obs, "execution_plane", None) or (observation.get("execution_plane") if isinstance(observation, dict) else None)
                 fallback_notice = getattr(obs, "fallback_notice", None) or (observation.get("fallback_notice") if isinstance(observation, dict) else None)
                 local_fallback = bool(getattr(obs, "local_fallback", False) or (observation.get("local_fallback", False) if isinstance(observation, dict) else False) or execution_plane == "local_host_fallback")
+                is_simulated = bool(
+                    getattr(obs, "is_simulated", False)
+                    or (observation.get("is_simulated", False) if isinstance(observation, dict) else False)
+                    or execution_plane == ExecutionPlaneType.SIMULATED_MOCK.value
+                )
+                simulation_notice = getattr(obs, "simulation_notice", None) or (
+                    observation.get("simulation_notice") if isinstance(observation, dict) else None
+                )
+                if is_simulated and not simulation_notice:
+                    simulation_notice = SIMULATION_NOTICE_TEXT
+                if is_simulated:
+                    execution_plane = ExecutionPlaneType.SIMULATED_MOCK.value
 
         except Exception as exc:
             logger.exception(f"[ExecutionGateway] Unhandled exception while executing '{tool_id}': {exc}")
@@ -534,8 +552,14 @@ class ExecutionGateway:
                 "execution_plane": execution_plane or ("local_host_fallback" if local_fallback else "unknown"),
                 "fallback_notice": fallback_notice,
                 "local_fallback": local_fallback,
+                "is_simulated": is_simulated,
+                "simulation_notice": simulation_notice,
             },
-            result_summary=f"Executed {tool_id} -> exit {exit_code} ({real_status})",
+            result_summary=(
+                f"{SIMULATION_NOTICE_TEXT} Executed {tool_id} -> exit {exit_code} ({real_status})"
+                if is_simulated
+                else f"Executed {tool_id} -> exit {exit_code} ({real_status})"
+            ),
             confidence=1.0 if exit_code == 0 else 0.0,
             parent_event=parent_event,
             timestamp=start_time_iso,
@@ -559,6 +583,9 @@ class ExecutionGateway:
             event_id=event_id,
             command_line=recorded_cmd,
             actor=actor,
+            is_simulated=is_simulated,
+            simulation_notice=simulation_notice,
+            execution_plane=execution_plane,
         )
 
     def authorize_scope_modification(

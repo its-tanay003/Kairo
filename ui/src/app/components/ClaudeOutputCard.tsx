@@ -16,6 +16,8 @@ export interface ClaudeProcessMeta {
   execution_plane?: string;
   fallback_notice?: string;
   local_fallback?: boolean;
+  is_simulated?: boolean;
+  simulation_notice?: string;
 }
 
 export interface ClaudeOutputFinding {
@@ -160,6 +162,8 @@ export interface ClaudeOutputCardProps {
     execution_plane?: string;
     fallback_notice?: string;
     local_fallback?: boolean;
+    is_simulated?: boolean;
+    simulation_notice?: string;
   };
   durationMs?: number;
   toolSelection?: ClaudeToolSelectionMeta;
@@ -252,7 +256,19 @@ export default function ClaudeOutputCard({
     ? processData.duration_s.toFixed(1)
     : "1.2";
 
-  const isLocalHostFallback = Boolean(
+  const isSimulatedMock = Boolean(
+    execution?.execution_plane === "simulated_mock" ||
+    processData?.execution_plane === "simulated_mock" ||
+    execution?.is_simulated ||
+    processData?.is_simulated ||
+    (synth?.output?.summary_metrics || []).some((m) => m.value?.toLowerCase().includes("simulated"))
+  );
+  const simulationNoticeText =
+    execution?.simulation_notice ||
+    processData?.simulation_notice ||
+    "[SIMULATED — demo mode, not a live scan]";
+
+  const isLocalHostFallback = !isSimulatedMock && Boolean(
     execution?.execution_plane === "local_host_fallback" ||
     processData?.execution_plane === "local_host_fallback" ||
     execution?.local_fallback ||
@@ -573,6 +589,26 @@ export default function ClaudeOutputCard({
       {/* 3. The Process Card: Clear Step Breakdown & Interactive Terminal */}
       {(tool || processData || execution) && (
         <div className={`claude-process-card ${isFailed ? "has-error" : ""}`}>
+          {isSimulatedMock && (
+            <div
+              className="claude-simulation-banner"
+              style={{
+                display: "flex",
+                alignItems: "center",
+                gap: "8px",
+                padding: "8px 14px",
+                backgroundColor: "rgba(168, 85, 247, 0.15)",
+                borderBottom: "1px solid rgba(168, 85, 247, 0.35)",
+                color: "#c084fc",
+                fontSize: "12px",
+                fontWeight: 600,
+              }}
+            >
+              <span style={{ fontSize: "14px" }}>🎭</span>
+              <span><strong>SIMULATED DEMO:</strong> {simulationNoticeText} (Mock Adapter — No live scan performed)</span>
+            </div>
+          )}
+
           {isLocalHostFallback && (
             <div
               className="claude-fallback-banner"
@@ -609,6 +645,26 @@ export default function ClaudeOutputCard({
             </div>
 
             <div className="claude-process-actions-group">
+              {isSimulatedMock && (
+                <span
+                  style={{
+                    fontSize: "11px",
+                    padding: "2px 8px",
+                    borderRadius: "10px",
+                    backgroundColor: "rgba(168, 85, 247, 0.15)",
+                    color: "#c084fc",
+                    border: "1px solid rgba(168, 85, 247, 0.35)",
+                    fontWeight: 600,
+                    display: "inline-flex",
+                    alignItems: "center",
+                    gap: "4px",
+                  }}
+                  title={simulationNoticeText}
+                >
+                  🎭 Simulated Mock
+                </span>
+              )}
+
               {isLocalHostFallback && (
                 <span
                   style={{
@@ -697,12 +753,40 @@ export default function ClaudeOutputCard({
                       <span className="overview-label">Execution Plane</span>
                       <span
                         className="overview-val font-mono"
-                        style={{ color: isLocalHostFallback ? "#f59e0b" : "inherit" }}
+                        style={{
+                          color: isSimulatedMock ? "#c084fc" : isLocalHostFallback ? "#f59e0b" : "inherit",
+                        }}
                       >
-                        {isLocalHostFallback ? "local_host_fallback" : "Isolated Kali Worker"}
+                        {isSimulatedMock
+                          ? "simulated_mock"
+                          : isLocalHostFallback
+                          ? "local_host_fallback"
+                          : "Isolated Kali Worker"}
                       </span>
                     </div>
                   </div>
+
+                  {isSimulatedMock && (
+                    <div
+                      style={{
+                        margin: "10px 0",
+                        padding: "8px 12px",
+                        borderRadius: "6px",
+                        backgroundColor: "rgba(168, 85, 247, 0.1)",
+                        border: "1px solid rgba(168, 85, 247, 0.3)",
+                        color: "#d8b4fe",
+                        fontSize: "12px",
+                        display: "flex",
+                        alignItems: "center",
+                        gap: "8px",
+                      }}
+                    >
+                      <span style={{ fontSize: "14px" }}>ℹ️</span>
+                      <span>
+                        <strong>Honest Simulation:</strong> {simulationNoticeText} Findings are illustrative mock telemetry for offline GUI testing.
+                      </span>
+                    </div>
+                  )}
 
                   {isLocalHostFallback && (
                     <div
@@ -833,8 +917,18 @@ export default function ClaudeOutputCard({
                     )}
                     <div className="telemetry-row">
                       <span>Execution Plane:</span>
-                      <code>{execution?.execution_plane || processData?.execution_plane || (isLocalHostFallback ? "local_host_fallback" : "isolated_worker")}</code>
+                      <code>
+                        {isSimulatedMock
+                          ? "simulated_mock"
+                          : execution?.execution_plane || processData?.execution_plane || (isLocalHostFallback ? "local_host_fallback" : "isolated_worker")}
+                      </code>
                     </div>
+                    {isSimulatedMock && (
+                      <div className="telemetry-row">
+                        <span>Simulation Notice:</span>
+                        <code style={{ color: "#c084fc" }}>{simulationNoticeText}</code>
+                      </div>
+                    )}
                     {isLocalHostFallback && (
                       <div className="telemetry-row">
                         <span>Fallback Notice:</span>

@@ -39,7 +39,7 @@ from orchestrator.llama_client import LlamaCppClient
 from orchestrator.models import LLMResponse
 from orchestrator.process_supervisor import supervisor, ProcessResult
 from orchestrator.vm_manager import vm_manager
-from orchestrator.kali_connector import ExecutionPlaneType, FALLBACK_NOTICE_TEXT
+from orchestrator.kali_connector import ExecutionPlaneType, FALLBACK_NOTICE_TEXT, SIMULATION_NOTICE_TEXT
 from orchestrator.tool_selector import tool_selector
 from orchestrator.adapters.registry import adapter_registry
 from orchestrator.intent_classifier import (
@@ -712,7 +712,24 @@ class AgentLoop:
 
                 obs_exec_plane = getattr(obs, "execution_plane", None) or (obs.observation.get("execution_plane") if isinstance(obs.observation, dict) else None)
                 obs_fallback_notice = getattr(obs, "fallback_notice", None) or (obs.observation.get("fallback_notice") if isinstance(obs.observation, dict) else None)
-                obs_local_fallback = bool(getattr(obs, "local_fallback", False) or (obs.observation.get("local_fallback", False) if isinstance(obs.observation, dict) else False) or obs_exec_plane == ExecutionPlaneType.LOCAL_HOST_FALLBACK.value)
+                obs_is_simulated = bool(
+                    getattr(obs, "is_simulated", False)
+                    or (obs.observation.get("is_simulated", False) if isinstance(obs.observation, dict) else False)
+                    or obs_exec_plane == ExecutionPlaneType.SIMULATED_MOCK.value
+                    or obs_exec_plane == "simulated_mock"
+                )
+                obs_sim_notice = (
+                    getattr(obs, "simulation_notice", None)
+                    or (obs.observation.get("simulation_notice") if isinstance(obs.observation, dict) else None)
+                    or (SIMULATION_NOTICE_TEXT if obs_is_simulated else None)
+                )
+                obs_local_fallback = bool(
+                    not obs_is_simulated and (
+                        getattr(obs, "local_fallback", False)
+                        or (obs.observation.get("local_fallback", False) if isinstance(obs.observation, dict) else False)
+                        or obs_exec_plane == ExecutionPlaneType.LOCAL_HOST_FALLBACK.value
+                    )
+                )
 
                 execution_details = {
                     "adapter": tool_id,
@@ -725,9 +742,11 @@ class AgentLoop:
                     "duration_ms": obs.duration_ms,
                     "observation": obs.observation,
                     "artifacts": obs.artifacts,
-                    "execution_plane": obs_exec_plane or "unknown",
+                    "execution_plane": obs_exec_plane or ("simulated_mock" if obs_is_simulated else "unknown"),
                     "fallback_notice": obs_fallback_notice,
                     "local_fallback": obs_local_fallback,
+                    "is_simulated": obs_is_simulated,
+                    "simulation_notice": obs_sim_notice,
                 }
             except Exception as e:
                 logger.error(f"Error executing adapter {tool_id}: {e}", exc_info=True)
@@ -781,31 +800,48 @@ class AgentLoop:
         # Step provenance tracking for execution
         exec_plane = execution_details.get("execution_plane")
         fallback_notice = execution_details.get("fallback_notice")
+        is_simulated = bool(
+            execution_details.get("is_simulated")
+            or exec_plane == ExecutionPlaneType.SIMULATED_MOCK.value
+            or exec_plane == "simulated_mock"
+        )
+        sim_notice = execution_details.get("simulation_notice") or (SIMULATION_NOTICE_TEXT if is_simulated else None)
+
         is_local_fallback = bool(
-            execution_details.get("local_fallback")
-            or exec_plane == ExecutionPlaneType.LOCAL_HOST_FALLBACK.value
-            or exec_plane == "local_host_fallback"
-            or fallback_notice
+            not is_simulated and (
+                execution_details.get("local_fallback")
+                or exec_plane == ExecutionPlaneType.LOCAL_HOST_FALLBACK.value
+                or exec_plane == "local_host_fallback"
+                or fallback_notice
+            )
         )
         if is_local_fallback:
             exec_plane = ExecutionPlaneType.LOCAL_HOST_FALLBACK.value
             fallback_notice = fallback_notice or FALLBACK_NOTICE_TEXT
+        elif is_simulated:
+            exec_plane = ExecutionPlaneType.SIMULATED_MOCK.value
+            fallback_notice = sim_notice
 
         step_prov["execution"] = StepProvenance(
             stage="execution",
             handled_by=tool_id,
-            runtime="local_host" if is_local_fallback else ("kali_sandbox" if (tool_id == "kali.exec.v1" or adapter_registry.get(tool_id)) else "supervisor"),
+            runtime="simulated_mock" if is_simulated else ("local_host" if is_local_fallback else ("kali_sandbox" if (tool_id == "kali.exec.v1" or adapter_registry.get(tool_id)) else "supervisor")),
             is_custom_model=False,
-            is_fallback=is_local_fallback,
+            is_fallback=is_local_fallback or is_simulated,
             executed=True,
             details={
                 "exit_code": exit_code,
                 "adapter": tool_id,
                 "duration_ms": execution_details.get("duration_ms", 0),
-                "execution_plane": exec_plane or ("local_host_fallback" if is_local_fallback else "kali_sandbox"),
+                "execution_plane": exec_plane or ("simulated_mock" if is_simulated else ("local_host_fallback" if is_local_fallback else "kali_sandbox")),
                 "fallback_notice": fallback_notice,
+                "is_simulated": is_simulated,
+                "simulation_notice": sim_notice,
             },
         ).to_dict()
+
+        if is_simulated and not result_summary.startswith("[SIMULATED"):
+            result_summary = f"{sim_notice} {result_summary}"
 
         # Record exact 20-field event row in SQLite
         event = Event.create(
@@ -826,9 +862,11 @@ class AgentLoop:
             screenshots=[],
             network_context={
                 "ip": "127.0.0.1",
-                "execution_plane": exec_plane or ("local_host_fallback" if is_local_fallback else "unknown"),
+                "execution_plane": exec_plane or ("simulated_mock" if is_simulated else ("local_host_fallback" if is_local_fallback else "unknown")),
                 "fallback_notice": fallback_notice,
                 "local_fallback": is_local_fallback,
+                "is_simulated": is_simulated,
+                "simulation_notice": sim_notice,
                 "model_id": active_model_info.get("model_id"),
                 "model_role": active_model_info.get("role"),
                 "model_server": self.llama_client.base_url,
@@ -879,6 +917,8 @@ class AgentLoop:
                 duration_ms=round((time.time() - t0) * 1000, 2),
                 execution_plane=exec_plane,
                 fallback_notice=fallback_notice,
+                is_simulated=is_simulated,
+                simulation_notice=sim_notice,
             )
             if synthesis.get("reply"):
                 reply_text = synthesis["reply"]
@@ -886,7 +926,9 @@ class AgentLoop:
         except Exception as e:
             logger.warning(f"Synthesis error: {e}", exc_info=True)
 
-        if is_local_fallback and not reply_text.startswith("> ⚠️"):
+        if is_simulated and not reply_text.startswith("> ⚠️ **[SIMULATED"):
+            reply_text = f"> ⚠️ **{sim_notice}**\n\n{reply_text}"
+        elif is_local_fallback and not reply_text.startswith("> ⚠️"):
             reply_text = f"> ⚠️ **{fallback_notice}**\n\n{reply_text}"
 
         return {
@@ -901,6 +943,8 @@ class AgentLoop:
             "execution_plane": exec_plane,
             "fallback_notice": fallback_notice,
             "local_fallback": is_local_fallback,
+            "is_simulated": is_simulated,
+            "simulation_notice": sim_notice,
             "tool_executed": {
                 "id": tool_id,
                 "version": tool_version,

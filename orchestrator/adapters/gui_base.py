@@ -35,7 +35,12 @@ from PIL import Image, ImageDraw, ImageFont
 
 from orchestrator.adapters.base import ToolAdapter, ToolObservation
 from orchestrator.evidence_store import EvidenceClass, EvidenceStore, VisualEvidence, evidence_store
-from orchestrator.kali_connector import KaliWorkerConnector, kali_connector
+from orchestrator.kali_connector import (
+    ExecutionPlaneType,
+    KaliWorkerConnector,
+    SIMULATION_NOTICE_TEXT,
+    kali_connector,
+)
 
 logger = logging.getLogger("orchestrator.adapters.gui_base")
 
@@ -254,6 +259,28 @@ class BaseGuiAdapter(ToolAdapter):
             # Render high-fidelity visual image
             pil_image = self.render_frame()
 
+            # Burn prominent honest simulation watermark directly into frame
+            if pil_image and hasattr(pil_image, "convert"):
+                pil_image = pil_image.convert("RGBA")
+                draw = ImageDraw.Draw(pil_image)
+                iw, ih = pil_image.size
+
+                # Top banner (height 26px) with high-visibility amber warning
+                banner_h = 26
+                draw.rectangle([(0, 0), (iw, banner_h)], fill=(35, 20, 10, 240), outline=(245, 158, 11, 255), width=1)
+                banner_text = f"WARNING {SIMULATION_NOTICE_TEXT} (Synthetic Frame - No Live GUI Active)"
+                draw.text((10, 6), banner_text, fill=(251, 191, 36, 255))
+
+                # Bottom-right watermark pill
+                watermark_text = "SIMULATED MOCK"
+                pill_w, pill_h = 140, 20
+                px1 = iw - pill_w - 10
+                py1 = ih - pill_h - 10
+                px2 = iw - 10
+                py2 = ih - 10
+                draw.rectangle([(px1, py1), (px2, py2)], fill=(15, 23, 42, 220), outline=(245, 158, 11, 200), width=1)
+                draw.text((px1 + 8, py1 + 3), f"[MOCK] {watermark_text}", fill=(245, 158, 11, 255))
+
             meta = {
                 "tool_id": self.tool_id,
                 "tier": self.tier,
@@ -263,9 +290,13 @@ class BaseGuiAdapter(ToolAdapter):
                 "workflow": workflow_step or "manual",
                 "status_bar": self.status_bar,
                 "pid": self.pid,
+                "is_simulated": True,
+                "simulation_notice": SIMULATION_NOTICE_TEXT,
+                "execution_plane": ExecutionPlaneType.SIMULATED_MOCK.value,
             }
 
-            caption_str = caption or f"{self.app_name}: {self.visible_panel} ({self.window_title})"
+            raw_caption = caption or f"{self.app_name}: {self.visible_panel} ({self.window_title})"
+            caption_str = raw_caption if raw_caption.startswith("[SIMULATED]") else f"[SIMULATED] {raw_caption}"
             vis_ev = self.evidence_store.save_visual_evidence(
                 task_id=task_id,
                 caption=caption_str,
@@ -290,6 +321,9 @@ class BaseGuiAdapter(ToolAdapter):
                 "timestamp": vis_ev.timestamp,
                 "panel": self.visible_panel,
                 "workflow": workflow_step,
+                "is_simulated": True,
+                "simulation_notice": SIMULATION_NOTICE_TEXT,
+                "execution_plane": ExecutionPlaneType.SIMULATED_MOCK.value,
             })
 
             return vis_ev
@@ -324,12 +358,15 @@ class BaseGuiAdapter(ToolAdapter):
                     "timestamp": self.last_screenshot_time,
                 },
                 "recent_logs": self.log_messages[-6:],
+                "is_simulated": True,
+                "simulation_notice": SIMULATION_NOTICE_TEXT,
+                "execution_plane": ExecutionPlaneType.SIMULATED_MOCK.value,
             }
 
     def get_state_summary(self) -> str:
         """Returns concise human/agent-readable summary of the current UI state."""
         return (
-            f"[{self.app_name}] Window '{self.window_title}' | Active Tab: {self.visible_panel} "
+            f"{SIMULATION_NOTICE_TEXT} [{self.app_name}] Window '{self.window_title}' | Active Tab: {self.visible_panel} "
             f"-> {self.visible_subpanel} | Status: {self.status_bar} | Process: {'Running' if self._running else 'Stopped'}"
         )
 
@@ -567,6 +604,12 @@ class BaseGuiAdapter(ToolAdapter):
             if s.get("filepath") and s["filepath"] not in captured_artifacts:
                 captured_artifacts.append(s["filepath"])
 
+        # Ensure observation and stdout clearly signal simulated mock plane
+        observation_data["is_simulated"] = True
+        observation_data["simulation_notice"] = SIMULATION_NOTICE_TEXT
+        observation_data["execution_plane"] = ExecutionPlaneType.SIMULATED_MOCK.value
+
+        raw_stdout = f"{SIMULATION_NOTICE_TEXT}\n" + json.dumps(observation_data, indent=2)
         dur_ms = round((time.perf_counter() - t0) * 1000, 2)
         return ToolObservation(
             tool_id=self.tool_id,
@@ -574,12 +617,16 @@ class BaseGuiAdapter(ToolAdapter):
             task_id=task_id,
             status=status,
             exit_code=0 if status == "success" else 1,
-            raw_stdout=json.dumps(observation_data, indent=2),
+            raw_stdout=raw_stdout,
             raw_stderr=error_msg or "",
             duration_ms=dur_ms,
             observation=observation_data,
             artifacts=captured_artifacts,
             error=error_msg,
+            execution_plane=ExecutionPlaneType.SIMULATED_MOCK.value,
+            fallback_notice=SIMULATION_NOTICE_TEXT,
+            is_simulated=True,
+            simulation_notice=SIMULATION_NOTICE_TEXT,
         )
 
     # ------------------------------------------------------------------

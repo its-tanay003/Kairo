@@ -59,6 +59,8 @@ from orchestrator.adapters.registry import adapter_registry
 from orchestrator.adapters.wireshark_adapter import WiresharkGuiAdapter
 from orchestrator.adapters.zap_adapter import ZapGuiAdapter
 from orchestrator.evidence_store import EvidenceClass, EvidenceStore
+from orchestrator.execution_gateway import ExecutionGateway
+from orchestrator.kali_connector import ExecutionPlaneType, SIMULATION_NOTICE_TEXT
 from orchestrator.server import app
 from registry.loader import ToolRegistry
 
@@ -471,3 +473,208 @@ class TestOrchestratorGuiEndpoints:
         assert data["sha256"] != ""
         assert data["filepath"] != ""
         assert data["thumbnail_b64"].startswith("data:image/png;base64,")
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# 7. Honest Simulation & Anti-Fabrication Safeguards Tests
+# ─────────────────────────────────────────────────────────────────────────────
+
+class TestHonestSimulation:
+    def test_burp_repeater_probe_has_no_fake_vulnerability_claims(self, temp_gui_env):
+        """Verifies Repeater probe mock content does NOT make false claims of confirmed vulnerabilities."""
+        store = temp_gui_env["store"]
+        adapter = BurpSuiteGuiAdapter(store=store)
+        adapter.launch(task_id="task_honest_burp", start_periodic=False)
+
+        res_rep = adapter.execute_workflow(
+            "task_honest_burp",
+            "send_to_repeater",
+            {"tab_name": "Test Probe", "url": "/login", "method": "POST"},
+        )
+        assert res_rep["success"] is True
+        resp_body = res_rep.get("response_body", "")
+
+        # Verify absolutely no fabricated vulnerability claims
+        assert "vulnerability confirmed" not in resp_body.lower()
+        assert "admin access granted" not in resp_body.lower()
+        assert "password_hash" not in resp_body.lower()
+
+        # Verify honest simulation disclosures
+        assert "simulated" in resp_body.lower()
+        assert res_rep.get("is_simulated") is True
+        assert res_rep.get("simulation_notice") == SIMULATION_NOTICE_TEXT
+
+        adapter.stop("task_honest_burp")
+
+    def test_gui_base_adapter_execution_plane_and_notices(self, temp_gui_env):
+        """Verifies BaseGuiAdapter tags execution_plane='simulated_mock' and prefixes stdout/summary."""
+        store = temp_gui_env["store"]
+        adapter = BurpSuiteGuiAdapter(store=store)
+        adapter.launch(task_id="task_honest_plane", start_periodic=False)
+
+        # 1. State summary prefix
+        summary = adapter.get_state_summary()
+        assert summary.startswith(SIMULATION_NOTICE_TEXT)
+
+        # 2. Extract UI state
+        ui_state = adapter.extract_ui_state()
+        assert ui_state["is_simulated"] is True
+        assert ui_state["simulation_notice"] == SIMULATION_NOTICE_TEXT
+        assert ui_state["execution_plane"] == ExecutionPlaneType.SIMULATED_MOCK.value
+
+        # 3. ToolObservation execution
+        obs = adapter.execute(
+            inputs={"action": "workflow", "workflow": "toggle_proxy", "params": {"enable": True}},
+            task_id="task_honest_plane",
+            target="local",
+        )
+        assert obs.is_simulated is True
+        assert obs.simulation_notice == SIMULATION_NOTICE_TEXT
+        assert obs.raw_stdout.startswith(SIMULATION_NOTICE_TEXT)
+        assert obs.observation["execution_plane"] == ExecutionPlaneType.SIMULATED_MOCK.value
+        assert obs.observation["is_simulated"] is True
+
+        adapter.stop("task_honest_plane")
+
+    def test_watermarked_screenshot_visual_provenance(self, temp_gui_env):
+        """Verifies that synthetic screenshots have amber watermarks burned in and metadata tagged."""
+        store = temp_gui_env["store"]
+        adapter = BurpSuiteGuiAdapter(store=store)
+        adapter.launch(task_id="task_watermark", start_periodic=False)
+
+        vis = adapter.capture_screenshot(
+            task_id="task_watermark",
+            caption="Security Assessment Capture",
+            workflow_step="watermark_test",
+        )
+
+        assert vis.caption.startswith("[SIMULATED]")
+        assert vis.is_simulated is True
+        assert vis.simulation_notice == SIMULATION_NOTICE_TEXT
+        assert vis.execution_plane == ExecutionPlaneType.SIMULATED_MOCK.value
+
+        # Check saved image file on disk
+        img_file = Path(vis.image_path)
+        assert img_file.is_file()
+        assert compute_sha256(img_file) == vis.metadata.get("image_sha256")
+
+        # Verify image dimensions
+        from PIL import Image
+        with Image.open(img_file) as im:
+            assert im.width == 1024
+            assert im.height == 768
+
+        # Check JSON evidence record
+        json_file = Path(vis.filepath)
+        assert json_file.is_file()
+        assert vis.sha256 != ""
+        record = json.loads(json_file.read_text(encoding="utf-8"))
+        assert record["evidence_id"] == vis.evidence_id
+        assert record["payload"]["is_simulated"] is True
+        assert record["payload"]["execution_plane"] == ExecutionPlaneType.SIMULATED_MOCK.value
+        assert record["payload"]["simulation_notice"] == SIMULATION_NOTICE_TEXT
+
+        adapter.stop("task_watermark")
+
+    def test_execution_gateway_tags_simulated_mock_and_audit_event(self, temp_gui_env):
+        """Verifies ExecutionGateway tags audit event and ExecutionResult with simulated_mock."""
+        db_path = temp_gui_env["db_path"]
+        create_scope_contract(
+            targets=["http://127.0.0.1:8080", "127.0.0.1"],
+            network_scope="authorized_lab",
+            time_window="8h",
+            allowed_tool_tiers=[1, 2, 3],
+            authorized_by="lead-auditor@kairo.internal",
+            db_path=db_path,
+        )
+
+        gw = ExecutionGateway(db_path=db_path)
+        result = gw.execute(
+            tool_id="burpsuite.gui.v1",
+            arguments={"action": "workflow", "workflow": "init_project", "params": {"project_name": "Demo"}},
+            task_id="task_gw_sim",
+            session_id="session_gw_sim",
+            target="http://127.0.0.1:8080",
+        )
+
+        assert result.status == "success"
+        assert result.is_simulated is True
+        assert result.simulation_notice == SIMULATION_NOTICE_TEXT
+        assert result.execution_plane == ExecutionPlaneType.SIMULATED_MOCK.value
+
+        # Check recorded SQLite audit event
+        conn = get_connection(db_path)
+        with conn:
+            cursor = conn.cursor()
+            cursor.execute("SELECT result_summary, network_context FROM events WHERE task_id = 'task_gw_sim'")
+            row = cursor.fetchone()
+            assert row is not None
+            result_summary, raw_net_ctx = row
+            assert result_summary.startswith(SIMULATION_NOTICE_TEXT)
+            net_ctx = json.loads(raw_net_ctx) if isinstance(raw_net_ctx, str) else raw_net_ctx
+            assert net_ctx["execution_plane"] == ExecutionPlaneType.SIMULATED_MOCK.value
+            assert net_ctx["is_simulated"] is True
+            assert net_ctx["simulation_notice"] == SIMULATION_NOTICE_TEXT
+        conn.close()
+
+    def test_orchestrator_server_gui_execute_records_simulated_event(self, temp_gui_env):
+        """Verifies POST /gui/execute persists honest simulation notice and metadata in SQLite."""
+        client = TestClient(app)
+        req_payload = {
+            "tool_id": "burpsuite.gui.v1",
+            "action": "workflow",
+            "workflow": "export_target_sitemap",
+            "params": {"target": "127.0.0.1"},
+            "session_id": "test_server_sim_session",
+        }
+        resp = client.post("/gui/execute", json=req_payload)
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["is_simulated"] is True
+        assert data["simulation_notice"] == SIMULATION_NOTICE_TEXT
+        assert data["observation"]["execution_plane"] == ExecutionPlaneType.SIMULATED_MOCK.value
+
+        # Check default database for the recorded event
+        conn = get_connection(DEFAULT_DB_PATH)
+        with conn:
+            cursor = conn.cursor()
+            cursor.execute(
+                "SELECT result_summary, network_context FROM events WHERE session_id = 'test_server_sim_session' ORDER BY id DESC LIMIT 1"
+            )
+            row = cursor.fetchone()
+            if row:
+                result_summary, raw_net_ctx = row
+                assert result_summary.startswith(SIMULATION_NOTICE_TEXT)
+                net_ctx = json.loads(raw_net_ctx) if isinstance(raw_net_ctx, str) else raw_net_ctx
+                assert net_ctx["execution_plane"] == ExecutionPlaneType.SIMULATED_MOCK.value
+                assert net_ctx["is_simulated"] is True
+        conn.close()
+
+    def test_claude_synthesis_prefixes_simulation_warning_in_chat_reply(self):
+        """Verifies Claude response synthesis displays prominent banner when is_simulated=True."""
+        from orchestrator.claude_synthesis import synthesize_agent_response
+
+        res = synthesize_agent_response(
+            user_goal="Inspect login endpoint with Burp Suite",
+            tool_id="burpsuite.gui.v1",
+            tool_name="Burp Suite Repeater",
+            inputs={"target": "http://testphp.vulnweb.com"},
+            exit_code=0,
+            stdout=f"{SIMULATION_NOTICE_TEXT}\nRepeater probe finished.",
+            duration_ms=800.0,
+            is_simulated=True,
+            simulation_notice=SIMULATION_NOTICE_TEXT,
+        )
+
+        assert res["reply"].startswith("> ⚠️ **[SIMULATED — demo mode, not a live scan]**")
+        assert res["process"]["execution_plane"] == ExecutionPlaneType.SIMULATED_MOCK.value
+        assert res["process"]["is_simulated"] is True
+        assert res["process"]["simulation_notice"] == SIMULATION_NOTICE_TEXT
+
+        # Metric warning pill
+        metrics = res["output"]["summary_metrics"]
+        plane_metrics = [m for m in metrics if m["label"] == "Execution Plane"]
+        assert len(plane_metrics) == 1
+        assert plane_metrics[0]["type"] == "warning"
+        assert "Simulated" in plane_metrics[0]["value"]
+

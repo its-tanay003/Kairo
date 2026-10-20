@@ -52,6 +52,8 @@ class ToolObservation:
     execution_plane: Optional[str] = None
     fallback_notice: Optional[str] = None
     local_fallback: bool = False
+    is_simulated: bool = False
+    simulation_notice: Optional[str] = None
 
     def to_dict(self) -> Dict[str, Any]:
         return {
@@ -70,6 +72,8 @@ class ToolObservation:
             "execution_plane": self.execution_plane,
             "fallback_notice": self.fallback_notice,
             "local_fallback": self.local_fallback,
+            "is_simulated": self.is_simulated,
+            "simulation_notice": self.simulation_notice,
         }
 
 

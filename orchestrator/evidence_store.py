@@ -161,6 +161,9 @@ class VisualEvidence(BaseEvidence):
     dimensions: Optional[Dict[str, int]] = None
     caption: str = ""
     dom_snapshot: Optional[str] = None
+    is_simulated: bool = False
+    simulation_notice: Optional[str] = None
+    execution_plane: Optional[str] = None
 
     def __post_init__(self):
         self.evidence_class = EvidenceClass.VISUAL
@@ -171,6 +174,9 @@ class VisualEvidence(BaseEvidence):
             "dimensions": self.dimensions or {},
             "caption": self.caption,
             "dom_snapshot": self.dom_snapshot,
+            "is_simulated": self.is_simulated,
+            "simulation_notice": self.simulation_notice,
+            "execution_plane": self.execution_plane,
         }
 
 
@@ -678,6 +684,9 @@ class EvidenceStore:
             dimensions=dimensions,
             dom_snapshot=dom_snapshot,
             metadata=meta,
+            is_simulated=bool((metadata or {}).get("is_simulated", False)),
+            simulation_notice=(metadata or {}).get("simulation_notice"),
+            execution_plane=(metadata or {}).get("execution_plane"),
         )
         self.store_evidence(ev)
         return ev

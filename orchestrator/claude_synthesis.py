@@ -27,6 +27,8 @@ def synthesize_agent_response(
     scope_violation_reason: Optional[str] = None,
     execution_plane: Optional[str] = None,
     fallback_notice: Optional[str] = None,
+    is_simulated: bool = False,
+    simulation_notice: Optional[str] = None,
 ) -> Dict[str, Any]:
     """
     Produces a 3-part Claude-style payload:
@@ -106,31 +108,31 @@ def synthesize_agent_response(
             duration_s=duration_s,
         )
 
-    # Decorate with visible plain-language fallback notice when running on local host
-    is_fallback = bool(
-        execution_plane == "local_host_fallback"
-        or fallback_notice
+    # Decorate with visible simulation notice when running on simulated mock plane
+    eff_is_simulated = bool(
+        is_simulated
+        or execution_plane == "simulated_mock"
         or (isinstance(observation, dict) and (
-            observation.get("execution_plane") == "local_host_fallback"
-            or bool(observation.get("fallback_notice"))
-            or observation.get("local_fallback") is True
+            observation.get("execution_plane") == "simulated_mock"
+            or observation.get("is_simulated") is True
+            or bool(observation.get("simulation_notice"))
         ))
     )
-    if is_fallback:
-        notice_text = fallback_notice or (
-            observation.get("fallback_notice") if isinstance(observation, dict) else None
-        ) or "Ran directly on this machine — no isolated Kali worker was available."
-
-        # Prepend visible plain-language notice in the chat reply markdown
-        notice_banner = f"> ⚠️ **{notice_text}**\n\n"
-        if not res.get("reply", "").startswith("> ⚠️"):
-            res["reply"] = notice_banner + res.get("reply", "")
+    if eff_is_simulated:
+        sim_notice_text = (
+            simulation_notice
+            or (observation.get("simulation_notice") if isinstance(observation, dict) else None)
+            or "[SIMULATED — demo mode, not a live scan]"
+        )
+        sim_banner = f"> ⚠️ **{sim_notice_text}**\n\n"
+        if not res.get("reply", "").startswith("> ⚠️ **[SIMULATED"):
+            res["reply"] = sim_banner + res.get("reply", "")
 
         # Attach to process metadata for tool card UI
         if "process" in res and isinstance(res["process"], dict):
-            res["process"]["execution_plane"] = "local_host_fallback"
-            res["process"]["fallback_notice"] = notice_text
-            res["process"]["local_fallback"] = True
+            res["process"]["execution_plane"] = "simulated_mock"
+            res["process"]["simulation_notice"] = sim_notice_text
+            res["process"]["is_simulated"] = True
 
         # Prepend to output summary metrics
         if "output" in res and isinstance(res["output"], dict):
@@ -138,9 +140,45 @@ def synthesize_agent_response(
             if not any(m.get("label") == "Execution Plane" for m in metrics):
                 metrics.insert(0, {
                     "label": "Execution Plane",
-                    "value": "Host Fallback (No VM)",
+                    "value": "Simulated Demo (Not Live)",
                     "type": "warning",
                 })
+    else:
+        # Decorate with visible plain-language fallback notice when running on local host
+        is_fallback = bool(
+            execution_plane == "local_host_fallback"
+            or fallback_notice
+            or (isinstance(observation, dict) and (
+                observation.get("execution_plane") == "local_host_fallback"
+                or bool(observation.get("fallback_notice"))
+                or observation.get("local_fallback") is True
+            ))
+        )
+        if is_fallback:
+            notice_text = fallback_notice or (
+                observation.get("fallback_notice") if isinstance(observation, dict) else None
+            ) or "Ran directly on this machine — no isolated Kali worker was available."
+
+            # Prepend visible plain-language notice in the chat reply markdown
+            notice_banner = f"> ⚠️ **{notice_text}**\n\n"
+            if not res.get("reply", "").startswith("> ⚠️"):
+                res["reply"] = notice_banner + res.get("reply", "")
+
+            # Attach to process metadata for tool card UI
+            if "process" in res and isinstance(res["process"], dict):
+                res["process"]["execution_plane"] = "local_host_fallback"
+                res["process"]["fallback_notice"] = notice_text
+                res["process"]["local_fallback"] = True
+
+            # Prepend to output summary metrics
+            if "output" in res and isinstance(res["output"], dict):
+                metrics = res["output"].setdefault("summary_metrics", [])
+                if not any(m.get("label") == "Execution Plane" for m in metrics):
+                    metrics.insert(0, {
+                        "label": "Execution Plane",
+                        "value": "Host Fallback (No VM)",
+                        "type": "warning",
+                    })
 
     return res
 

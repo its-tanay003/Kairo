@@ -82,6 +82,7 @@ from orchestrator.evidence_store import (
 from orchestrator.report_generator import report_generator
 from orchestrator.adapters.registry import adapter_registry
 from orchestrator.adapters.gui_base import BaseGuiAdapter
+from orchestrator.kali_connector import ExecutionPlaneType, SIMULATION_NOTICE_TEXT
 from orchestrator.training_manager import training_manager
 from orchestrator.benchmark_manager import benchmark_manager
 from orchestrator.model_evolution_controller import evolution_controller
@@ -1430,6 +1431,23 @@ def execute_gui_tool(req: GuiExecuteRequest):
     # 4. Execute action
     observation = adapter.execute(inputs=inputs, task_id=task_id, target="local")
 
+    is_simulated = bool(
+        getattr(observation, "is_simulated", False)
+        or (isinstance(observation.observation, dict) and observation.observation.get("is_simulated", False))
+        or (isinstance(observation.observation, dict) and observation.observation.get("execution_plane") == ExecutionPlaneType.SIMULATED_MOCK.value)
+    )
+    sim_notice = getattr(observation, "simulation_notice", None) or (
+        observation.observation.get("simulation_notice") if isinstance(observation.observation, dict) else None
+    )
+    if is_simulated and not sim_notice:
+        sim_notice = SIMULATION_NOTICE_TEXT
+
+    result_summary = (
+        f"{SIMULATION_NOTICE_TEXT} GUI action {req.action} ({req.workflow or ''}): {observation.status}"
+        if is_simulated
+        else f"GUI action {req.action} ({req.workflow or ''}): {observation.status}"
+    )
+
     # 5. Record Event in events database
     event = Event.create(
         session_id=req.session_id or "gui_session",
@@ -1443,7 +1461,15 @@ def execute_gui_tool(req: GuiExecuteRequest):
         exit_code=observation.exit_code,
         artifact_refs=observation.artifacts,
         screenshots=[s["filepath"] for s in adapter.screenshots if s.get("filepath")],
-        result_summary=f"GUI action {req.action} ({req.workflow or ''}): {observation.status}",
+        network_context={
+            "tool_id": req.tool_id,
+            "action": req.action,
+            "workflow": req.workflow,
+            "execution_plane": ExecutionPlaneType.SIMULATED_MOCK.value if is_simulated else "gui",
+            "is_simulated": is_simulated,
+            "simulation_notice": sim_notice,
+        },
+        result_summary=result_summary,
     )
     insert_event(event)
 

@@ -22,6 +22,7 @@ from typing import Any, Dict, List, Optional, Tuple
 from PIL import Image, ImageDraw, ImageFont
 
 from orchestrator.adapters.gui_base import BaseGuiAdapter, GuiControl
+from orchestrator.kali_connector import SIMULATION_NOTICE_TEXT
 
 logger = logging.getLogger("orchestrator.adapters.burpsuite")
 
@@ -70,10 +71,10 @@ class BurpSuiteGuiAdapter(BaseGuiAdapter):
         self.repeater_tabs: List[Dict[str, Any]] = [
             {
                 "tab_id": 1,
-                "name": "Auth Probe",
-                "request": "POST /api/v1/auth HTTP/1.1\r\nHost: target.local\r\nContent-Type: application/json\r\n\r\n{\"username\":\"admin\",\"password\":\"admin' OR '1'='1\"}",
-                "response": "HTTP/1.1 500 Internal Server Error\r\nServer: nginx/1.24\r\nContent-Type: text/html\r\n\r\n<h1>SQL Syntax Error in SELECT * FROM users...</h1>",
-                "status_code": 500,
+                "name": "Auth Probe (Demo)",
+                "request": "POST /api/v1/auth HTTP/1.1\r\nHost: target.local\r\nContent-Type: application/json\r\n\r\n{\"username\":\"admin\",\"password\":\"demo_test\"}",
+                "response": "HTTP/1.1 401 Unauthorized\r\nServer: SimulatedMockServer/1.0\r\nContent-Type: application/json\r\nX-Simulation-Notice: [SIMULATED — demo mode, not a live scan]\r\n\r\n{\"error\": \"Unauthorized\", \"note\": \"Simulated demo response - no live scan performed.\"}",
+                "status_code": 401,
             }
         ]
         self.active_repeater_index = 0
@@ -233,10 +234,13 @@ class BurpSuiteGuiAdapter(BaseGuiAdapter):
         tab_name = params.get("tab_name", f"Probe #{len(self.repeater_tabs) + 1}")
         mock_response = (
             "HTTP/1.1 200 OK\r\n"
-            "Server: Apache/2.4.52 (Debian)\r\n"
+            "Server: SimulatedMockServer/1.0\r\n"
             "Content-Type: text/html; charset=UTF-8\r\n"
-            "Content-Length: 320\r\n\r\n"
-            "<html><body><h1>Admin Access Granted</h1><!-- vulnerability confirmed --></body></html>"
+            "X-Simulation-Notice: [SIMULATED — demo mode, not a live scan]\r\n"
+            "Content-Length: 285\r\n\r\n"
+            "<html><body><h3>[SIMULATED — demo mode, not a live scan]</h3>"
+            "<p>Synthetic response generated for demonstration purposes only. "
+            "No live vulnerability scan performed.</p></body></html>"
         )
         new_tab = {
             "tab_id": len(self.repeater_tabs) + 1,
@@ -251,12 +255,12 @@ class BurpSuiteGuiAdapter(BaseGuiAdapter):
         self.visible_panel = "Repeater"
         self.visible_subpanel = tab_name
         self.window_title = f"{self.app_name} - Repeater [{tab_name}]"
-        self.status_bar = f"Repeater request dispatched -> Response 200 OK (320 bytes)"
+        self.status_bar = "Repeater request dispatched -> Response 200 OK (285 bytes) [SIMULATED]"
         self._setup_controls()
 
         vis = self.capture_screenshot(
             task_id=task_id,
-            caption=f"Burp Suite Repeater - Sent {tab_name} -> 200 OK",
+            caption=f"Burp Suite Repeater - Sent {tab_name} -> 200 OK [SIMULATED]",
             workflow_step="send_to_repeater",
         )
 
@@ -266,7 +270,10 @@ class BurpSuiteGuiAdapter(BaseGuiAdapter):
             "request_dispatched": req_text,
             "response_status": 200,
             "response_snippet": mock_response[:200],
+            "response_body": mock_response,
             "screenshot_sha256": vis.sha256,
+            "is_simulated": True,
+            "simulation_notice": SIMULATION_NOTICE_TEXT,
         }
 
     def _workflow_export_target_sitemap(self, task_id: str, params: Dict[str, Any]) -> Dict[str, Any]:

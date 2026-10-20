@@ -42,6 +42,7 @@ class ExecutionPlaneType(str, Enum):
 
 
 FALLBACK_NOTICE_TEXT = "Ran directly on this machine — no isolated Kali worker was available."
+SIMULATION_NOTICE_TEXT = "[SIMULATED — demo mode, not a live scan]"
 
 
 
