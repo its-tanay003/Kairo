@@ -62,11 +62,12 @@ Given a natural language security goal, your mission is to decompose it into a D
 
 CRITICAL ARCHITECTURAL CONSTRAINTS:
 1. YOU MUST PRODUCE A DIRECTED ACYCLIC GRAPH (DAG), NOT A SINGLE LINEAR LIST!
-   - A single linear list (like PentestGPT's ReAct loop) or a static sequential chain (like HexStrike's fixed pipeline) is STRICTLY FORBIDDEN.
+   - A single linear list (like PentestGPT's ReAct loop) or a static sequential chain (like HexStrike's fixed pipeline) is STRICTLY FORBIDDEN for multi-step goals.
    - You MUST identify independent, concurrent reconnaissance and analysis axes (e.g. network port discovery vs. web technology profiling vs. DNS enumeration) and make them root nodes with dependencies: [] so they execute in parallel.
    - You MUST define multi-parent CONVERGENCE nodes (e.g. attack surface correlation, vulnerability verification, report generation) that depend on multiple upstream branches.
+   - If the user's goal is a single, narrow, focused capability or tool directive (e.g. only run a port scan, or only lookup WHOIS), you MAY produce a reasoned 1-step plan with that single capability.
 2. ABSTRACT CAPABILITIES ONLY:
-   - Each node MUST specify an intended abstract capability (e.g. 'network_port_scan', 'dns_subdomain_discovery', 'web_technology_fingerprint', 'web_directory_enumeration', 'vulnerability_surface_correlation', 'credential_testing', 'evidence_reporting').
+   - Each node MUST specify an intended abstract capability (e.g. 'network_port_scan', 'domain_whois_lookup', 'dns_subdomain_discovery', 'web_technology_fingerprint', 'web_directory_enumeration', 'vulnerability_assessment', 'vulnerability_surface_correlation', 'credential_testing', 'evidence_reporting', 'tls_security_audit', 'wordpress_vulnerability_audit').
    - DO NOT bind nodes to specific binary tool names (e.g. use capability 'network_port_scan', NOT tool 'nmap'). Tool selection happens later in the execution gateway.
 3. GRAPH INTEGRITY:
    - The graph MUST be acyclic (no circular dependencies).
@@ -285,9 +286,258 @@ class Planner:
     def _generate_domain_dag(self, goal: str, plan_id: str) -> Dict[str, Any]:
         """
         High-capability domain DAG planner that generates multi-branch parallel DAGs
-        with explicit convergence nodes for various security assessment goals.
+        with explicit convergence nodes for various security assessment goals,
+        or a reasoned single-step plan for focused single-action directives.
         """
         goal_lower = goal.lower()
+
+        # Check if the goal indicates a multi-stage security mission
+        is_multi_stage = any(w in goal_lower for w in [
+            "assessment", "penetration", "pentest", "audit", "comprehensive",
+            "full scan", "multi", "surface", "perimeter security", "workflow", "reconnaissance"
+        ])
+
+        if not is_multi_stage:
+            if "whois" in goal_lower:
+                return {
+                    "plan_id": plan_id,
+                    "goal": goal,
+                    "rationale": "Single focused capability 'domain_whois_lookup' reasoned for WHOIS lookup directive.",
+                    "nodes": [
+                        {
+                            "node_id": "step_1",
+                            "capability": "domain_whois_lookup",
+                            "label": "Domain WHOIS Lookup",
+                            "description": "Query domain registration metadata and ownership details.",
+                            "dependencies": [],
+                            "status": "queued",
+                        }
+                    ],
+                }
+            elif "wpscan" in goal_lower or ("wordpress" in goal_lower and not any(w in goal_lower for w in ["infra", "network"])):
+                return {
+                    "plan_id": plan_id,
+                    "goal": goal,
+                    "rationale": "Single focused capability 'wordpress_vulnerability_audit' reasoned for WordPress scan directive.",
+                    "nodes": [
+                        {
+                            "node_id": "step_1",
+                            "capability": "wordpress_vulnerability_audit",
+                            "label": "WordPress Security Audit",
+                            "description": "Scan WordPress web application, theme, and plugin versions for vulnerabilities.",
+                            "dependencies": [],
+                            "status": "queued",
+                        }
+                    ],
+                }
+            elif "subfinder" in goal_lower or "subdomain" in goal_lower:
+                return {
+                    "plan_id": plan_id,
+                    "goal": goal,
+                    "rationale": "Single focused capability 'dns_subdomain_discovery' reasoned for subdomain discovery directive.",
+                    "nodes": [
+                        {
+                            "node_id": "step_1",
+                            "capability": "dns_subdomain_discovery",
+                            "label": "Subdomain Enumeration",
+                            "description": "Enumerate DNS records and subdomains.",
+                            "dependencies": [],
+                            "status": "queued",
+                        }
+                    ],
+                }
+            elif "dig" in goal_lower:
+                return {
+                    "plan_id": plan_id,
+                    "goal": goal,
+                    "rationale": "Single focused capability 'dns_lookup' reasoned for DNS lookup directive.",
+                    "nodes": [
+                        {
+                            "node_id": "step_1",
+                            "capability": "dns_lookup",
+                            "label": "DNS Record Lookup",
+                            "description": "Query DNS nameservers for zone records.",
+                            "dependencies": [],
+                            "status": "queued",
+                        }
+                    ],
+                }
+            elif "ffuf" in goal_lower or "fuzz" in goal_lower:
+                return {
+                    "plan_id": plan_id,
+                    "goal": goal,
+                    "rationale": "Single focused capability 'web_directory_enumeration' reasoned for web fuzzing directive.",
+                    "nodes": [
+                        {
+                            "node_id": "step_1",
+                            "capability": "web_directory_enumeration",
+                            "label": "Web Directory Fuzzing",
+                            "description": "Fuzz web directory routes and endpoints.",
+                            "dependencies": [],
+                            "status": "queued",
+                        }
+                    ],
+                }
+            elif "gobuster" in goal_lower:
+                return {
+                    "plan_id": plan_id,
+                    "goal": goal,
+                    "rationale": "Single focused capability 'web_directory_enumeration' reasoned for Gobuster directory scan.",
+                    "nodes": [
+                        {
+                            "node_id": "step_1",
+                            "capability": "web_directory_enumeration",
+                            "label": "Web Route Discovery",
+                            "description": "Enumerate web directories and paths.",
+                            "dependencies": [],
+                            "status": "queued",
+                        }
+                    ],
+                }
+            elif "nuclei" in goal_lower:
+                return {
+                    "plan_id": plan_id,
+                    "goal": goal,
+                    "rationale": "Single focused capability 'vulnerability_assessment' reasoned for Nuclei vulnerability scan.",
+                    "nodes": [
+                        {
+                            "node_id": "step_1",
+                            "capability": "vulnerability_assessment",
+                            "label": "Vulnerability Assessment",
+                            "description": "Run targeted vulnerability templates against exposed target.",
+                            "dependencies": [],
+                            "status": "queued",
+                        }
+                    ],
+                }
+            elif "testssl" in goal_lower:
+                return {
+                    "plan_id": plan_id,
+                    "goal": goal,
+                    "rationale": "Single focused capability 'tls_security_audit' reasoned for testssl audit.",
+                    "nodes": [
+                        {
+                            "node_id": "step_1",
+                            "capability": "tls_security_audit",
+                            "label": "TLS / SSL Audit",
+                            "description": "Audit TLS protocols, cipher suites, and certificates.",
+                            "dependencies": [],
+                            "status": "queued",
+                        }
+                    ],
+                }
+            elif "nmap" in goal_lower or "port scan" in goal_lower:
+                return {
+                    "plan_id": plan_id,
+                    "goal": goal,
+                    "rationale": "Single focused capability 'network_port_scan' reasoned for network port scan directive.",
+                    "nodes": [
+                        {
+                            "node_id": "step_1",
+                            "capability": "network_port_scan",
+                            "label": "Network Port Scan",
+                            "description": "Scan and fingerprint exposed listening services.",
+                            "dependencies": [],
+                            "status": "queued",
+                        }
+                    ],
+                }
+            elif "nikto" in goal_lower:
+                return {
+                    "plan_id": plan_id,
+                    "goal": goal,
+                    "rationale": "Single focused capability 'web_vulnerability_scan' reasoned for Nikto web scan directive.",
+                    "nodes": [
+                        {
+                            "node_id": "step_1",
+                            "capability": "web_vulnerability_scan",
+                            "label": "Web Vulnerability Scan",
+                            "description": "Scan web server for dangerous files, outdated software, and misconfigurations.",
+                            "dependencies": [],
+                            "status": "queued",
+                        }
+                    ],
+                }
+            elif "whatweb" in goal_lower or "fingerprint" in goal_lower:
+                return {
+                    "plan_id": plan_id,
+                    "goal": goal,
+                    "rationale": "Single focused capability 'web_technology_fingerprint' reasoned for WhatWeb technology profiling.",
+                    "nodes": [
+                        {
+                            "node_id": "step_1",
+                            "capability": "web_technology_fingerprint",
+                            "label": "Web Technology Profiling",
+                            "description": "Identify content management systems, blogging platforms, and JavaScript libraries.",
+                            "dependencies": [],
+                            "status": "queued",
+                        }
+                    ],
+                }
+            elif "sqlmap" in goal_lower or "sql injection" in goal_lower:
+                return {
+                    "plan_id": plan_id,
+                    "goal": goal,
+                    "rationale": "Single focused capability 'sql_injection_assessment' reasoned for SQL injection audit.",
+                    "nodes": [
+                        {
+                            "node_id": "step_1",
+                            "capability": "sql_injection_assessment",
+                            "label": "SQL Injection Assessment",
+                            "description": "Detect and exploit database SQL injection vulnerabilities.",
+                            "dependencies": [],
+                            "status": "queued",
+                        }
+                    ],
+                }
+            elif "tcpdump" in goal_lower:
+                return {
+                    "plan_id": plan_id,
+                    "goal": goal,
+                    "rationale": "Single focused capability 'network_traffic_capture' reasoned for traffic capture directive.",
+                    "nodes": [
+                        {
+                            "node_id": "step_1",
+                            "capability": "network_traffic_capture",
+                            "label": "Traffic Capture",
+                            "description": "Capture network packets to PCAP file.",
+                            "dependencies": [],
+                            "status": "queued",
+                        }
+                    ],
+                }
+            elif "kali" in goal_lower:
+                return {
+                    "plan_id": plan_id,
+                    "goal": goal,
+                    "rationale": "Single focused capability 'kali_exec' reasoned for Kali VM execution directive.",
+                    "nodes": [
+                        {
+                            "node_id": "step_1",
+                            "capability": "kali_exec",
+                            "label": "Kali VM Execution",
+                            "description": "Execute diagnostic command in Kali sandbox.",
+                            "dependencies": [],
+                            "status": "queued",
+                        }
+                    ],
+                }
+            elif "shell" in goal_lower:
+                return {
+                    "plan_id": plan_id,
+                    "goal": goal,
+                    "rationale": "Single focused capability 'shell_run' reasoned for shell command directive.",
+                    "nodes": [
+                        {
+                            "node_id": "step_1",
+                            "capability": "shell_run",
+                            "label": "Shell Execution",
+                            "description": "Execute supervised shell command.",
+                            "dependencies": [],
+                            "status": "queued",
+                        }
+                    ],
+                }
 
         # Pattern A: Web Application Assessment (Parallel Network Ports + Web Tech + DNS -> Directory Enum -> Vuln Scan -> Report)
         if any(w in goal_lower for w in ["web", "http", "api", "url", "directory", "endpoint", "injection", "owasp"]):

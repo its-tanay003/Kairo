@@ -48,7 +48,7 @@ from orchestrator.intent_classifier import (
     generate_conversational_response,
     generate_plan_explanation,
 )
-from orchestrator.planner import planner
+from orchestrator.planner import planner, Planner
 
 from orchestrator.claude_synthesis import synthesize_agent_response
 
@@ -65,6 +65,7 @@ class AgentLoop:
         self.registry = ToolRegistry(ROOT_DIR / "registry" / "tools")
         self.llama_client = LlamaCppClient(base_url=llama_url)
         self.supervisor = supervisor
+        self.planner = Planner(llama_url=llama_url, db_path=self.db_path)
         init_db(self.db_path)
         seed_default_scope_contract(self.db_path)
 
@@ -75,24 +76,57 @@ class AgentLoop:
 
         if "port_scan" in cap or "port" in cap or "network" in cap:
             return "nmap.scan.v1", {"target": tgt, "profile": "quick", "ports": "top-100"}
-        elif "dir" in cap or "web_directory" in cap or "content" in cap:
-            return "gobuster.dir.v1", {"url": f"http://{tgt}" if not tgt.startswith("http") else tgt, "wordlist": "common.txt"}
+        elif "whois" in cap:
+            return "whois.lookup.v1", {"domain": tgt}
+        elif "dig" in cap or "dns_lookup" in cap:
+            return "dig.lookup.v1", {"target": tgt}
         elif "dns" in cap or "subdomain" in cap:
             return "subfinder.enum.v1", {"domain": tgt}
+        elif "ffuf" in cap or "fuzz" in cap:
+            return "ffuf.fuzz.v1", {"url": f"http://{tgt}" if not tgt.startswith("http") else tgt}
+        elif "dir" in cap or "web_directory" in cap or "content" in cap or "route" in cap:
+            return "gobuster.dir.v1", {"url": f"http://{tgt}" if not tgt.startswith("http") else tgt, "wordlist": "common.txt"}
+        elif "wordpress" in cap or "wp" in cap:
+            return "wpscan.audit.v1", {"url": f"http://{tgt}" if not tgt.startswith("http") else tgt}
+        elif "fingerprint" in cap or "whatweb" in cap or "tech" in cap:
+            return "whatweb.scan.v1", {"targets": [f"http://{tgt}" if not tgt.startswith("http") else tgt]}
+        elif "nikto" in cap:
+            return "nikto.scan.v1", {"target": tgt}
+        elif "sql" in cap:
+            return "sqlmap.scan.v1", {"url": f"http://{tgt}" if not tgt.startswith("http") else tgt}
+        elif "tls" in cap or "ssl" in cap:
+            return "testssl.audit.v1", {"target": tgt}
         elif "web_probe" in cap or "probe" in cap or "http" in cap:
             return "httpx.probe.v1", {"targets": [tgt]}
         elif "vuln" in cap or "cve" in cap or "exploit" in cap:
             return "nuclei.scan.v1", {"target": tgt, "severity": "medium,high,critical"}
-        elif "tls" in cap or "ssl" in cap:
-            return "testssl.audit.v1", {"target": tgt}
-        elif "wordpress" in cap or "wp" in cap:
-            return "wpscan.audit.v1", {"url": f"http://{tgt}" if not tgt.startswith("http") else tgt}
+        elif "traffic" in cap or "capture" in cap or "tcpdump" in cap:
+            return "tcpdump.capture.v1", {"interface": "eth0", "packet_count": 100}
         elif "kali" in cap:
             return "kali.exec.v1", {"command": "uname", "args": ["-a"]}
         elif "shell" in cap:
             return "shell.run.v1", {"command": "python", "args": ["-c", "print('Executed via capability')"]}
         else:
             return "nmap.scan.v1", {"target": tgt, "profile": "quick", "ports": "top-100"}
+
+    def _extract_target(self, text: str) -> Optional[str]:
+        """Extracts IP address, domain, or URL target from message text."""
+        import re
+        ip_match = re.search(r"\b(?:\d{1,3}\.){3}\d{1,3}(?:/\d{1,2})?\b", text)
+        if ip_match:
+            return ip_match.group(0)
+
+        domain_match = re.search(r"\b[a-zA-Z0-9][-a-zA-Z0-9]*\.[a-zA-Z]{2,}(?:/[^\s]*)?\b", text)
+        if domain_match:
+            cand = domain_match.group(0).lower()
+            if not cand.endswith((".py", ".pt", ".gguf", ".sh", ".json", ".md")):
+                return cand
+
+        url_match = re.search(r"https?://[a-zA-Z0-9\.\_\:\-]+", text)
+        if url_match:
+            return url_match.group(0)
+
+        return None
 
     def _execute_single_tool(
         self,
@@ -1161,6 +1195,47 @@ class AgentLoop:
                         "handled_by_fallback": exec_record.fallback_used,
                     }
 
+        # Explicit tool invocation fast-path (e.g. from API or direct integration test)
+        if explicit_tool:
+            tool_id = explicit_tool
+            requested_args = explicit_args or {}
+            try:
+                sel_res = tool_selector.select(goal=message, session_id=session_id)
+                tool_selection_data = sel_res.to_dict()
+            except Exception as e:
+                logger.warning(f"Could not calculate candidate scores: {e}")
+
+            step_prov = {
+                "intent_classification": StepProvenance(
+                    stage="intent_classification",
+                    handled_by=exec_record.actual_model_id,
+                    runtime=exec_record.inference_runtime,
+                    is_custom_model=exec_record.inference_runtime == "transformers",
+                    is_fallback=exec_record.fallback_used,
+                    executed=True,
+                    details={"intent": "explicit_tool_request", "tool_id": explicit_tool},
+                ).to_dict(),
+            }
+
+            exec_result = self._execute_single_tool(
+                session_id=session_id,
+                task_id=task_id,
+                tool_id=tool_id,
+                requested_args=requested_args,
+                active_model_info=active_model_info,
+                exec_record=exec_record,
+                message=message,
+                t0=t0,
+                start_time_iso=start_time_iso,
+                parent_event=parent_event,
+                tool_selection_data=tool_selection_data,
+                step_prov=step_prov,
+            )
+            exec_result["intent"] = "tool_request"
+            exec_result["plan_only"] = False
+            exec_result["plan"] = None
+            return exec_result
+
         # 2. Intent Classification Stage (First stage for EVERY ordinary message)
         intent_res = intent_classifier.classify(
             message=message,
@@ -1294,7 +1369,7 @@ class AgentLoop:
         # =========================================================================
         elif intent_res.intent == IntentType.PLAN_ONLY:
             logger.info(f"[IntentFlow] Routing '{message[:40]}...' to Plan-Only Mode (Execute nothing)")
-            plan_obj = planner.decompose(goal=intent_res.goal_or_query, session_id=session_id, db_path=self.db_path)
+            plan_obj = self.planner.decompose(goal=intent_res.goal_or_query, session_id=session_id, db_path=self.db_path, prefer_llm=True)
             plan_dict = plan_obj.to_dict() if hasattr(plan_obj, "to_dict") else plan_obj
             fallback_reason = exec_record.fallback_reason or (intent_res.step_provenance.get("details", {}).get("fallback_reason") if intent_res.step_provenance else None)
             fallback_used = exec_record.fallback_used or intent_res.is_fallback
@@ -1419,135 +1494,57 @@ class AgentLoop:
             }
 
         # =========================================================================
-        # Flow Branch C: Task Request -> Structured Task Plan -> Safe Staged Execution
+        # Operational Execution: Planner LLM-Backed Decomposition (Task Graph DAG)
         # =========================================================================
-        elif intent_res.intent == IntentType.TASK_REQUEST:
-            logger.info(f"[IntentFlow] Routing '{message[:40]}...' to Task Request (Structured Task Plan + Execution)")
-            plan_obj = planner.decompose(goal=intent_res.goal_or_query, session_id=session_id, db_path=self.db_path)
+        else:
+            logger.info(f"[AgentLoop] Invoking Planner LLM decomposition for: '{message[:50]}...'")
+            plan_obj = self.planner.decompose(
+                goal=message,
+                session_id=session_id,
+                db_path=self.db_path,
+                prefer_llm=True,
+            )
             plan_dict = plan_obj.to_dict() if hasattr(plan_obj, "to_dict") else plan_obj
             plan_id = plan_dict.get("plan_id")
-            fallback_reason = exec_record.fallback_reason or (intent_res.step_provenance.get("details", {}).get("fallback_reason") if intent_res.step_provenance else None)
-            fallback_used = exec_record.fallback_used or intent_res.is_fallback
+            nodes = plan_dict.get("nodes", [])
 
-            step_prov["task_decomposition"] = StepProvenance(
-                stage="task_decomposition",
-                handled_by=intent_res.handled_by,
-                runtime=intent_res.runtime,
-                is_custom_model=intent_res.is_custom_model,
-                is_fallback=fallback_used,
-                executed=True,
-                details={
-                    "plan_id": plan_id,
-                    "nodes_count": len(plan_dict.get("nodes", [])),
-                    "mode": "task_request",
-                },
-            ).to_dict()
+            extracted_target = intent_res.target or self._extract_target(message)
 
-            # Check if autonomous multi-step execution is requested
-            from orchestrator.dag_controller import dag_controller
-            # Explicit execution modes:
-            # Modes: "conversation", "plan_only", "autonomous_task", "single_step", "direct_tool"
-            # When the user explicitly requests an operational task and authorization is available,
-            # autonomous multi-step execution is the default.
-            is_single_step = (
-                mode in ("single_step", "manual")
-                or autonomous is False
-                or any(w in message.lower() for w in [
-                    "step by step", "single step", "one step at a time", "manual step", "pause after each", "first step only", "only the first step"
-                ])
-            )
-            is_autonomous = (mode in ("autonomous_task", "autonomous")) or (not is_single_step)
-
-            if is_autonomous:
-                logger.info(f"[IntentFlow] Executing Plan '{plan_id}' autonomously from beginning to end")
-                dag_res = dag_controller.execute_plan(
-                    plan_id=plan_id,
-                    session_id=session_id,
-                    target=intent_res.target,
-                    goal=intent_res.goal_or_query,
-                    db_path=self.db_path,
-                )
-
-                val_auth_prov = StepProvenance(
-                    stage="validation_and_authorization",
-                    handled_by="security_gateway:scope_contract",
-                    runtime="policy_and_schema",
-                    is_custom_model=False,
-                    is_fallback=False,
-                    executed=True,
-                    details={
-                        "authorized": True,
-                        "target": intent_res.target,
-                        "plan_id": plan_id,
-                        "scope_verified": True,
-                    },
-                ).to_dict()
-
-                all_prov = [step_prov["intent_classification"], step_prov["task_decomposition"], val_auth_prov]
-                all_prov.extend(dag_res.step_provenance)
-
-                return {
-                    "intent": "task_request",
-                    "plan_only": False,
-                    "plan": plan_dict,
-                    "plan_id": plan_id,
-                    "success": dag_res.success,
-                    "session_id": session_id,
-                    "task_id": task_id,
-                    "reply": dag_res.reply,
-                    "synthesis": dag_res.synthesis,
-                    "tool_executed": {
-                        "id": dag_res.nodes_executed[0].tool_id if dag_res.nodes_executed and dag_res.nodes_executed[0].tool_id else "orchestrator:dag_controller",
-                        "name": "Autonomous DAG Execution",
-                        "version": "1.0.0",
-                    },
-                    "execution": {
-                        "adapter": "dag_controller",
-                        "exit_code": 0 if dag_res.status in ("completed", "partial") else 1,
-                        "nodes_completed": dag_res.completed_count,
-                        "nodes_total": dag_res.total_nodes,
-                        "duration_ms": dag_res.duration_ms,
-                    },
-                    "nodes_executed": dag_res.nodes_executed,
-                    "evidence": asdict(dag_res.evidence),
-                    "event_id": None,
-                    "duration_ms": dag_res.duration_ms,
-                    "model_status": "transformers_custom_primary" if intent_res.is_custom_model else "llama.cpp_fallback",
-                    "model_id": active_model_info.get("model_id"),
-                    "model_role": active_model_info.get("role"),
-                    "model_verification": model_verif,
-                    "selected_model": exec_record.selected_model,
-                    "actual_model_id": intent_res.handled_by,
-                    "inference_runtime": intent_res.runtime,
-                    "processed_by_selected_model": not intent_res.is_fallback,
-                    "structured_output": exec_record.structured_output,
-                    "selected_tool": dag_res.nodes_executed[0].tool_id if dag_res.nodes_executed else None,
-                    "validated_args": dag_res.nodes_executed[0].requested_args if dag_res.nodes_executed else None,
-                    "fallback_used": intent_res.is_fallback,
-                    "fallback_reason": fallback_reason,
-                    "local_only": True,
-                    "step_provenance": all_prov,
-                    "tools_executed_count": len([n for n in dag_res.nodes_executed if n.status in ("success", "failed")]),
-                    "handled_by_custom_model": intent_res.is_custom_model,
-                    "handled_by_fallback": intent_res.is_fallback,
-                    "dag_result": dag_res.to_dict(),
-                }
-
-            # Single ready initial node execution (Staged manual / test mode)
-            ready_nodes = get_ready_nodes(plan_id, self.db_path)
-            if ready_nodes:
-                initial_node = ready_nodes[0]
-                node_id = initial_node.get("node_id")
-                capability = initial_node.get("capability", "network_port_scan")
-                tool_id, mapped_args = self._map_capability_to_tool(capability, target=intent_res.target)
+            # Case 1: Single-step reasoned plan (narrow, focused intent)
+            if len(nodes) <= 1:
+                single_node = nodes[0] if nodes else {}
+                node_id = single_node.get("node_id", "step_1")
+                capability = single_node.get("capability", "network_port_scan")
+                tool_id, mapped_args = self._map_capability_to_tool(capability, target=extracted_target)
 
                 # Merge explicit args if provided
                 if explicit_args:
                     mapped_args.update(explicit_args)
-                if intent_res.target and "target" in mapped_args:
-                    mapped_args["target"] = intent_res.target
+                if extracted_target and "target" in mapped_args:
+                    mapped_args["target"] = extracted_target
 
-                logger.info(f"[IntentFlow] Executing initial DAG node '{node_id}' ({capability} -> {tool_id})")
+                try:
+                    sel_res = tool_selector.select(goal=message, session_id=session_id)
+                    tool_selection_data = sel_res.to_dict()
+                except Exception as e:
+                    logger.warning(f"Could not calculate candidate scores: {e}")
+
+                step_prov["plan_decomposition"] = StepProvenance(
+                    stage="plan_decomposition",
+                    handled_by=exec_record.actual_model_id,
+                    runtime=exec_record.inference_runtime,
+                    is_custom_model=exec_record.inference_runtime == "transformers",
+                    is_fallback=exec_record.fallback_used,
+                    executed=True,
+                    details={
+                        "plan_id": plan_id,
+                        "nodes_count": len(nodes),
+                        "capability": capability,
+                        "mode": "reasoned_single_step",
+                    },
+                ).to_dict()
+
+                logger.info(f"[IntentFlow] Executing reasoned single-step plan node '{node_id}' ({capability} -> {tool_id})")
                 exec_result = self._execute_single_tool(
                     session_id=session_id,
                     task_id=task_id,
@@ -1565,95 +1562,208 @@ class AgentLoop:
                     node_id=node_id,
                 )
 
-                # Update node status in DAG
+                # Update node status in DB
                 node_success = exec_result.get("execution", {}).get("exit_code") == 0
                 update_node_status(plan_id, node_id, "success" if node_success else "failed", db_path=self.db_path)
 
-                # Prefix structured task plan explanation to reply
-                plan_header = (
-                    f"### 📋 Structured Task Plan (`{plan_id}`)\n"
-                    f"- **Task Goal:** {intent_res.goal_or_query}\n"
-                    f"- **Target Asset:** `{intent_res.target or 'Identified in scope'}`\n"
-                    f"- **Total Nodes:** `{len(plan_dict.get('nodes', []))}` • **Executing Node:** `{node_id}` (`{capability}`)\n\n"
-                    f"---\n\n"
-                )
-                exec_result["reply"] = plan_header + str(exec_result.get("reply", ""))
-                exec_result["intent"] = "task_request"
+                exec_result["intent"] = "tool_request"
                 exec_result["plan_only"] = False
                 exec_result["plan"] = plan_dict
+                exec_result["plan_id"] = plan_id
                 return exec_result
+
+            # Case 2: Multi-step task plan (Directed Acyclic Graph)
             else:
-                # No ready nodes (edge case); return structured plan
-                explanation = generate_plan_explanation(
-                    plan=plan_dict,
-                    goal=intent_res.goal_or_query,
-                    target=intent_res.target,
-                    model_id=intent_res.handled_by,
-                    runtime=intent_res.runtime,
-                    is_custom=intent_res.is_custom_model,
-                    is_fallback=intent_res.is_fallback,
+                step_prov["task_decomposition"] = StepProvenance(
+                    stage="task_decomposition",
+                    handled_by=exec_record.actual_model_id,
+                    runtime=exec_record.inference_runtime,
+                    is_custom_model=exec_record.inference_runtime == "transformers",
+                    is_fallback=exec_record.fallback_used,
+                    executed=True,
+                    details={
+                        "plan_id": plan_id,
+                        "nodes_count": len(nodes),
+                        "mode": "task_request",
+                    },
+                ).to_dict()
+
+                from orchestrator.dag_controller import dag_controller
+                is_single_step = (
+                    mode in ("single_step", "manual")
+                    or autonomous is False
+                    or any(w in message.lower() for w in [
+                        "step by step", "single step", "one step at a time", "manual step", "pause after each", "first step only", "only the first step"
+                    ])
                 )
-                return {
-                    "intent": "task_request",
-                    "plan_only": False,
-                    "plan": plan_dict,
-                    "session_id": session_id,
-                    "task_id": task_id,
-                    "reply": explanation,
-                    "tool_executed": None,
-                    "execution": None,
-                    "duration_ms": round((time.time() - t0) * 1000, 2),
-                    "model_status": "transformers_custom_primary" if intent_res.is_custom_model else "llama.cpp_fallback",
-                    "model_id": active_model_info.get("model_id"),
-                    "model_role": active_model_info.get("role"),
-                    "model_verification": model_verif,
-                    "selected_model": exec_record.selected_model,
-                    "actual_model_id": intent_res.handled_by,
-                    "inference_runtime": intent_res.runtime,
-                    "processed_by_selected_model": not intent_res.is_fallback,
-                    "structured_output": exec_record.structured_output,
-                    "selected_tool": None,
-                    "validated_args": None,
-                    "fallback_used": intent_res.is_fallback,
-                    "fallback_reason": intent_res.step_provenance.get("details", {}).get("fallback_reason") if intent_res.step_provenance else None,
-                    "local_only": True,
-                    "step_provenance": step_prov,
-                    "handled_by_custom_model": intent_res.is_custom_model,
-                    "handled_by_fallback": intent_res.is_fallback,
-                }
+                is_autonomous = (mode in ("autonomous_task", "autonomous")) or (not is_single_step)
 
-        # =========================================================================
-        # Flow Branch D: Tool Request -> Validate and authorize -> Execute safely
-        # =========================================================================
-        else:
-            logger.info(f"[IntentFlow] Routing '{message[:40]}...' to Tool Request (Validate, Authorize & Execute)")
-            tool_id = explicit_tool or intent_res.tool_id or exec_record.selected_tool or "nmap.scan.v1"
-            requested_args = explicit_args or intent_res.arguments or exec_record.validated_args or {}
+                if is_autonomous:
+                    logger.info(f"[IntentFlow] Executing Plan '{plan_id}' autonomously from beginning to end")
+                    dag_res = dag_controller.execute_plan(
+                        plan_id=plan_id,
+                        session_id=session_id,
+                        target=extracted_target,
+                        goal=message,
+                        db_path=self.db_path,
+                    )
 
-            try:
-                sel_res = tool_selector.select(goal=message, session_id=session_id)
-                tool_selection_data = sel_res.to_dict()
-            except Exception as e:
-                logger.warning(f"Could not calculate candidate scores: {e}")
+                    val_auth_prov = StepProvenance(
+                        stage="validation_and_authorization",
+                        handled_by="security_gateway:scope_contract",
+                        runtime="policy_and_schema",
+                        is_custom_model=False,
+                        is_fallback=False,
+                        executed=True,
+                        details={
+                            "authorized": True,
+                            "target": extracted_target,
+                            "plan_id": plan_id,
+                            "scope_verified": True,
+                        },
+                    ).to_dict()
 
-            exec_result = self._execute_single_tool(
-                session_id=session_id,
-                task_id=task_id,
-                tool_id=tool_id,
-                requested_args=requested_args,
-                active_model_info=active_model_info,
-                exec_record=exec_record,
-                message=message,
-                t0=t0,
-                start_time_iso=start_time_iso,
-                parent_event=parent_event,
-                tool_selection_data=tool_selection_data,
-                step_prov=step_prov,
-            )
-            exec_result["intent"] = "tool_request"
-            exec_result["plan_only"] = False
-            exec_result["plan"] = None
-            return exec_result
+                    all_prov = [step_prov["intent_classification"], step_prov["task_decomposition"], val_auth_prov]
+                    all_prov.extend(dag_res.step_provenance)
+
+                    return {
+                        "intent": "task_request",
+                        "plan_only": False,
+                        "plan": plan_dict,
+                        "plan_id": plan_id,
+                        "success": dag_res.success,
+                        "session_id": session_id,
+                        "task_id": task_id,
+                        "reply": dag_res.reply,
+                        "synthesis": dag_res.synthesis,
+                        "tool_executed": {
+                            "id": dag_res.nodes_executed[0].tool_id if dag_res.nodes_executed and dag_res.nodes_executed[0].tool_id else "orchestrator:dag_controller",
+                            "name": "Autonomous DAG Execution",
+                            "version": "1.0.0",
+                        },
+                        "execution": {
+                            "adapter": "dag_controller",
+                            "exit_code": 0 if dag_res.status in ("completed", "partial") else 1,
+                            "nodes_completed": dag_res.completed_count,
+                            "nodes_total": dag_res.total_nodes,
+                            "duration_ms": dag_res.duration_ms,
+                        },
+                        "nodes_executed": dag_res.nodes_executed,
+                        "evidence": asdict(dag_res.evidence),
+                        "event_id": None,
+                        "duration_ms": dag_res.duration_ms,
+                        "model_status": "transformers_custom_primary" if exec_record.inference_runtime == "transformers" else "llama.cpp_fallback",
+                        "model_id": active_model_info.get("model_id"),
+                        "model_role": active_model_info.get("role"),
+                        "model_verification": model_verif,
+                        "selected_model": exec_record.selected_model,
+                        "actual_model_id": exec_record.actual_model_id,
+                        "inference_runtime": exec_record.inference_runtime,
+                        "processed_by_selected_model": exec_record.processed_by_selected_model,
+                        "structured_output": exec_record.structured_output,
+                        "selected_tool": dag_res.nodes_executed[0].tool_id if dag_res.nodes_executed else None,
+                        "validated_args": dag_res.nodes_executed[0].requested_args if dag_res.nodes_executed else None,
+                        "fallback_used": exec_record.fallback_used,
+                        "fallback_reason": exec_record.fallback_reason,
+                        "local_only": True,
+                        "step_provenance": all_prov,
+                        "tools_executed_count": len([n for n in dag_res.nodes_executed if n.status in ("success", "failed")]),
+                        "handled_by_custom_model": exec_record.inference_runtime == "transformers",
+                        "handled_by_fallback": exec_record.fallback_used,
+                        "dag_result": dag_res.to_dict(),
+                    }
+
+                # Single ready initial node execution (Staged manual / test mode)
+                ready_nodes = get_ready_nodes(plan_id, self.db_path)
+                if ready_nodes:
+                    initial_node = ready_nodes[0]
+                    node_id = initial_node.get("node_id")
+                    capability = initial_node.get("capability", "network_port_scan")
+                    tool_id, mapped_args = self._map_capability_to_tool(capability, target=extracted_target)
+
+                    if explicit_args:
+                        mapped_args.update(explicit_args)
+                    if extracted_target and "target" in mapped_args:
+                        mapped_args["target"] = extracted_target
+
+                    try:
+                        sel_res = tool_selector.select(goal=message, session_id=session_id)
+                        tool_selection_data = sel_res.to_dict()
+                    except Exception as e:
+                        logger.warning(f"Could not calculate candidate scores: {e}")
+
+                    logger.info(f"[IntentFlow] Executing initial DAG node '{node_id}' ({capability} -> {tool_id})")
+                    exec_result = self._execute_single_tool(
+                        session_id=session_id,
+                        task_id=task_id,
+                        tool_id=tool_id,
+                        requested_args=mapped_args,
+                        active_model_info=active_model_info,
+                        exec_record=exec_record,
+                        message=message,
+                        t0=t0,
+                        start_time_iso=start_time_iso,
+                        parent_event=parent_event,
+                        tool_selection_data=tool_selection_data,
+                        step_prov=step_prov,
+                        plan_id=plan_id,
+                        node_id=node_id,
+                    )
+
+                    node_success = exec_result.get("execution", {}).get("exit_code") == 0
+                    update_node_status(plan_id, node_id, "success" if node_success else "failed", db_path=self.db_path)
+
+                    plan_header = (
+                        f"### 📋 Structured Task Plan (`{plan_id}`)\n"
+                        f"- **Task Goal:** {message}\n"
+                        f"- **Target Asset:** `{extracted_target or 'Identified in scope'}`\n"
+                        f"- **Total Nodes:** `{len(nodes)}` • **Executing Node:** `{node_id}` (`{capability}`)\n\n"
+                        f"---\n\n"
+                    )
+                    exec_result["reply"] = plan_header + str(exec_result.get("reply", ""))
+                    exec_result["intent"] = "task_request"
+                    exec_result["plan_only"] = False
+                    exec_result["plan"] = plan_dict
+                    exec_result["plan_id"] = plan_id
+                    return exec_result
+                else:
+                    explanation = generate_plan_explanation(
+                        plan=plan_dict,
+                        goal=message,
+                        target=extracted_target,
+                        model_id=exec_record.actual_model_id,
+                        runtime=exec_record.inference_runtime,
+                        is_custom=exec_record.inference_runtime == "transformers",
+                        is_fallback=exec_record.fallback_used,
+                    )
+                    return {
+                        "intent": "task_request",
+                        "plan_only": False,
+                        "plan": plan_dict,
+                        "session_id": session_id,
+                        "task_id": task_id,
+                        "reply": explanation,
+                        "tool_executed": None,
+                        "execution": None,
+                        "duration_ms": round((time.time() - t0) * 1000, 2),
+                        "model_status": "transformers_custom_primary" if exec_record.inference_runtime == "transformers" else "llama.cpp_fallback",
+                        "model_id": active_model_info.get("model_id"),
+                        "model_role": active_model_info.get("role"),
+                        "model_verification": model_verif,
+                        "selected_model": exec_record.selected_model,
+                        "actual_model_id": exec_record.actual_model_id,
+                        "inference_runtime": exec_record.inference_runtime,
+                        "processed_by_selected_model": exec_record.processed_by_selected_model,
+                        "structured_output": exec_record.structured_output,
+                        "selected_tool": None,
+                        "validated_args": None,
+                        "fallback_used": exec_record.fallback_used,
+                        "fallback_reason": exec_record.fallback_reason,
+                        "local_only": True,
+                        "step_provenance": step_prov,
+                        "handled_by_custom_model": exec_record.inference_runtime == "transformers",
+                        "handled_by_fallback": exec_record.fallback_used,
+                    }
 
 
     def _extract_shell_args(self, message: str) -> Dict[str, Any]:
