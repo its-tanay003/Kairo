@@ -43,6 +43,10 @@ def validate_tool_arguments(
     for req_field in required:
         val = args.get(req_field)
         if val is None or (isinstance(val, str) and not val.strip()):
+            # If property has default defined in schema, populate it
+            if req_field in props and isinstance(props[req_field], dict) and "default" in props[req_field]:
+                args[req_field] = props[req_field]["default"]
+                continue
             # Check common synonyms
             synonyms = {
                 "target": ["host", "domain", "url", "ip", "path"],

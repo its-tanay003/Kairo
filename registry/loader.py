@@ -237,3 +237,29 @@ class ToolRegistry:
     def count(self) -> int:
         """Returns the number of loaded tools."""
         return len(self._tools)
+
+
+_default_registry: Optional[ToolRegistry] = None
+
+
+def get_tool_registry() -> ToolRegistry:
+    """Returns the cached singleton ToolRegistry instance."""
+    global _default_registry
+    if _default_registry is None:
+        _default_registry = ToolRegistry(DEFAULT_TOOLS_DIR)
+    return _default_registry
+
+
+class _ToolRegistryProxy:
+    """Lazy proxy for tool_registry singleton."""
+    def __getattr__(self, name: str):
+        return getattr(get_tool_registry(), name)
+
+    def __getitem__(self, item: str):
+        return get_tool_registry()[item]
+
+    def __contains__(self, item: str):
+        return item in get_tool_registry()
+
+
+tool_registry = _ToolRegistryProxy()

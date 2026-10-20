@@ -436,3 +436,8 @@ class VMManager:
 
 
 vm_manager = VMManager()
+
+
+def get_vm_manager() -> VMManager:
+    """Returns the singleton VMManager instance."""
+    return vm_manager

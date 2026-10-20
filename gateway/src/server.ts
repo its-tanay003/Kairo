@@ -689,10 +689,27 @@ function broadcastToProject(projectId: string | undefined, message: string | obj
 }
 
 /**
- * Periodically polls new output chunks and process tree updates from orchestrator
- * and pushes them over WebSocket in real-time.
+ * Sends a message only to the requesting session, or to peers within the same workspace/project.
+ * Sensitive execution outputs are never broadcast globally to unrelated sessions.
  */
-function startStreamBroadcaster(taskId: string, targetWs?: WebSocket) {
+function sendToSessionOrWorkspace(session: ClientSession, message: string | object) {
+  const msgStr = typeof message === "string" ? message : JSON.stringify(message);
+  if (session.workspaceId) {
+    broadcastToWorkspace(session.workspaceId, msgStr);
+  } else if (session.projectId) {
+    broadcastToProject(session.projectId, msgStr);
+  } else {
+    if (session.ws.readyState === WebSocket.OPEN) {
+      session.ws.send(msgStr);
+    }
+  }
+}
+
+/**
+ * Periodically polls new output chunks and process tree updates from orchestrator
+ * and pushes them over WebSocket in real-time, isolated to the relevant session or workspace.
+ */
+function startStreamBroadcaster(taskId: string, targetWs?: WebSocket, targetSession?: ClientSession) {
   let seq = 0;
   let pollCount = 0;
   const maxPolls = 600; // 60s max polling duration
@@ -719,10 +736,8 @@ function startStreamBroadcaster(taskId: string, targetWs?: WebSocket) {
           });
           if (targetWs && targetWs.readyState === WebSocket.OPEN) {
             targetWs.send(msg);
-          } else {
-            for (const s of sessions.values()) {
-              if (s.ws.readyState === WebSocket.OPEN) s.ws.send(msg);
-            }
+          } else if (targetSession) {
+            sendToSessionOrWorkspace(targetSession, msg);
           }
         }
       }
@@ -737,10 +752,8 @@ function startStreamBroadcaster(taskId: string, targetWs?: WebSocket) {
         });
         if (targetWs && targetWs.readyState === WebSocket.OPEN) {
           targetWs.send(treeMsg);
-        } else {
-          for (const s of sessions.values()) {
-            if (s.ws.readyState === WebSocket.OPEN) s.ws.send(treeMsg);
-          }
+        } else if (targetSession) {
+          sendToSessionOrWorkspace(targetSession, treeMsg);
         }
       }
 
@@ -1215,17 +1228,18 @@ wss.on("connection", async (ws: WebSocket, req) => {
         const snapshotBefore = Boolean(payload.snapshot_before);
 
         // Scope check for Tier 3 Kali Execution
-        try {
-          let kaliTarget: string | undefined = undefined;
-          if (Array.isArray(args)) {
-            for (const a of args) {
-              const sa = String(a).trim();
-              if ((sa.includes(".") || sa.includes("/")) && !sa.startsWith("-") && !sa.endsWith(".sh")) {
-                kaliTarget = sa;
-                break;
-              }
+        let kaliTarget: string | undefined = undefined;
+        if (Array.isArray(args)) {
+          for (const a of args) {
+            const sa = String(a).trim();
+            if ((sa.includes(".") || sa.includes("/")) && !sa.startsWith("-") && !sa.endsWith(".sh")) {
+              kaliTarget = sa;
+              break;
             }
           }
+        }
+
+        try {
           const scopeResp = await fetch(`${ORCHESTRATOR_URL}/scope/validate`, {
             method: "POST",
             headers: { "Content-Type": "application/json" },
@@ -1250,10 +1264,24 @@ wss.on("connection", async (ws: WebSocket, req) => {
             return;
           }
         } catch (e: any) {
-          console.warn("[Gateway] Scope check warning in kali_exec:", e.message);
+          console.warn("[Gateway] Scope check failed in kali_exec (failing closed per security policy):", e.message);
+          ws.send(
+            JSON.stringify({
+              type: "scope_violation",
+              sessionId,
+              taskId,
+              tool: "kali.exec.v1",
+              toolTier: 3,
+              target: kaliTarget,
+              error: "SCOPE_VIOLATION",
+              reason: `Scope validation service unreachable (${e.message}); fail-closed security boundary enforced.`,
+              timestamp: new Date().toISOString(),
+            })
+          );
+          return;
         }
 
-        broadcastToAll({
+        sendToSessionOrWorkspace(session, {
           type: "user_message_broadcast",
           senderSessionId: sessionId,
           clientType: session.clientType,
@@ -1262,7 +1290,7 @@ wss.on("connection", async (ws: WebSocket, req) => {
           timestamp: new Date().toISOString(),
         });
 
-        broadcastToAll({
+        sendToSessionOrWorkspace(session, {
           type: "status",
           status: "executing_kali_command",
           sessionId,
@@ -1270,8 +1298,8 @@ wss.on("connection", async (ws: WebSocket, req) => {
           text: `Executing '${command} ${args.join(" ")}' in Kali VM...`,
         });
 
-        // Start stream broadcaster immediately
-        startStreamBroadcaster(taskId);
+        // Start stream broadcaster immediately for target session
+        startStreamBroadcaster(taskId, ws, session);
 
         try {
           const resp = await fetch(`${ORCHESTRATOR_URL}/vm/execute`, {
@@ -1292,7 +1320,7 @@ wss.on("connection", async (ws: WebSocket, req) => {
             }),
           });
           const result = (await resp.json()) as any;
-          broadcastToAll({
+          sendToSessionOrWorkspace(session, {
             type: "agent_response",
             sessionId,
             reply: `Kali VM execution of '${command}' completed (exit ${result.exit_code})`,
@@ -1302,7 +1330,7 @@ wss.on("connection", async (ws: WebSocket, req) => {
             timestamp: new Date().toISOString(),
           });
         } catch (err: any) {
-          broadcastToAll({ type: "error", error: `Kali exec failed: ${err.message}` });
+          sendToSessionOrWorkspace(session, { type: "error", error: `Kali exec failed: ${err.message}` });
         }
         return;
       }
@@ -1411,7 +1439,7 @@ wss.on("connection", async (ws: WebSocket, req) => {
           timestamp: new Date().toISOString(),
         });
 
-        broadcastToAll({
+        sendToSessionOrWorkspace(session, {
           type: "status",
           status: "executing_validated_tool",
           sessionId: customSessionId,
@@ -1420,8 +1448,8 @@ wss.on("connection", async (ws: WebSocket, req) => {
           text: `Gateway validated ${toolId} scope & schema. Executing via orchestrator...`,
         });
 
-        // Start live stream broadcaster for this tool execution across all sessions
-        startStreamBroadcaster(taskId);
+        // Start live stream broadcaster for this tool execution for target session
+        startStreamBroadcaster(taskId, ws, session);
 
         try {
           const resp = await fetch(`${ORCHESTRATOR_URL}/run`, {
@@ -1442,8 +1470,8 @@ wss.on("connection", async (ws: WebSocket, req) => {
 
           const result = (await resp.json()) as any;
 
-          // Broadcast rich tool card payload to all connected clients
-          broadcastToAll({
+          // Send rich tool card payload to requesting session/workspace
+          sendToSessionOrWorkspace(session, {
             type: "agent_response",
             sessionId: customSessionId,
             reply: result.reply,
@@ -1477,7 +1505,7 @@ wss.on("connection", async (ws: WebSocket, req) => {
             timestamp: new Date().toISOString(),
           });
         } catch (err: any) {
-          broadcastToAll({
+          sendToSessionOrWorkspace(session, {
             type: "error",
             sessionId: customSessionId,
             error: `Tool execution failed: ${err.message}`,
@@ -1524,7 +1552,7 @@ wss.on("connection", async (ws: WebSocket, req) => {
         const taskId = payload.taskId || `task_${randomUUID().slice(0, 8)}`;
         const modelId = payload.modelId || payload.model_id;
 
-        broadcastToAll({
+        sendToSessionOrWorkspace(session, {
           type: "user_message_broadcast",
           senderSessionId: customSessionId,
           clientType: session.clientType,
@@ -1534,7 +1562,7 @@ wss.on("connection", async (ws: WebSocket, req) => {
           timestamp: new Date().toISOString(),
         });
 
-        broadcastToAll({
+        sendToSessionOrWorkspace(session, {
           type: "status",
           status: "dispatching_to_orchestrator",
           sessionId: customSessionId,
@@ -1561,8 +1589,8 @@ wss.on("connection", async (ws: WebSocket, req) => {
 
           const result = (await orchestratorResponse.json()) as any;
 
-          // Broadcast response & tool card info to all connected clients
-          broadcastToAll({
+          // Send response & tool card info to requesting session or workspace
+          sendToSessionOrWorkspace(session, {
             type: "agent_response",
             sessionId: customSessionId,
             reply: result.reply,
@@ -1597,7 +1625,7 @@ wss.on("connection", async (ws: WebSocket, req) => {
           });
         } catch (err: any) {
           console.error(`[Gateway] Error calling orchestrator:`, err.message);
-          broadcastToAll({
+          sendToSessionOrWorkspace(session, {
             type: "error",
             sessionId: customSessionId,
             error: `Gateway failed to reach orchestrator: ${err.message}`,

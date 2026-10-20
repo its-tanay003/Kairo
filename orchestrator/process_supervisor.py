@@ -637,3 +637,7 @@ class ProcessSupervisor:
 
 # Global singleton instance
 supervisor = ProcessSupervisor()
+
+
+def get_supervisor() -> ProcessSupervisor:
+    return supervisor

@@ -120,6 +120,137 @@ class AgentLoop:
         tool_version = spec.version if spec else "1.0.0"
         model_verif = exec_record.to_dict() if hasattr(exec_record, "to_dict") else {}
 
+        # 0. Scope Contract Enforcement (Boundary & Tool Tier Gate):
+        target_candidate = None
+        if isinstance(requested_args, dict):
+            for k in ("target", "host", "url", "domain", "ip", "filepath", "rhost", "rhosts"):
+                if requested_args.get(k):
+                    target_candidate = str(requested_args[k]).strip()
+                    break
+            if not target_candidate and "args" in requested_args and isinstance(requested_args["args"], list):
+                for a in requested_args["args"]:
+                    sa = str(a).strip()
+                    if any(c in sa for c in [".", ":", "/"]) and not sa.startswith("-"):
+                        clean_a = extract_host_from_target(sa)
+                        if clean_a and not clean_a.endswith((".py", ".sh", ".json", ".pt")):
+                            target_candidate = clean_a
+                            break
+
+        if not target_candidate:
+            import re
+            ip_match = re.search(r'\b(?:\d{1,3}\.){3}\d{1,3}(?:/\d{1,2})?\b', message)
+            if ip_match:
+                target_candidate = ip_match.group(0)
+            else:
+                dm = re.search(r'\b[a-zA-Z0-9][-a-zA-Z0-9]*\.[a-zA-Z]{2,}\b', message)
+                if dm and not dm.group(0).endswith((".py", ".sh", ".json", ".pt")):
+                    target_candidate = dm.group(0)
+
+        scope_check = validate_scope_request(target=target_candidate, tool_id=tool_id, db_path=self.db_path)
+        if not scope_check.get("authorized", False):
+            rejection_reason = scope_check.get("reason", "Scope violation detected by execution gateway.")
+            logger.warning(f"[ScopeGuard] Rejected tool call '{tool_id}' on target '{target_candidate}': {rejection_reason}")
+
+            rejection_event = Event.create(
+                session_id=session_id,
+                task_id=task_id,
+                actor="gateway:scope_guard",
+                tool_id=tool_id,
+                tool_version=tool_version,
+                requested_args=requested_args,
+                exit_code=403,
+                result_summary=f"SCOPE_REJECTION: {rejection_reason}",
+                confidence=0.0,
+                network_context={
+                    "target": target_candidate,
+                    "tool_tier": scope_check.get("tool_tier"),
+                    "scope_contract_id": scope_check.get("scope_contract_id"),
+                    "rejection_reason": rejection_reason,
+                    "authorized": False,
+                },
+            )
+            rejection_event_id = insert_event(rejection_event, self.db_path)
+
+            scope_synth = synthesize_agent_response(
+                user_goal=message,
+                tool_id=tool_id,
+                tool_name=spec.name if spec else tool_id,
+                inputs={"target": target_candidate},
+                exit_code=403,
+                stdout="",
+                stderr=rejection_reason,
+                duration_ms=0,
+                is_scope_violation=True,
+                scope_violation_reason=rejection_reason,
+            )
+
+            step_prov["validation_and_authorization"] = StepProvenance(
+                stage="validation_and_authorization",
+                handled_by="security_gateway:scope_guard",
+                runtime="scope_contract",
+                is_custom_model=False,
+                is_fallback=False,
+                executed=False,
+                details={"authorized": False, "target": target_candidate, "reason": rejection_reason},
+            ).to_dict()
+            step_prov["execution"] = StepProvenance(
+                stage="execution",
+                handled_by="none",
+                runtime="none",
+                is_custom_model=False,
+                is_fallback=False,
+                executed=False,
+                details={"blocked": True, "reason": f"Target {target_candidate} is outside authorized Scope Contract"},
+            ).to_dict()
+
+            return {
+                "status": "rejected",
+                "authorized": False,
+                "error": "SCOPE_VIOLATION",
+                "reply": scope_synth["reply"],
+                "synthesis": scope_synth,
+                "scope_violation": {
+                    "reason": rejection_reason,
+                    "scope_contract_id": scope_check.get("scope_contract_id"),
+                    "target": target_candidate,
+                    "tool_id": tool_id,
+                    "tool_tier": scope_check.get("tool_tier"),
+                },
+                "tool_executed": {
+                    "id": tool_id,
+                    "name": spec.name if spec else tool_id,
+                    "version": tool_version,
+                },
+                "execution": {
+                    "adapter": tool_id,
+                    "exit_code": 403,
+                    "stdout": "",
+                    "stderr": rejection_reason,
+                    "duration_ms": 0,
+                    "synthesis": scope_synth,
+                },
+                "event_id": rejection_event_id,
+                "event": asdict(rejection_event),
+                "tool_selection": tool_selection_data,
+                "duration_ms": 0,
+                "model_id": active_model_info.get("model_id"),
+                "model_role": active_model_info.get("role"),
+                "model_verification": model_verif,
+                "selected_model": exec_record.selected_model,
+                "actual_model_id": exec_record.actual_model_id,
+                "inference_runtime": exec_record.inference_runtime,
+                "processed_by_selected_model": exec_record.processed_by_selected_model,
+                "structured_output": exec_record.structured_output,
+                "selected_tool": tool_id,
+                "validated_args": requested_args,
+                "fallback_used": exec_record.fallback_used,
+                "fallback_reason": exec_record.fallback_reason,
+                "local_only": True,
+                "step_provenance": list(step_prov.values()) if isinstance(step_prov, dict) else step_prov,
+                "handled_by_custom_model": exec_record.inference_runtime == "transformers",
+                "handled_by_fallback": exec_record.fallback_used,
+            }
+
         # 1. Workflow Approval Policy Gate for Broad Command Execution:
         from orchestrator.validation import is_workflow_approved, validate_tool_arguments
         active_contract = get_active_scope_contract(self.db_path)
@@ -309,136 +440,6 @@ class AgentLoop:
                 details={"valid": True, "tool_id": tool_id, "note": "No explicit schema"},
             ).to_dict()
 
-        # 3. Scope Contract Enforcement:
-        target_candidate = None
-        if isinstance(requested_args, dict):
-            for k in ("target", "host", "url", "domain", "ip", "filepath", "rhost", "rhosts"):
-                if requested_args.get(k):
-                    target_candidate = str(requested_args[k]).strip()
-                    break
-            if not target_candidate and "args" in requested_args and isinstance(requested_args["args"], list):
-                for a in requested_args["args"]:
-                    sa = str(a).strip()
-                    if any(c in sa for c in [".", ":", "/"]) and not sa.startswith("-"):
-                        clean_a = extract_host_from_target(sa)
-                        if clean_a and not clean_a.endswith((".py", ".sh", ".json", ".pt")):
-                            target_candidate = clean_a
-                            break
-
-        if not target_candidate:
-            import re
-            ip_match = re.search(r'\b(?:\d{1,3}\.){3}\d{1,3}(?:/\d{1,2})?\b', message)
-            if ip_match:
-                target_candidate = ip_match.group(0)
-            else:
-                dm = re.search(r'\b[a-zA-Z0-9][-a-zA-Z0-9]*\.[a-zA-Z]{2,}\b', message)
-                if dm and not dm.group(0).endswith((".py", ".sh", ".json", ".pt")):
-                    target_candidate = dm.group(0)
-
-        scope_check = validate_scope_request(target=target_candidate, tool_id=tool_id, db_path=self.db_path)
-        if not scope_check.get("authorized", False):
-            rejection_reason = scope_check.get("reason", "Scope violation detected by execution gateway.")
-            logger.warning(f"[ScopeGuard] Rejected tool call '{tool_id}' on target '{target_candidate}': {rejection_reason}")
-
-            rejection_event = Event.create(
-                session_id=session_id,
-                task_id=task_id,
-                actor="gateway:scope_guard",
-                tool_id=tool_id,
-                tool_version=tool_version,
-                requested_args=requested_args,
-                exit_code=403,
-                result_summary=f"SCOPE_REJECTION: {rejection_reason}",
-                confidence=0.0,
-                network_context={
-                    "target": target_candidate,
-                    "tool_tier": scope_check.get("tool_tier"),
-                    "scope_contract_id": scope_check.get("scope_contract_id"),
-                    "rejection_reason": rejection_reason,
-                    "authorized": False,
-                },
-            )
-            rejection_event_id = insert_event(rejection_event, self.db_path)
-
-            scope_synth = synthesize_agent_response(
-                user_goal=message,
-                tool_id=tool_id,
-                tool_name=spec.name if spec else tool_id,
-                inputs={"target": target_candidate},
-                exit_code=403,
-                stdout="",
-                stderr=rejection_reason,
-                duration_ms=0,
-                is_scope_violation=True,
-                scope_violation_reason=rejection_reason,
-            )
-
-            step_prov["validation_and_authorization"] = StepProvenance(
-                stage="validation_and_authorization",
-                handled_by="security_gateway:scope_guard",
-                runtime="scope_contract",
-                is_custom_model=False,
-                is_fallback=False,
-                executed=False,
-                details={"authorized": False, "target": target_candidate, "reason": rejection_reason},
-            ).to_dict()
-            step_prov["execution"] = StepProvenance(
-                stage="execution",
-                handled_by="none",
-                runtime="none",
-                is_custom_model=False,
-                is_fallback=False,
-                executed=False,
-                details={"blocked": True, "reason": f"Target {target_candidate} is outside authorized Scope Contract"},
-            ).to_dict()
-
-            return {
-                "status": "rejected",
-                "authorized": False,
-                "error": "SCOPE_VIOLATION",
-                "reply": scope_synth["reply"],
-                "synthesis": scope_synth,
-                "scope_violation": {
-                    "reason": rejection_reason,
-                    "scope_contract_id": scope_check.get("scope_contract_id"),
-                    "target": target_candidate,
-                    "tool_id": tool_id,
-                    "tool_tier": scope_check.get("tool_tier"),
-                },
-                "tool_executed": {
-                    "id": tool_id,
-                    "name": spec.name if spec else tool_id,
-                    "version": tool_version,
-                },
-                "execution": {
-                    "adapter": tool_id,
-                    "exit_code": 403,
-                    "stdout": "",
-                    "stderr": rejection_reason,
-                    "duration_ms": 0,
-                    "synthesis": scope_synth,
-                },
-                "event_id": rejection_event_id,
-                "event": asdict(rejection_event),
-                "tool_selection": tool_selection_data,
-                "duration_ms": 0,
-                "model_id": active_model_info.get("model_id"),
-                "model_role": active_model_info.get("role"),
-                "model_verification": model_verif,
-                "selected_model": exec_record.selected_model,
-                "actual_model_id": exec_record.actual_model_id,
-                "inference_runtime": exec_record.inference_runtime,
-                "processed_by_selected_model": exec_record.processed_by_selected_model,
-                "structured_output": exec_record.structured_output,
-                "selected_tool": tool_id,
-                "validated_args": requested_args,
-                "fallback_used": exec_record.fallback_used,
-                "fallback_reason": exec_record.fallback_reason,
-                "local_only": True,
-                "step_provenance": list(step_prov.values()) if isinstance(step_prov, dict) else step_prov,
-                "handled_by_custom_model": exec_record.inference_runtime == "transformers",
-                "handled_by_fallback": exec_record.fallback_used,
-            }
 
         # Validation & Authorization Passed
         step_prov["validation_and_authorization"] = StepProvenance(
@@ -894,49 +895,178 @@ class AgentLoop:
         import re
         lower_msg = message.lower().strip()
         is_scope_auth = (
-            ("scope" in lower_msg and any(w in lower_msg for w in ["authorize", "add", "allow", "permit", "update"]))
-            or lower_msg.startswith("authorize ")
+            lower_msg.startswith("authorize ")
+            or ("scope" in lower_msg and any(w in lower_msg for w in ["authorize", "add", "allow", "permit", "update"]))
             or (lower_msg.startswith("add ") and "scope" in lower_msg)
-        ) and not any(w in lower_msg for w in ["scan", "audit", "exploit", "cve", "recon"])
+        ) and not (lower_msg.startswith("scan ") or lower_msg.startswith("run ") or lower_msg.startswith("execute "))
 
         if is_scope_auth and not explicit_tool:
-            target_match = re.search(r'(?:authorize|add|allow|target)\s+([a-zA-Z0-9\.\_\-\/]+)', message, re.IGNORECASE)
+            target_match = re.search(r'(?:authorize|add|allow)(?:\s+target)?\s+([a-zA-Z0-9\.\_\-\/]+)', message, re.IGNORECASE)
+            if not target_match or target_match.group(1).lower() in ("contract", "target", "scope", "to"):
+                target_match = re.search(r'\b([a-zA-Z0-9][-a-zA-Z0-9]*\.[a-zA-Z]{2,}(?:/\d{1,2})?)\b', message)
             if not target_match:
-                target_match = re.search(r'\b([a-zA-Z0-9\.\-]+\.[a-zA-Z]{2,}(?:/\d{1,2})?)\b', message)
+                target_match = re.search(r'\b(?:\d{1,3}\.){3}\d{1,3}(?:/\d{1,2})?\b', message)
             if target_match:
                 new_tgt = target_match.group(1).strip().strip("'\"").lower()
                 if new_tgt and new_tgt not in ("contract", "target", "scope", "to"):
+                    from orchestrator.execution_gateway import execution_gateway
                     active = get_active_scope_contract(self.db_path)
                     curr = list(active.get("targets", [])) if active else []
-                    if new_tgt not in curr:
-                        curr.append(new_tgt)
-                        if "." in new_tgt and not any(c.isdigit() for c in new_tgt.split(".")[0]):
-                            parts = new_tgt.split(".")
-                            if len(parts) >= 2:
-                                wildcard = "*." + ".".join(parts[-2:])
-                                if wildcard not in curr:
-                                    curr.append(wildcard)
-                    new_contract = create_scope_contract(
-                        targets=curr,
+
+                    # Extract operator token from explicit arguments if provided
+                    op_token = (explicit_args or {}).get("operator_token") or (explicit_args or {}).get("auth_token")
+
+                    if not op_token:
+                        refusal_reply = (
+                            f"### 🛡️ Operator Authorization Required\n\n"
+                            f"A request to authorize target **`{new_tgt}`** was received via chat.\n\n"
+                            f"**Security Policy Enforcement:** Natural-language prompts cannot self-authorize targets "
+                            f"or expand the active Scope Contract without an authenticated operator token.\n\n"
+                            f"#### 🔒 Remediation\n"
+                            f"- Authenticate using an administrative or operator session token (`operator_token`).\n"
+                            f"- Use the trusted `/scope/contract` management endpoint to authorize new lab targets.\n"
+                            f"- Ensure testing remains restricted to the authorized scope boundary: `{', '.join(curr) if curr else 'None'}`.\n"
+                        )
+                        return {
+                            "intent": "scope_authorization",
+                            "plan_only": False,
+                            "plan": None,
+                            "reply": refusal_reply,
+                            "tool_executed": None,
+                            "execution": {
+                                "status": "rejected",
+                                "exit_code": 403,
+                                "stderr": "OPERATOR_AUTH_REQUIRED: Chat prompt cannot self-authorize scope without operator token.",
+                                "duration_ms": int((time.time() - t0) * 1000),
+                            },
+                            "synthesis": {
+                                "reply": refusal_reply,
+                                "process": {
+                                    "title": "Scope Contract Authorization",
+                                    "status": "error",
+                                    "status_label": "Authorization Required",
+                                    "target": new_tgt,
+                                },
+                                "result": {
+                                    "headline": "Scope expansion rejected: Operator token required",
+                                    "status": "blocked",
+                                    "security_posture": "Scope Contract Unchanged",
+                                    "key_takeaways": [
+                                        "Prompt injection / self-authorization prevented.",
+                                        "Target modification requires authenticated operator action.",
+                                    ],
+                                },
+                            },
+                            "duration_ms": int((time.time() - t0) * 1000),
+                            "model_id": active_model_info.get("model_id"),
+                            "model_role": active_model_info.get("role"),
+                            "model_verification": model_verif,
+                            "selected_model": exec_record.selected_model,
+                            "actual_model_id": exec_record.actual_model_id,
+                            "inference_runtime": exec_record.inference_runtime,
+                            "processed_by_selected_model": exec_record.processed_by_selected_model,
+                            "structured_output": exec_record.structured_output,
+                            "selected_tool": None,
+                            "validated_args": None,
+                            "fallback_used": exec_record.fallback_used,
+                            "fallback_reason": exec_record.fallback_reason,
+                            "local_only": True,
+                            "step_provenance": [
+                                StepProvenance(
+                                    stage="intent_classification",
+                                    handled_by=exec_record.actual_model_id,
+                                    runtime=exec_record.inference_runtime,
+                                    is_custom_model=exec_record.inference_runtime == "transformers",
+                                    is_fallback=exec_record.fallback_used,
+                                    executed=True,
+                                    details={"intent": "scope_authorization_request", "target": new_tgt},
+                                ).to_dict(),
+                                StepProvenance(
+                                    stage="validation_and_authorization",
+                                    handled_by="security_gateway:scope_contract",
+                                    runtime="policy_and_schema",
+                                    is_custom_model=False,
+                                    is_fallback=False,
+                                    executed=False,
+                                    details={"authorized": False, "target": new_tgt, "reason": "Operator token required"},
+                                ).to_dict(),
+                            ],
+                            "tools_executed_count": 0,
+                            "handled_by_custom_model": exec_record.inference_runtime == "transformers",
+                            "handled_by_fallback": exec_record.fallback_used,
+                        }
+
+                    # Authenticated operator authorization via ExecutionGateway
+                    curr_targets = list(curr)
+                    if new_tgt not in curr_targets:
+                        curr_targets.append(new_tgt)
+
+                    success, new_contract, msg = execution_gateway.authorize_scope_modification(
+                        targets=curr_targets,
+                        operator_token=op_token,
                         network_scope="authorized_lab",
                         time_window="48h",
                         allowed_tool_tiers=[1, 2, 3],
-                        authorized_by="secops_lead@kairo.internal",
-                        metadata={"reason": f"Authorized target {new_tgt} via operator chat directive"},
+                        metadata={"reason": f"Authorized target {new_tgt} via authenticated operator action"},
                         db_path=self.db_path,
                     )
+                    if not success or not new_contract:
+                        refusal_reply = f"### ❌ Operator Authentication Failed\n\n{msg}"
+                        return {
+                            "intent": "scope_authorization",
+                            "plan_only": False,
+                            "plan": None,
+                            "reply": refusal_reply,
+                            "tool_executed": None,
+                            "execution": {
+                                "status": "rejected",
+                                "exit_code": 403,
+                                "stderr": msg,
+                                "duration_ms": int((time.time() - t0) * 1000),
+                            },
+                            "duration_ms": int((time.time() - t0) * 1000),
+                            "model_id": active_model_info.get("model_id"),
+                            "model_role": active_model_info.get("role"),
+                            "model_verification": model_verif,
+                            "selected_model": exec_record.selected_model,
+                            "actual_model_id": exec_record.actual_model_id,
+                            "inference_runtime": exec_record.inference_runtime,
+                            "processed_by_selected_model": exec_record.processed_by_selected_model,
+                            "structured_output": exec_record.structured_output,
+                            "selected_tool": None,
+                            "validated_args": None,
+                            "fallback_used": exec_record.fallback_used,
+                            "fallback_reason": exec_record.fallback_reason,
+                            "local_only": True,
+                            "step_provenance": [
+                                StepProvenance(
+                                    stage="validation_and_authorization",
+                                    handled_by="security_gateway:scope_contract",
+                                    runtime="auth_verification",
+                                    is_custom_model=False,
+                                    is_fallback=False,
+                                    executed=False,
+                                    details={"authorized": False, "target": new_tgt, "reason": msg},
+                                ).to_dict(),
+                            ],
+                            "tools_executed_count": 0,
+                            "handled_by_custom_model": exec_record.inference_runtime == "transformers",
+                            "handled_by_fallback": exec_record.fallback_used,
+                        }
+
                     synth_reply = (
-                        f"### ✅ Scope Contract Updated\n\n"
-                        f"Target **`{new_tgt}`** has been successfully added to the active Scope Contract (`{new_contract['contract_id']}`).\n\n"
+                        f"### ✅ Scope Contract Updated (Authenticated Operator Action)\n\n"
+                        f"Target **`{new_tgt}`** has been successfully added to active Scope Contract (`{new_contract['contract_id']}`).\n\n"
                         f"#### 🛡️ Authorization Details\n"
-                        f"- **Active Targets:** `{', '.join(curr)}`\n"
+                        f"- **Authorized By:** `{new_contract.get('authorized_by')}`\n"
+                        f"- **Active Targets:** `{', '.join(curr_targets)}`\n"
                         f"- **Allowed Tool Tiers:** `Tiers 1, 2, 3` (Reconnaissance, Auditing & Testing)\n"
                         f"- **Validity Window:** `48 hours` (cryptographically signed)\n\n"
                         f"#### 💡 Next Steps\n"
-                        f"You can now run reconnaissance, Nmap scans, or security audits against `{new_tgt}` without gate rejection.\n"
+                        f"You can now run reconnaissance or security audits against `{new_tgt}` within authorized policy.\n"
                     )
-                    scope_prov = {
-                        "intent_classification": StepProvenance(
+                    scope_prov = [
+                        StepProvenance(
                             stage="intent_classification",
                             handled_by=exec_record.actual_model_id,
                             runtime=exec_record.inference_runtime,
@@ -945,25 +1075,16 @@ class AgentLoop:
                             executed=True,
                             details={"intent": "scope_authorization", "target": new_tgt},
                         ).to_dict(),
-                        "validation_and_authorization": StepProvenance(
+                        StepProvenance(
                             stage="validation_and_authorization",
                             handled_by="security_gateway:scope_contract",
-                            runtime="scope_contract",
+                            runtime="auth_session",
                             is_custom_model=False,
                             is_fallback=False,
                             executed=True,
-                            details={"contract_id": new_contract["contract_id"], "target": new_tgt},
+                            details={"contract_id": new_contract["contract_id"], "target": new_tgt, "authorized_by": new_contract.get("authorized_by")},
                         ).to_dict(),
-                        "execution": StepProvenance(
-                            stage="execution",
-                            handled_by="scope_gate.v1",
-                            runtime="crypto_signer",
-                            is_custom_model=False,
-                            is_fallback=False,
-                            executed=True,
-                            details={"exit_code": 0},
-                        ).to_dict(),
-                    }
+                    ]
                     return {
                         "intent": "tool_request",
                         "plan_only": False,
@@ -994,11 +1115,11 @@ class AgentLoop:
                             "output": {
                                 "summary_metrics": [
                                     {"label": "Authorized Target", "value": new_tgt, "type": "success"},
-                                    {"label": "Active Targets", "value": str(len(curr)), "type": "info"},
+                                    {"label": "Active Targets", "value": str(len(curr_targets)), "type": "info"},
                                     {"label": "Status", "value": "Valid & Signed", "type": "success"},
                                 ],
-                                "findings_table": [{"item": t, "value": "Authorized", "status": "Active"} for t in curr],
-                                "raw_stdout": f"Scope Contract {new_contract['contract_id']} created and signed.",
+                                "findings_table": [{"item": t, "value": "Authorized", "status": "Active"} for t in curr_targets],
+                                "raw_stdout": f"Scope Contract {new_contract['contract_id']} created and signed by {new_contract.get('authorized_by')}.",
                                 "has_raw_terminal": False,
                             },
                             "result": {
@@ -1030,7 +1151,7 @@ class AgentLoop:
                         "fallback_used": exec_record.fallback_used,
                         "fallback_reason": exec_record.fallback_reason,
                         "local_only": True,
-                        "step_provenance": list(scope_prov.values()) if isinstance(scope_prov, dict) else scope_prov,
+                        "step_provenance": scope_prov,
                         "tools_executed_count": 1,
                         "handled_by_custom_model": exec_record.inference_runtime == "transformers",
                         "handled_by_fallback": exec_record.fallback_used,
@@ -1320,9 +1441,12 @@ class AgentLoop:
 
             # Check if autonomous multi-step execution is requested
             from orchestrator.dag_controller import dag_controller
-            is_autonomous = autonomous or any(w in message.lower() for w in [
-                "autonomously", "autonomous", "run all", "execute all", "end-to-end", "end to end", "full task", "complete plan"
+            # Autonomous multi-step execution is the default for operational task requests
+            # unless explicitly requested in single-step / manual mode
+            is_single_step = autonomous is False or any(w in message.lower() for w in [
+                "step by step", "single step", "one step at a time", "manual step", "pause after each"
             ])
+            is_autonomous = not is_single_step
 
             if is_autonomous:
                 logger.info(f"[IntentFlow] Executing Plan '{plan_id}' autonomously from beginning to end")

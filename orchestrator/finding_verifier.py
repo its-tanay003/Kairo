@@ -67,11 +67,14 @@ class FindingVerifier:
 
         if allowed_targets is None:
             active_contract = get_active_scope_contract(self.db_path)
-            if active_contract and "targets" in active_contract:
+            if active_contract and not active_contract.get("is_expired") and active_contract.get("signature_valid"):
                 allowed_targets = active_contract.get("targets", [])
             else:
-                # Default permitted targets if no strict contract loaded
-                allowed_targets = ["127.0.0.1", "localhost", "10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16"]
+                # Fail closed: No active/valid scope contract means no target is authorized for network verification
+                return False, "No active or valid Scope Contract found (fail-closed boundary enforcement)."
+
+        if not allowed_targets:
+            return False, "Active Scope Contract defines no authorized targets (fail-closed)."
 
         clean_host = extract_host_from_target(target) or target
         if is_target_in_scope(clean_host, allowed_targets):

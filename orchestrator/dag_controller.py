@@ -778,28 +778,27 @@ class DAGController:
                         observation = {}
                         artifacts = []
                 else:
-                    # Execute directly through adapter registry
-                    adapter_cls = adapter_registry.get(tool_to_run)
-                    if adapter_cls:
-                        adapter = adapter_cls()
-                        obs = adapter.execute(
-                            inputs=args_to_run,
-                            task_id=f"{plan_id}_{node_id}",
-                            target="vm",
-                        )
-                        exit_code = obs.exit_code
-                        stdout = obs.raw_stdout
-                        stderr = obs.raw_stderr
-                        duration_ms = obs.duration_ms
-                        observation = obs.observation
-                        artifacts = obs.artifacts
-                    else:
-                        exit_code = 127
-                        stdout = ""
-                        stderr = f"Tool adapter for '{tool_to_run}' is not registered."
-                        duration_ms = round((time.time() - t_attempt_start) * 1000, 2)
-                        observation = {}
-                        artifacts = []
+                    # Execute through trusted ExecutionGateway
+                    from orchestrator.execution_gateway import execution_gateway
+
+                    target_candidate = args_to_run.get("target") or context.target
+                    gw_res = execution_gateway.execute(
+                        tool_id=tool_to_run,
+                        arguments=args_to_run,
+                        session_id=session_id,
+                        task_id=f"{plan_id}_{node_id}",
+                        target=target_candidate,
+                        actor=f"orchestrator:dag_controller:{node_id}",
+                        plan_id=plan_id,
+                        node_id=node_id,
+                        db_path=effective_db,
+                    )
+                    exit_code = gw_res.exit_code
+                    stdout = gw_res.stdout
+                    stderr = gw_res.stderr or (gw_res.rejection_reason if not gw_res.authorized else "")
+                    duration_ms = gw_res.duration_ms
+                    observation = gw_res.observation
+                    artifacts = gw_res.artifacts
 
                 if "nmap" in tool_to_run:
                     cmd_line = f"nmap -{args_to_run.get('scan_type', 'sV')} -p {args_to_run.get('ports', '1-1000')} {args_to_run.get('target', context.target)}"
