@@ -1,6 +1,8 @@
-# KAIRO: Autonomous Cyber Defense & Red-Team Platform
+# KAIRO: Autonomous Conversational Cyber Defense & Red-Team Agent
 
-An enterprise-grade, local-first autonomous agent platform engineered for defensive auditing, red-team assessments, and automated vulnerability verification. Kairo couples specialized Small Language Models (380M to 2B parameters, fine-tuned via SFT, DPO, and GRPO, including flagship Kairo Scale 2B) with deterministic tool schemas, a 7-gate conformance SDK, cryptographic CIDR scope boundaries, an authoritative Execution Gateway, and isolated Kali Linux virtualization.
+An enterprise-grade, local-first autonomous cybersecurity agent platform engineered for defensive auditing, red-team assessments, and automated vulnerability verification. Kairo accepts natural language objectives, autonomously classifies intent, plans multi-step security assessment DAGs, executes across 27+ Kali Linux tools, dynamically chains tool outputs to adapt the DAG mid-execution upon uncovering new attack surfaces, and delivers conversational synthesis reports with 3–5 proactive click-to-run recommendations.
+
+Kairo couples specialized Small Language Models (380M to 2B parameters, fine-tuned via SFT, DPO, and GRPO, including flagship Kairo Scale 2B) with deterministic tool schemas (`toolspec.schema.json`), fast schema self-correction, an automated failover router, cryptographic CIDR scope boundaries, an authoritative Execution Gateway, persistent SQLite trajectory recording for continuous learning, and isolated Kali Linux virtualization.
 
 ---
 
@@ -75,7 +77,9 @@ Kairo features an executive-grade frontend interface faithfully modeled after th
 - **Signature Claude Welcome Screen**: Features the 8-point terracotta starburst spark icon, welcome greeting, and a responsive 2x2 grid of starter prompts with pre-filled scope presets.
 - **Claude Model Selector**: Header dropdown offering seamless selection between canonical, fully local models: *Kairo Scale 2B (Custom Primary)* (GRPO reasoning weights), *Qwen2.5-0.5B (Local Fallback)* (quantized GGUF), *Kairo GRPO Final (Reasoner)*, and *Qwen3-Coder-30B (MoE Base)* with zero remote cloud dependencies.
 - **Claude 3.7 Extended Thinking Accordion**: Collapsible thinking blocks displaying real-time cognitive reasoning telemetry (`✦ Thought for 1.4s ▾`).
-- **Claude Artifact Cards**: Interactive inline tool deliverables featuring dual actions: copy raw JSON output or deep-link directly into the corresponding drawer tab (`Open in Console ↗`).
+- **Claude Artifact Cards & Collapsible DAG Steps**: Interactive inline tool deliverables featuring dual actions (copy raw JSON, deep-link to console), collapsible parameter/output step cards (`ClaudeTaskPlanNode`), and real-time execution badges.
+- **Proactive Next-Step Recommendations Grid**: Context-aware follow-up cards (`ClaudeNextStepRec`) with priority badges, ToolSpec IDs, rationale explanations, and single-click prompt population into the composer.
+- **Header Split-View Controls**: Instant top-bar toggles for side-by-side Terminal (`terminal`) and Kali GUI (`screen` / noVNC) workflows without navigating away from the chat conversation.
 - **Floating Pill Composer**: Rounded floating input bar (`border-radius: 20px`) with integrated cryptographic Scope Contract popover and circular terracotta send button.
 - **Collapsible Console & Subsystem Drawer**: Right-hand drawer with smooth toggle (`[ | ] ⚙ Advanced`), width toggling (560px standard / 880px wide), and deep subsystem views (Terminal, Kali Screen, DAG Task Graph, System Telemetry, Audit Explorer, and Benchmark Leaderboard).
 
@@ -85,8 +89,11 @@ Kairo features an executive-grade frontend interface faithfully modeled after th
 | :--- | :--- | :--- |
 | **Claude Welcome Screen** | [`ui/src/app/page.tsx`](ui/src/app/page.tsx) | Warm dark background (`#181816`), terracotta spark monogram, and interactive starter prompt cards with scope presets. |
 | **Claude Model Selector** | [`ui/src/app/page.tsx`](ui/src/app/page.tsx) | Header dropdown switching local models (Kairo Scale 2B, Qwen2.5-0.5B, Kairo GRPO, Qwen3-Coder-30B) with live backend telemetry. |
+| **Header Split-View Toggles** | [`ui/src/app/page.tsx`](ui/src/app/page.tsx) | Dedicated quick-access header buttons to instantly split or open Terminal (`>_`) and Kali GUI (`Desktop`) panels. |
 | **Scope Contract Popover** | [`ui/src/app/page.tsx`](ui/src/app/page.tsx) | Real-time HMAC-SHA256 signature verification badge, target CIDR bounds, excluded hosts, and countdown timers. |
 | **Extended Thinking & Artifacts** | [`ClaudeOutputCard.tsx`](ui/src/app/components/ClaudeOutputCard.tsx) | Conversational stream with collapsible thinking accordions (`✦ Thought for 1.8s ▾`), verified tool cards, and synthesis reports. |
+| **Collapsible DAG Step Cards** | [`ClaudeOutputCard.tsx`](ui/src/app/components/ClaudeOutputCard.tsx) | Interactive multi-step execution breakdown with expandable parameter inspection and parsed tool output viewer. |
+| **Next-Step Recommendations Grid** | [`ClaudeOutputCard.tsx`](ui/src/app/components/ClaudeOutputCard.tsx) | 3–5 proactive actionable recommendation chips with ToolSpec tags, priority badges, and click-to-run prompts. |
 | **Console: System Telemetry** | [`ui/src/app/page.tsx`](ui/src/app/page.tsx) | Real-time GPU VRAM meters, system RAM utilization, isolated Kali worker VM state, and air-gapped status. |
 | **Console: Interactive Terminal** | [`TerminalProcessView.tsx`](ui/src/app/components/TerminalProcessView.tsx) | VT100 / Xterm.js streaming terminal connected to isolated Kali worker with interactive process supervision. |
 | **Console: Kali Screen Stream** | [`ScreenPanel.tsx`](ui/src/app/components/ScreenPanel.tsx) | Low-latency RFB / noVNC virtual desktop frame buffer for interactive GUI tools (Burp Suite, Wireshark, Firefox). |
@@ -390,13 +397,27 @@ Nodes transition through deterministic states:
 
 Cycles in the task dependency graph are detected and rejected at planning time.
 
-### Topological DAG Controller & Prerequisite Evidence Gating
+### Topological DAG Controller, Evidence Gating & Dynamic DAG Adaptation
 
-The `DAGController` ([`orchestrator/dag_controller.py`](file:///c:/New%20Volume%20(D)/dev/orchestrator/dag_controller.py)) schedules and dispatches graph tasks with strict evidence-based preconditions:
+The `DAGController` ([`orchestrator/dag_controller.py`](file:///c:/New%20Volume%20(D)/dev/orchestrator/dag_controller.py)) schedules and dispatches graph tasks with strict evidence-based preconditions, dynamic output chaining, and runtime plan adaptation:
 
 1. **Prerequisite Evidence Gates**: Subsequent offensive tools (such as web vulnerability scanners or brute-force tools) are halted until reconnaissance nodes verify an active listener (e.g. confirming open port 80/443 before launching `nikto.scan.v1`).
-2. **Failure State Isolation**: When a task encounters a non-zero exit code or timeout, its observation output is isolated and skipped during fact ingestion to prevent downstream prompt contamination.
-3. **Causal Recovery Lineage**: Failures register recovery steps in the node's lineage for executive reporting.
+2. **Dynamic Output Chaining (`_resolve_arguments_from_evidence`)**: Downstream tools dynamically ingest validated ports, services, URLs, and technologies discovered by upstream nodes (e.g., port 8080 from Nmap automatically parameterizes Gobuster or WhatWeb target URLs).
+3. **Mid-Execution DAG Adaptation (`_adapt_plan_if_new_attack_surface`)**: When new attack surface elements are exposed (e.g., unexpected web ports, unmapped administrative endpoints, or critical service banners), the controller automatically appends focused investigation nodes into the DAG and SQLite store without restarting the plan.
+4. **Failure State Isolation & Causal Recovery**: When a task encounters a non-zero exit code or timeout, its observation output is isolated to prevent prompt contamination, and recovery steps are registered in the node's lineage.
+
+### Conversational Chat Synthesis & Recommendation Engine
+
+Post-execution synthesis ([`orchestrator/conversational_synthesizer.py`](file:///c:/New%20Volume%20(D)/dev/orchestrator/conversational_synthesizer.py)) transforms raw execution logs into an executive-grade conversational response structured across **4 mandatory sections**:
+
+1. `## 1. Executive Summary`: Conversational high-level verdict, target summary, duration, and attack surface status.
+2. `## 2. Step-by-Step Breakdown`: Detailed breakdown of each tool executed, command parameters, runtime duration, recovery paths, and key outputs.
+3. `## 3. Verified Findings & Evidence`: Verified listening ports table with active socket handshake confirmations, detected technologies, discovered endpoints, and security advisories.
+4. `## 4. What We Can Do Next`: 3 to 5 proactive, context-aware next steps equipped with:
+   - Specific ToolSpec IDs (e.g., `gobuster.dir.v1`, `nikto.scan.v1`, `hydra.brute.v1`, `sqlmap.scan.v1`).
+   - Priority ratings (`high`, `medium`, `low`).
+   - Technical rationale.
+   - Click-to-run suggested prompts that pre-fill directly into the UI composer.
 
 ---
 
@@ -505,6 +526,14 @@ Kairo enforces strict rules to prevent hallucinated achievements:
 - **Structured Typed Invocations**: Tool calls are captured as formal typed invocation contracts (`typed_invocation`).
 - **Honest Claude Synthesis**: If an operation fails, Kairo displays a prominent failure badge (`❌ Execution Failed`) and explains the precise error cause rather than claiming "Audit Completed" or "No Ports Open".
 
+### 5. Local Model Reliability & Fast Schema Self-Correction
+
+To maintain high availability and accuracy for custom local models without failing over prematurely:
+
+- **JSON Schema Validation (`orchestrator/schema_gen.py`)**: Tool invocations and recommendation outputs are validated against formal `toolspec.schema.json` definitions.
+- **Pre-Execution Correction Cycle (`orchestrator/failover_router.py`)**: When an SLM produces invalid argument types or syntax errors, Kairo constructs an automated targeted correction prompt (`build_self_correction_prompt`) and executes an immediate in-place repair retry (`attempt_self_correction`) before logging errors or triggering model failover.
+- **Threshold Gating**: Preserves local model preference while automatically failing over to quantized fallback weights (e.g. Qwen2.5-0.5B) upon consecutive unrecoverable syntax rejections.
+
 ---
 
 ## 11. Evidence Store, Finding Cards & Report Generator
@@ -578,6 +607,11 @@ graph LR
 2. **Execution Reward ($R_{exec} \in \{0.0, 1.0\}$)**: $+1.0$ if the tool executes with exit code 0; $0.0$ on crash.
 3. **Scope Reward ($R_{scope} \in \{-2.0, +2.0\}$)**: $+2.0$ for adhering strictly to CIDR boundaries; $-2.0$ for out-of-scope targets.
 4. **Fact Reward ($R_{fact} \in [0.0, 1.0]$)**: Normalized ratio of valid observation facts extracted by the Observer.
+
+### 3. Continuous Trajectory Recording & Dataset Curation
+
+- **Persistent Trajectories (`events/schema.sql`)**: Every multi-step autonomous execution persists complete trajectories into the `trajectories` table with input goals, topological steps, command arguments, parsed outputs, and follow-up recommendations.
+- **Automated Curation Pipeline (`orchestrator/training_manager.py`)**: `curate_trajectories_for_training()` filters high-value operational runs (exit code 0, positive finding yield, zero scope violations) directly into formatted JSONL datasets for iterative SFT alignment and DPO paired preference tuning.
 
 ---
 
@@ -778,6 +812,18 @@ python -m pytest tests/test_lab_benchmark.py -v
 
 # GRPO reinforcement learning with verifiable reward signals
 python -m pytest tests/test_grpo_training_and_rewards.py -v
+
+# ---------------------------------------------------------------------------
+# 6. CONVERSATIONAL AGENT, DYNAMIC DAG & RELIABILITY
+# ---------------------------------------------------------------------------
+# Conversational synthesis, 4-section report & click-to-run recommendations
+python -m pytest tests/test_conversational_agent_recommendations.py -v
+
+# End-to-end autonomous DAG execution loop with dynamic attack surface adaptation
+python -m pytest tests/test_agent_dag_execution_loop.py -v
+
+# Dual-model failover routing, schema self-correction & pair fallback
+python -m pytest tests/test_failover_router_model_pairs.py -v
 ```
 
 ---

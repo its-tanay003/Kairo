@@ -16,7 +16,7 @@
 6. [ToolSpec Registry & 7-Gate Conformance Engine (`/registry`, `/sdk`)](#6-toolspec-registry--7-gate-conformance-engine-registry-sdk)
 7. [Cryptographic Scope Boundary & Security Gate](#7-cryptographic-scope-boundary--security-gate)
 8. [Disposable Kali Linux Virtualization Sandbox (`/vm`)](#8-disposable-kali-linux-virtualization-sandbox-vm)
-9. [Immutable 20-Field SQLite Audit Event Store (`/events`)](#9-immutable-20-field-sqlite-audit-event-store-events)
+9. [Immutable SQLite Audit Event & Trajectory Store (`/events`)](#9-immutable-sqlite-audit-event--trajectory-store-events)
 10. [Client Interface Layer (`/ui`) & Claude Aesthetics](#10-client-interface-layer-ui--claude-aesthetics)
 
 ---
@@ -59,15 +59,16 @@ sequenceDiagram
     participant VERIF as Finding Verifier (finding_verifier.py)
     participant EVT as SQLite Store (/events)
 
-    Operator->>GW: WebSocket Handshake (ws://localhost:4000)
+    Operator->>GW: WebSocket Handshake (ws://localhost:4000) or SSE (/chat/stream)
     GW-->>Operator: Handshake Acknowledged { sessionId: "sess_main_01", token }
-    Operator->>GW: WS Send: { type: "chat", content: "Audit subnet 192.168.1.0/24" }
-    GW->>ORCH: HTTP POST /chat { session_id, message }
+    Operator->>GW: WS Send / POST Stream: { type: "chat", content: "Audit subnet 192.168.1.0/24" }
+    GW->>ORCH: HTTP POST /chat or /chat/stream { session_id, message }
     ORCH->>CLAS: Classify Intent (question | plan_only | tool_request | task_request)
     CLAS-->>ORCH: Intent Result + Extracted Entities + Provenance
     ORCH->>DAG: Decompose Goal into Prerequisite-Gated DAG
     DAG-->>ORCH: Validated Execution DAG (Topological Order)
     loop For Each Node in Execution Plan
+        DAG->>DAG: Resolve Arguments from Prior Evidence (_resolve_arguments_from_evidence)
         DAG->>DAG: Verify Prerequisite Evidence (e.g. open port confirmed?)
         DAG->>EGW: execute(tool_id, args, session_id, target)
         EGW->>EGW: Verify Tool Registration (127 if missing)
@@ -81,12 +82,17 @@ sequenceDiagram
         alt If Security Finding Discovered
             DAG->>VERIF: Live Active Verification Check (Socket Handshake / Banner Probe)
             VERIF-->>DAG: Verification Status (verified | refuted | inconclusive)
+            DAG->>DAG: Dynamic Attack Surface Adaptation (_adapt_plan_if_new_attack_surface)
+            Note over DAG: Injects downstream exploit/fuzzing nodes dynamically
         end
-        ORCH-->>GW: WS Event Notification { event, status }
-        GW-->>Operator: WS Emit to Client (Live Terminal Stream & DAG Node Update)
+        ORCH-->>GW: WS/SSE Event Notification { event: "tool_execution", status, node_id }
+        GW-->>Operator: WS/SSE Emit to Client (Live Terminal Stream & Collapsible DAG Step Card)
     end
-    ORCH-->>GW: Complete Response { reply: honest_synthesis, artifacts, findings }
-    GW-->>Operator: Final Agent Response & Claude Artifacts
+    ORCH->>SYNTH: Synthesize 4-Section Response & Generate 3-5 Recommendations
+    SYNTH-->>ORCH: { synthesis: markdown, next_step_recommendations: [...] }
+    ORCH->>EVT: INSERT INTO trajectories (complete execution record)
+    ORCH-->>GW: Complete Response { reply, next_step_recommendations, artifacts, findings }
+    GW-->>Operator: Final Conversational Report & Interactive Recommendations Grid
 ```
 
 ---
@@ -109,9 +115,9 @@ sequenceDiagram
 
 The Session Gateway acts as a high-concurrency, stateful multiplexer between browser sessions and the underlying agent processes:
 
-- **WebSocket Multiplexing**: Connects to `ws://localhost:4000`, tracks active client heartbeats, and routes messages based on `sessionId`.
+- **WebSocket & SSE Multiplexing**: Connects to `ws://localhost:4000` and proxies real-time Server-Sent Events (`POST /chat/stream`), tracking active client heartbeats and routing messages based on `sessionId`.
 - **Message Types**:
-  - `chat`: User prompt directives sent to the Orchestrator loop.
+  - `chat`: User prompt directives sent to the Orchestrator loop (supports full conversational replies and streaming chunks).
   - `tool_call`: Direct tool execution requests for dev testing.
   - `planner_decompose`: Requests to generate a multi-step DAG plan.
   - `terminal_stream`: Bidirectional raw PTY streaming for live Kali interactive shells.
@@ -121,14 +127,17 @@ The Session Gateway acts as a high-concurrency, stateful multiplexer between bro
 
 ## 5. Autonomous Orchestrator & Cognitive Loop (`/orchestrator`)
 
-The Orchestrator implements an autonomous **Observer-Critic-Recovery** loop augmented by a **Centralized Execution Gateway**, genuine local neural model runtimes, topological prerequisite gating, and live finding verification:
+The Orchestrator implements an autonomous **Observer-Critic-Recovery** loop augmented by a **Centralized Execution Gateway**, genuine local neural model runtimes, topological prerequisite gating, dynamic attack surface adaptation, and live finding verification:
 
 1. **Intent Classification & Provenance (`intent_classifier.py`)**: Directives are classified upfront (`question`, `plan_only`, `tool_request`, `task_request`) with extracted target entities and explicit provenance logging. Non-operational questions and plan-only requests execute 0 tools.
 2. **Local Neural Model Runtime (`model_runtime.py`)**:
    - **`TransformersLocalRuntime`**: Executes fine-tuned causal LM checkpoints (`training/checkpoints/grpo/kairo-grpo-final`) directly via PyTorch/HuggingFace transformers.
    - **`LlamaCppLocalRuntime`**: High-throughput GGUF quantized model inference constrained by runtime GBNF grammars.
    - **Zero-Cloud Guarantee**: Cloud provider fallbacks are strictly prohibited; missing models transition to `FAILED` rather than leaking prompts.
-3. **Topological DAG Controller (`dag_controller.py`)**: Plans are constructed as Directed Acyclic Graphs with **Prerequisite Evidence Gating**. For example, web application scanners (`nikto.scan.v1`) or directory bruteforcers (`gobuster.dir.v1`) are blocked unless network reconnaissance nodes have verified an active HTTP/HTTPS listener on the target.
+3. **Topological DAG Controller (`dag_controller.py`)**:
+   - **Prerequisite Evidence Gating**: Web application scanners (`nikto.scan.v1`) or directory bruteforcers (`gobuster.dir.v1`) are blocked unless network reconnaissance nodes have verified an active HTTP/HTTPS listener on the target.
+   - **Dynamic DAG Output Chaining (`_resolve_arguments_from_evidence`)**: Automatically extracts live IPs, discovered open ports, and validated URLs from predecessor node outputs and injects them into downstream parameters (e.g. chaining `nmap.scan.v1` open ports directly into `nikto.scan.v1` or `hydra.ssh.v1`).
+   - **Mid-Execution Attack Surface Adaptation (`_adapt_plan_if_new_attack_surface`)**: When node verification yields new attack vectors (e.g. discovered port 80/443, discovered SSH port 22, or newly enumerated subdomains), the DAG dynamically synthesizes and appends specialized evaluation nodes before concluding.
 4. **Centralized Execution Gateway (`execution_gateway.py`)**:
    - **Single Choke Point**: All routes leading to execution (agent loop, DAG nodes, recovery agent, direct tools) must pass through this 7-stage authorization perimeter.
    - **Fail-Closed Scope Perimeter**: Validates active Scope Contracts, CIDR targets, and tool tiers before adapter dispatch.
@@ -145,7 +154,19 @@ The Orchestrator implements an autonomous **Observer-Critic-Recovery** loop augm
    - Scope-gated: Out-of-scope targets are strictly blocked (`blocked_out_of_scope`).
    - Dynamically updates finding confidence (+0.2 on verified, -0.4 on refuted).
 7. **Critic & Self-Healing Recovery (`critic.py`, `recovery_agent.py`)**: Evaluates results against success criteria and triggers compensatory recovery paths without crashing the graph.
-8. **Honest Synthesis (`reporter_templates.py`)**: Deterministic formatting engine (aliased by `claude_synthesis.py` for backward compatibility). If execution encounters failure, the agent emits an explicit failure badge (`❌ Execution Failed`) and accurately explains the error rather than inventing a successful result or claiming "Audit Complete".
+8. **Conversational Synthesis & Recommendations Engine (`conversational_synthesizer.py`)**:
+   - Generates professional, human-grade conversational responses structured into 4 mandatory sections:
+     - `## 1. Executive Summary`: High-level operational outcome, posture summary, and scope certification.
+     - `## 2. Step-by-Step Breakdown`: Chronological narrative of tool invocations, exit codes, and durations.
+     - `## 3. Verified Findings & Evidence`: Concrete discovered vulnerabilities, open ports, software banners, and raw evidence.
+     - `## 4. What We Can Do Next`: Proactive strategic guidance and logical next attack vectors.
+   - Generates **3–5 Actionable Next-Step Recommendations**: Every run supplies click-to-run recommendations equipped with valid ToolSpec IDs, pre-filled arguments, priority badges (`HIGH`, `MEDIUM`, `LOW`), and contextual rationale.
+9. **Local Model Reliability & Schema Self-Correction (`failover_router.py`)**:
+   - `attempt_self_correction` validates model tool-calling outputs against `registry/schema/toolspec.schema.json`.
+   - On syntax or schema violations, it triggers a fast iterative local correction prompt feeding back schema errors. If self-correction fails, traffic automatically fails over to the designated pair model.
+10. **Continuous Trajectory Logging & Dataset Curation (`events/schema.sql`, `training_manager.py`)**:
+    - Persists complete end-to-end mission trajectories into SQLite `trajectories` table.
+    - Curates clean, successful trajectories for SFT and DPO preference datasets.
 
 ---
 
@@ -187,12 +208,14 @@ All active security tools run inside an isolated virtual machine:
 
 ---
 
-## 9. Immutable 20-Field SQLite Audit Event Store (`/events`)
+## 9. Immutable SQLite Audit Event & Trajectory Store (`/events`)
 
 Every platform action creates an immutable forensic record in `events/events.db`:
 
-- Columns: `id`, `session_id`, `task_id`, `timestamp`, `actor`, `tool_id`, `tool_version`, `requested_args`, `normalized_args`, `process_id`, `start_time`, `end_time`, `exit_code`, `stdout_ref`, `stderr_ref`, `artifact_refs`, `screenshots`, `network_context`, `result_summary`, `confidence`, `parent_event`.
-- Indexed for real-time sub-millisecond full-text search and filtering in the UI Event Log.
+- **Events Table (20 Fields)**: `id`, `session_id`, `task_id`, `timestamp`, `actor`, `tool_id`, `tool_version`, `requested_args`, `normalized_args`, `process_id`, `start_time`, `end_time`, `exit_code`, `stdout_ref`, `stderr_ref`, `artifact_refs`, `screenshots`, `network_context`, `result_summary`, `confidence`, `parent_event`.
+  - Indexed for real-time sub-millisecond full-text search and filtering in the UI Event Log.
+- **Trajectories Table (`trajectories`)**: Records complete end-to-end mission trajectories (`id`, `session_id`, `task_id`, `goal`, `steps_json`, `recommendations_json`, `success`, `created_at`).
+  - Harvested by `curate_trajectories_for_training()` to automatically generate high-fidelity SFT JSONL datasets and DPO preference datasets without manual labeling.
 
 ---
 
@@ -200,12 +223,19 @@ Every platform action creates an immutable forensic record in `events/events.db`
 
 The frontend is built on **Next.js 16** with Turbopack, following the **Anthropic Claude UI archetype**:
 
-- Warm Slate & Obsidian dark theme (`#181816`, `#141413`).
-- Signature Anthropic Terracotta Coral accents (`#d97757`).
-- Newsreader editorial serif headings & Inter modern sans body.
-- Collapsible Left Sidebar with `+ New session` and Operator profile.
-- Claude 3.7 Extended Thinking accordions (`✦ Thought for 1.4s ▾`).
-- Rich Claude Artifact tool cards with deep links into the Advanced Console drawer.
+- **Warm Slate & Obsidian Palette**: Dark theme (`#181816`, `#141413`) with subtle borders (`#2d2d2a`).
+- **Signature Terracotta Coral Accents**: `#d97757` and `#e08365` for active states, thinking pulses, and interactive recommendations.
+- **Newsreader Editorial Serif Headings & Inter Sans Body**: Refined editorial typography for executive reports and verified findings.
+- **Collapsible DAG Step Cards (`ClaudeOutputCard.tsx`)**:
+  - Compact summary rows featuring status badges (`COMPLETED`, `RUNNING`, `FAILED`), ToolSpec IDs, target, and duration.
+  - One-click expandable accordions revealing tool invocation parameters, live standard output snippets, and verified evidence findings.
+- **Interactive Next-Step Recommendations Grid**:
+  - Displays 3–5 proactive follow-up recommendations below the synthesized report.
+  - Each recommendation chip features priority badges (`HIGH`, `MEDIUM`, `LOW`), tool description, rationale, and a **"Run Tool"** direct-execution button that pre-populates and launches the recommended scan.
+- **Header Split-View Toggles**:
+  - Top navigation bar provides rapid split-pane toggles for **Terminal** (live Kali interactive shell) and **Kali GUI (noVNC)**.
+- **Claude 3.7 Extended Thinking Accordions**: `✦ Thought for 1.4s ▾` collapsible reasoning previews with animated glow pulses.
+- **Rich Claude Artifact Tool Cards**: Deep links into the Advanced Console drawer, findings inspector, and scope verification badges.
 
 ---
 

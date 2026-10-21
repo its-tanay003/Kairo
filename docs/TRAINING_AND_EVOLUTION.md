@@ -137,3 +137,16 @@ The frontend exposes the entire evolution lifecycle at `/benchmark/leaderboard` 
 - **Dataset Curation**: Operators can view raw SFT and DPO examples, inspect schema cleaning reports, and flag high-value or edge-case trajectories.
 - **Active Proposals**: Review pending training job proposals, parameter sizing, benchmark gains, and click `Approve & Deploy` or `Dismiss`.
 - **Chronological Run Telemetry**: Real-time loss curves, learning rate progression, and benchmark comparison charts.
+
+---
+
+## 6. Continuous Trajectory Recording & Curation Pipeline
+
+To achieve continuous improvement without manual dataset authoring, Kairo records live autonomous mission runs into SQLite:
+
+- **Persistent Trajectories Store (`events/schema.sql`)**: Every multi-step execution logs to the `trajectories` table, recording `trajectory_id`, `session_id`, `goal`, `target`, `steps` (topological tool invocations, exit codes, stdout summaries), and `recommendations`.
+- **Automated Curation (`orchestrator/training_manager.py`)**: `curate_trajectories_for_training()` filters high-quality trajectories conforming to strict quality gates:
+  1. Authentic exit code 0 across key discovery nodes.
+  2. Positive verified security findings (open ports, valid banners, identified misconfigurations).
+  3. Absolute zero scope boundary violations.
+- **Export Formats**: Curated trajectories are formatted directly into multi-turn SFT conversation JSONL pairs and contrastive DPO preference datasets for immediate consumption by `trl_sft.py` and `dpo.py`.

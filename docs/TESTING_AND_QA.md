@@ -82,10 +82,12 @@ Kairo provides rigorous verification suites ensuring execution results and repor
 - **Honest Synthesis & Failure Badging**: Proves that failed tasks render explicit failure banners (`❌ Execution Failed`) and accurate error root causes rather than hallucinating "Audit Complete" or "No vulnerabilities".
 - **DAG Failure State Isolation**: Verifies that failed DAG steps (`exit_code != 0`) are skipped during observation ingestion so failed runs cannot poison downstream context.
 
-### 2. DAG Controller & Prerequisite Evidence Gating (`tests/test_dag_controller.py` - 11 Tests)
+### 2. DAG Controller & Prerequisite Evidence Gating (`tests/test_dag_controller.py` - 15 Tests)
 
 - **Prerequisite Evidence Gating**: Proves web scanners and password auditors are blocked from executing unless network reconnaissance nodes have confirmed active open ports.
 - **Topological & Parallel Execution**: Validates serial vs parallel multi-task dispatch and dependency resolution.
+- **Dynamic Argument Chaining (`_resolve_arguments_from_evidence`)**: Verifies dynamic resolution of live IPs, ports, and URLs from predecessor node facts.
+- **Mid-Execution Attack Surface Adaptation (`_adapt_plan_if_new_attack_surface`)**: Verifies automated dynamic injection of attack surface discovery nodes (e.g. `nikto.scan.v1` on port 80/443).
 - **Recovery Lineage**: Verifies that failed steps trigger compensatory recovery suggestions without graph termination.
 
 ### 3. Model Intent Flow & Dual-Model Local Routing (`tests/test_model_intent_flow.py`, `tests/test_model_integration.py` - 17 Tests)
@@ -93,6 +95,24 @@ Kairo provides rigorous verification suites ensuring execution results and repor
 - **Intent Classification**: Tests 4-class intent routing (`question`, `plan_only`, `tool_request`, `task_request`) with extracted target entities.
 - **Dual-Model Air-Gapped Fallback**: Tests primary custom model execution and automatic failover to local fallback model upon schema errors.
 - **Audit 6-Tuple Provenance**: Verifies that every inference event records `model_id`, `version`, `prompt_format`, `adapter`, `benchmark_score`, and `inference_source`.
+
+### 4. Conversational Synthesis & Recommendations (`tests/test_conversational_agent_recommendations.py` - 3 Tests)
+
+- **4-Section Structure**: Verifies that all synthesized responses strictly present `## 1. Executive Summary`, `## 2. Step-by-Step Breakdown`, `## 3. Verified Findings & Evidence`, and `## 4. What We Can Do Next`.
+- **Proactive Recommendations**: Validates generation of 3–5 click-to-run recommendations equipped with valid ToolSpec IDs, parameters, and priority badges (`HIGH`, `MEDIUM`, `LOW`).
+- **Truthful Error Badging**: Confirms that failed tool executions preserve the authentic exit code and display failure notices rather than claiming operational success.
+
+### 5. Autonomous DAG Execution Loop (`tests/test_agent_dag_execution_loop.py` - 4 Tests)
+
+- **End-to-End Orchestration**: Tests full conversational task requests transitioning from intent classification to topological DAG execution.
+- **Dynamic Surface Adaptation**: Validates that discovery of web ports or credentials dynamically injects specialized downstream evaluation nodes into the running plan.
+- **Full Evidence Propagation**: Confirms observations and verified findings chain cleanly from step to step.
+
+### 6. Failover Routing & Local Schema Self-Correction (`tests/test_failover_router_model_pairs.py` - 4 Tests)
+
+- **Local Model Schema Self-Correction (`attempt_self_correction`)**: Tests automated iterative correction prompts when local models produce invalid JSON or out-of-spec tool arguments against `toolspec.schema.json`.
+- **Model Pair Fallbacks**: Validates pair switching across configured models in `models.yaml`.
+- **Circuit Breaker & Retries**: Tests consecutive timeout detection and state transitions.
 
 ---
 
@@ -145,4 +165,10 @@ python -m pytest tests/test_observer_critic_recovery.py tests/test_planner.py -v
 
 # 8. Run model training and reinforcement learning tests
 python -m pytest tests/test_grpo_training_and_rewards.py tests/test_scale_stages_pipeline.py -v
+
+# 9. Run conversational synthesis, recommendations & dynamic DAG execution loop
+python -m pytest tests/test_conversational_agent_recommendations.py tests/test_agent_dag_execution_loop.py -v
+
+# 10. Run failover router model pairs & local schema self-correction
+python -m pytest tests/test_failover_router_model_pairs.py -v
 ```

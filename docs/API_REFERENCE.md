@@ -26,7 +26,7 @@
    - [2.15 Audit Explorer & Forensic Timeline](#215-audit-explorer--forensic-timeline)
 3. [Kali Worker VM REST API (`http://192.168.56.x:9999`)](#3-kali-worker-vm-rest-api-http19216856x9999)
 4. [noVNC RFB Desktop Streaming (`ws://localhost:6080`)](#4-novnc-rfb-desktop-streaming-wslocalhost6080)
-5. [SQLite Audit Event Schema (20 Columns)](#5-sqlite-audit-event-schema-20-columns)
+5. [SQLite Audit Event & Trajectory Schemas](#5-sqlite-audit-event--trajectory-schemas)
 
 ---
 
@@ -151,7 +151,7 @@ Returned when the agent loop completes a thinking/execution turn. Kairo enforces
 ```json
 {
   "type": "agent_response",
-  "reply": "Network reconnaissance completed for target 192.168.1.50.\n\n### Discovered Open Ports\n- `22/tcp` (OpenSSH 8.9)\n- `80/tcp` (Apache httpd 2.4)",
+  "reply": "## 1. Executive Summary\nAutonomous reconnaissance completed against authorized target `192.168.1.50`. Discovered 2 active network listeners (OpenSSH 8.9 and Apache httpd 2.4). Scope boundary adherence certified.\n\n## 2. Step-by-Step Breakdown\n- **Step 1 (`nmap.scan.v1`)**: Exit code 0, 1.42s duration. Network port discovery completed.\n- **Step 2 (`nikto.scan.v1`)**: Exit code 0, 4.10s duration. Discovered outdated Apache header and missing X-Frame-Options.\n\n## 3. Verified Findings & Evidence\n- `22/tcp` (OpenSSH 8.9) - Confidence 0.95 (Verified via TCP handshake)\n- `80/tcp` (Apache 2.4) - Confidence 0.98 (Verified via HTTP banner interrogation)\n- `CVE-2023-XXXX` - Inconclusive, requires active probing.\n\n## 4. What We Can Do Next\nProceed to web application path discovery with Gobuster, perform targeted vulnerability analysis, or test credential hygiene on SSH.",
   "taskId": "task_1791380123_abc",
   "tool": {
     "id": "nmap.scan.v1",
@@ -182,11 +182,42 @@ Returned when the agent loop completes a thinking/execution turn. Kairo enforces
       }
     }
   },
+  "next_step_recommendations": [
+    {
+      "tool_id": "gobuster.dir.v1",
+      "label": "Web Content Discovery",
+      "priority": "HIGH",
+      "args": {
+        "target": "http://192.168.1.50",
+        "wordlist": "/usr/share/wordlists/dirb/common.txt"
+      },
+      "rationale": "Port 80/tcp is open with Apache 2.4. Enumerate hidden endpoints, admin panels, and API routes."
+    },
+    {
+      "tool_id": "nikto.scan.v1",
+      "label": "Web Vulnerability Audit",
+      "priority": "HIGH",
+      "args": {
+        "target": "http://192.168.1.50"
+      },
+      "rationale": "Scan web server headers, outdated server components, and default files."
+    },
+    {
+      "tool_id": "hydra.ssh.v1",
+      "label": "SSH Credential Audit",
+      "priority": "MEDIUM",
+      "args": {
+        "target": "192.168.1.50",
+        "port": 22
+      },
+      "rationale": "Verify whether default or weak administrator credentials permit unauthorized SSH access."
+    }
+  ],
   "eventId": 52
 }
 ```
 
-*Note on Honest Failure Reporting*: If an execution fails (e.g. host unreachable, tool missing, or non-zero exit code), Kairo surfaces an explicit failure badge (`❌ Execution Failed`), preserves the true exit code (e.g. `1` for socket error, `127` for unregistered tool), and explains the actual error rather than inventing a success summary or claiming "No vulnerabilities found".
+*Note on Conversational Reports & Failure Badges*: Responses strictly present 4 structured sections (`Executive Summary`, `Step-by-Step Breakdown`, `Verified Findings & Evidence`, and `What We Can Do Next`) along with 3–5 click-to-run follow-up recommendations. If an execution fails (e.g. host unreachable, tool missing, or non-zero exit code), Kairo surfaces an explicit failure badge (`❌ Execution Failed`), preserves the authentic exit code (e.g. `1` for socket error, `127` for unregistered tool), and explains the actual error rather than inventing a success summary or claiming "No vulnerabilities found".
 
 ---
 
@@ -197,11 +228,33 @@ The FastAPI Orchestrator coordinates agent planning, process execution, model ma
 ### 2.1 Agent Execution, Intent Classification & Lifecycle
 
 - `POST /run`: Trigger the autonomous agent loop for a user directive. Accepts `{"message": str, "session_id": str, "prefer_llm": bool, "mode": Optional[str]}`.
-- `POST /chat`: Unified conversational endpoint with dynamic intent classification. Automatically classifies directives into one of 4 interaction modes, routes to local inference without cloud fallback, and tracks complete execution and inference provenance:
+- `POST /chat`: Unified conversational endpoint with dynamic intent classification. Automatically classifies directives into one of 4 interaction modes, routes to local inference without cloud fallback, synthesizes 4-section executive responses, provides 3–5 click-to-run recommendations, and tracks complete execution and inference provenance:
   - **General Conversation**: Informative cybersecurity answers with zero tools executed.
   - **Plan-Only Mode**: Structured graph decomposition without executing tools or making network requests.
   - **Operational Task Mode**: Full autonomous DAG execution by default across all approved steps when within authorized scope.
   - **Explicit Direct Tool Mode**: Executes a specific registered tool through `ExecutionGateway` after verifying arguments and scope.
+- `POST /chat/stream`: Real-time Server-Sent Events (SSE) streaming endpoint for live token generation, reasoning chunks, and execution lifecycle updates.
+  - **Request Body**:
+
+    ```json
+    {
+      "message": "Audit 192.168.1.50 for web application flaws",
+      "session_id": "sess_main_01",
+      "autonomous": true,
+      "target": "192.168.1.50"
+    }
+    ```
+
+  - **Emitted Lifecycle SSE Event Types**:
+    - `event: intent`: Classification output with target, interaction mode, and confidence score.
+    - `event: plan`: Structured DAG plan nodes and dependency topology.
+    - `event: thought`: Cognitive reasoning traces from local causal LM models.
+    - `event: tool_start`: Notification that a tool node is being dispatched via `ExecutionGateway`.
+    - `event: tool_output`: Streaming stdout/stderr chunks from process supervisor.
+    - `event: tool_result`: Authentic execution results (exit code, duration, parsed facts).
+    - `event: token`: Streaming markdown token fragments for the conversational response.
+    - `event: recommendations`: 3–5 structured click-to-run follow-up recommendations.
+    - `event: done`: Execution complete signal with final state summary and trajectory ID.
 - `POST /intent`: Standalone intent classifier endpoint. Analyzes user directives and returns:
 
 ```json
@@ -237,6 +290,8 @@ The FastAPI Orchestrator coordinates agent planning, process execution, model ma
 - `POST /planner/plans/{plan_id}/nodes/{node_id}/status`: Update node status (`PENDING`, `READY`, `RUNNING`, `SUCCESS`, `FAILED`, `SKIPPED`, `BLOCKED`).
 - `POST /planner/plans/{plan_id}/execute` or `POST /planner/plans/{plan_id}/run`: Execute all nodes in the DAG in strict topological order using the `DAGController`. All node executions route through `ExecutionGateway.execute()`. Enforces:
   - **Prerequisite Evidence Gating**: Subsequent dependent nodes (e.g. web scanners, brute-force tools) are executed only if prerequisite observations were confirmed (e.g. verified open HTTP ports).
+  - **Dynamic DAG Output Chaining (`_resolve_arguments_from_evidence`)**: Resolves runtime arguments (discovered IPs, open ports, web base URLs) dynamically from verified facts emitted by upstream dependency nodes.
+  - **Mid-Execution Attack Surface Adaptation (`_adapt_plan_if_new_attack_surface`)**: Inspects live verified findings and injects specialized downstream evaluation nodes dynamically (e.g. injecting `nikto.scan.v1` upon port 80/443 discovery or `hydra.ssh.v1` upon port 22 discovery).
   - **Failure Containment**: If a node fails (`exit_code != 0`), observation ingestion skips the failed run to prevent polluting downstream context.
   - **Recovery Lineage**: Failed nodes record compensatory `recovery_path` traces.
   - **Truthful Terminal States**: Plans terminate at strictly defined, evidence-based states: `COMPLETED` (all required nodes succeeded), `PARTIAL` (some succeeded), `FAILED` (critical path failed), `BLOCKED` (stopped by policy or scope), or `INCONCLUSIVE` (insufficient evidence gathered).
@@ -482,9 +537,11 @@ The Orchestrator includes a built-in RFB (Remote Framebuffer) WebSocket gateway:
 
 ---
 
-## 5. SQLite Audit Event Schema (20 Columns)
+## 5. SQLite Audit Event & Trajectory Schemas
 
-Table definition in [`events/events.db`](file:///c:/New%20Volume%20(D)/dev/events):
+Table definitions in [`events/events.db`](file:///c:/New%20Volume%20(D)/dev/events) and [`events/schema.sql`](file:///c:/New%20Volume%20(D)/dev/events/schema.sql):
+
+### 5.1 Events Table (20 Columns)
 
 ```sql
 CREATE TABLE IF NOT EXISTS events (
@@ -514,4 +571,27 @@ CREATE TABLE IF NOT EXISTS events (
 CREATE INDEX IF NOT EXISTS idx_events_session ON events(session_id);
 CREATE INDEX IF NOT EXISTS idx_events_task ON events(task_id);
 CREATE INDEX IF NOT EXISTS idx_events_tool ON events(tool_id);
+```
+
+### 5.2 Trajectories Table
+
+Stores multi-step autonomous execution runs, input goals, dynamically chained steps, and follow-up recommendations for automatic training dataset curation:
+
+```sql
+CREATE TABLE IF NOT EXISTS trajectories (
+    trajectory_id TEXT PRIMARY KEY,
+    session_id TEXT NOT NULL,
+    plan_id TEXT,
+    goal TEXT NOT NULL,
+    target TEXT,
+    steps TEXT NOT NULL DEFAULT '[]',
+    recommendations TEXT NOT NULL DEFAULT '[]',
+    success INTEGER NOT NULL DEFAULT 1,
+    created_at TEXT NOT NULL,
+    metadata TEXT NOT NULL DEFAULT '{}'
+);
+
+CREATE INDEX IF NOT EXISTS idx_trajectories_session ON trajectories(session_id);
+CREATE INDEX IF NOT EXISTS idx_trajectories_plan ON trajectories(plan_id);
+CREATE INDEX IF NOT EXISTS idx_trajectories_success ON trajectories(success);
 ```

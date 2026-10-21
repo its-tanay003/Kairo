@@ -20,6 +20,9 @@
    - [4.6 Claude Artifact Tool Execution Cards](#46-claude-artifact-tool-execution-cards)
    - [4.7 Claude Floating Composer & Terracotta Send Action](#47-claude-floating-composer--terracotta-send-action)
    - [4.8 Right Split Console & Artifacts Drawer](#48-right-split-console--artifacts-drawer)
+   - [4.9 Collapsible DAG Step Cards](#49-collapsible-dag-step-cards)
+   - [4.10 Interactive Recommendations Grid](#410-interactive-recommendations-grid)
+   - [4.11 Header Quick Split-View Toggles](#411-header-quick-split-view-toggles)
 5. [Micro-Interactions & Animation Standards](#5-micro-interactions--animation-standards)
 6. [Responsive Breakpoint Behaviors](#6-responsive-breakpoint-behaviors)
 7. [Accessibility Standards (WCAG 2.2 AA)](#7-accessibility-standards-wcag-22-aa)
@@ -153,10 +156,43 @@ Tool executions are encapsulated as rich Claude Artifacts:
 - Right: **Circular Terracotta Send Button** (`34px` round, background `#d97757`, white upward arrow SVG, hover scale 1.04x).
 
 ### 4.8 Right Split Console & Artifacts Drawer
+
 - Split panel sliding out from the right:
 - Width modes: Standard `560px` or Expanded `880px`.
 - Nav Rail tabs: `System`, `Event Log`, `Terminal`, `Screen (VNC)`, `Task Graph`, `Audit`, `Benchmarks`, `Dev tools`.
 - Active rail tab highlighted with terracotta left-border (`#d97757`).
+
+### 4.9 Collapsible DAG Step Cards
+
+Implements progressive disclosure for autonomous multi-step execution plans in [`ui/src/app/components/ClaudeOutputCard.tsx`](file:///c:/New%20Volume%20(D)/dev/ui/src/app/components/ClaudeOutputCard.tsx):
+
+- **Header Bar**: Displays status badges (`COMPLETED`, `RUNNING`, `FAILED`), ToolSpec identifier (e.g. `nmap.scan.v1`), target asset, duration in seconds, and an expandable chevron (`▾`).
+- **Collapsible Body**:
+  - Parameters block: Formatted JSON showing normalized invocation arguments.
+  - Telemetry block: Live scrolling stdout/stderr preview with JetBrains Mono typography.
+  - Verified Evidence: Badges for verified findings discovered during this step with socket/banner latency.
+- **Micro-interactions**: One-click expansion/collapse preserving terminal scroll position.
+
+### 4.10 Interactive Recommendations Grid
+
+Displays 3–5 proactive operational next steps below conversational reports:
+
+- **Chip Grid**: 1-to-3 column responsive layout of interactive recommendation cards.
+- **Card Contents**:
+  - Priority badge: `HIGH` (Coral/Terracotta), `MEDIUM` (Amber), `LOW` (Stone/Muted).
+  - Tool label and ToolSpec ID.
+  - Tactical rationale explaining why this follow-up is recommended based on prior step findings.
+- **"Run Tool" Action Button**:
+  - Click-to-run button with play icon (`▶ Run Tool`).
+  - Pre-populates parameters, switches active context to execution, and automatically dispatches the scan without requiring manual re-typing.
+
+### 4.11 Header Quick Split-View Toggles
+
+Located in the top application header ([`ui/src/app/page.tsx`](file:///c:/New%20Volume%20(D)/dev/ui/src/app/page.tsx)) for instant pane manipulation:
+
+- **Terminal Split Toggle**: Dedicated button (`>_ Terminal`) to instantly split or close the live interactive Kali Linux shell without traversing drawer navigation tabs.
+- **GUI / noVNC Split Toggle**: Dedicated display toggle (`📺 Kali GUI`) to open or close the live Remote Framebuffer streaming canvas alongside the active conversation.
+- **State Indicators**: Active buttons illuminate with terracotta border and subtle background tint (`rgba(217, 119, 87, 0.15)`).
 
 ---
 

@@ -149,6 +149,7 @@ The header sits at a restrained **52px height** in `--bg-surface` (`#141413`):
   2. `Qwen2.5-0.5B (Local Fallback)`: High-speed local GGUF quantized model for triage and low-latency recon.
   3. `Kairo GRPO Final (Reasoner)`: Local fine-tuned RL reasoning checkpoint with verified rule-based rewards.
   4. `Qwen3-Coder-30B (MoE Base)`: Local MoE fallback target for extended cybersecurity coding tasks.
+- **Quick Split-View Toggles**: Direct one-click split toggles for **Terminal** (`>_ Terminal`) and **Kali GUI (noVNC)** (`📺 Kali GUI`) that open side-by-side execution panes without navigating through drawer tabs.
 - **Right**: Clean plain-language status pill (`● Ready`) with hover telemetry tooltip, plus the **Advanced Console** button (`[ | ] ⚙ Advanced`).
 
 ---
@@ -190,10 +191,25 @@ Reasoning, tool scoring, and recovery evaluations are encapsulated inside an exp
 - Body: Contains cognitive evaluations, candidate tool score comparisons, and self-healing narratives.
 
 ### 8.4 Claude Artifacts Tool Card
+
 Every tool invocation (`nmap.scan.v1`, `kali.exec.v1`, `planner_decompose`) is treated as a first-class **Claude Artifact**:
 - Top header: `ARTIFACT` pill in terracotta, tool name, verification badge (`● Verified` or `● Failed`), execution duration.
 - **Deep-Link Action**: An `Open in Console ↗` button that immediately opens the right split panel to the matching tab (Terminal, Screen, Task Graph, or Audit).
 - Details toggle: Expands to show plain-language summaries, parameter breakdowns, and syntax-highlighted code output blocks (`#151514`).
+
+### 8.5 Collapsible DAG Step Cards
+
+For multi-step autonomous plans rendered in the conversation stream via [`ui/src/app/components/ClaudeOutputCard.tsx`](file:///c:/New%20Volume%20(D)/dev/ui/src/app/components/ClaudeOutputCard.tsx):
+- **Summary Row**: Compact status indicator (`COMPLETED`, `RUNNING`, `FAILED`), ToolSpec identifier, target asset, and execution elapsed time.
+- **Accordion Dropdown**: Expands on click to reveal exact typed parameters, a terminal output snippet with syntax highlighting, and verified findings.
+- **Clean Visual Density**: Keeps complex 5-to-10 step plans readable without overwhelming the conversation canvas.
+
+### 8.6 Proactive Next-Step Recommendations Grid
+
+Directly underneath conversational reports, Kairo presents 3–5 actionable follow-up recommendations:
+- **Card Badges**: Visual priority flags (`HIGH` in terracotta, `MEDIUM` in warm amber, `LOW` in muted stone).
+- **Tactical Rationale**: Explains the security benefit of the action (e.g. why directory fuzzing is warranted following discovery of port 80).
+- **Instant Execution Button**: `▶ Run Tool` button that pre-populates target arguments and dispatches the scan in a single click.
 
 ---
 

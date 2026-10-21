@@ -20,6 +20,9 @@ The `/ui` subsystem is Kairo's executive frontend interface. Built on **Next.js 
   - Claude Monogram Spark (8-point terracotta starburst).
   - Floating Pill Composer with integrated HMAC Scope popover.
   - Collapsible Claude 3.7 Extended Thinking Accordion (`✦ Thought for 1.2s ▾`).
+  - Collapsible DAG Step Cards with live stdout snippets, parameter breakdown, and verified findings.
+  - Interactive Next-Step Recommendations Grid with priority badges and `▶ Run Tool` one-click dispatches.
+  - Header Quick Split-View Toggles (`>_ Terminal` and `📺 Kali GUI`) for instant side-by-side execution panes.
   - Interactive Claude Artifact Cards with inline JSON copy and console deep-linking.
   - Smooth Drawer System toggling between Standard (560px) and Wide (880px) modes.
 
@@ -40,7 +43,7 @@ The `/ui` subsystem is Kairo's executive frontend interface. Built on **Next.js 
 | [`SecurityBrowserPanel.tsx`](src/app/components/SecurityBrowserPanel.tsx) | Embedded web browser view driven by Playwright (`browser.security.v1`) for web application security auditing. |
 | [`ScopeContractChip.tsx`](src/app/components/ScopeContractChip.tsx) | Interactive popover displaying active target CIDRs, HMAC signatures, authorized operator, and expiry countdown. |
 | [`WhyThisToolPanel.tsx`](src/app/components/WhyThisToolPanel.tsx) | Explainability inspector breaking down the 7-dimensional scoring weights behind every tool selection decision. |
-| [`ClaudeOutputCard.tsx`](src/app/components/ClaudeOutputCard.tsx) | Deliverable container with copy actions, finding metadata, and console deep-linking. |
+| [`ClaudeOutputCard.tsx`](src/app/components/ClaudeOutputCard.tsx) | Deliverable container featuring collapsible DAG step cards, verified findings badges, parameter inspection, and the 3–5 click-to-run follow-up recommendations grid. |
 | [`OfflineIndicator.tsx`](src/app/components/OfflineIndicator.tsx) | Non-intrusive status banner indicating backend connectivity, reconnect countdown, and failover status. |
 
 ---
