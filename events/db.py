@@ -445,6 +445,26 @@ def get_plan(plan_id: str, db_path: Optional[Path | str] = None) -> Optional[Dic
                     nd["dependencies"] = json.loads(nd.get("dependencies") or "[]")
                 except Exception:
                     nd["dependencies"] = []
+
+                # Ensure result is parsed and promote assigned_tool and rationale
+                res_val = nd.get("result")
+                if isinstance(res_val, str):
+                    try:
+                        parsed_res = json.loads(res_val)
+                        nd["result"] = parsed_res
+                        if isinstance(parsed_res, dict):
+                            if not nd.get("rationale") and parsed_res.get("rationale"):
+                                nd["rationale"] = parsed_res["rationale"]
+                            if not nd.get("assigned_tool") and parsed_res.get("tool_id"):
+                                nd["assigned_tool"] = parsed_res["tool_id"]
+                    except Exception:
+                        pass
+                elif isinstance(res_val, dict):
+                    if not nd.get("rationale") and res_val.get("rationale"):
+                        nd["rationale"] = res_val["rationale"]
+                    if not nd.get("assigned_tool") and res_val.get("tool_id"):
+                        nd["assigned_tool"] = res_val["tool_id"]
+
                 nodes.append(nd)
 
             roots = [n["node_id"] for n in nodes if not n["dependencies"]]
@@ -469,12 +489,18 @@ def get_plan(plan_id: str, db_path: Optional[Path | str] = None) -> Optional[Dic
             for n in nodes:
                 n["depth_level"] = depths.get(n["node_id"], 0)
 
+            edges = []
+            for n in nodes:
+                for dep in n.get("dependencies", []):
+                    edges.append({"from_node": dep, "to_node": n["node_id"]})
+
             graph_dict["total_nodes"] = len(nodes)
             graph_dict["is_dag"] = True
             graph_dict["parallel_roots"] = roots
             graph_dict["convergence_nodes"] = convergences
             graph_dict["depth_levels"] = depths
             graph_dict["nodes"] = nodes
+            graph_dict["edges"] = edges
             return graph_dict
     finally:
         conn.close()

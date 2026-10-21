@@ -9,7 +9,7 @@ export interface PlanNode {
   capability: string;
   description: string;
   dependencies: string[];
-  status: "queued" | "running" | "success" | "warning" | "failed";
+  status: "queued" | "running" | "success" | "warning" | "failed" | "skipped" | "blocked" | string;
   depth_level?: number;
   assigned_tool?: string;
   rationale?: string;
@@ -137,10 +137,12 @@ export interface PlanReportData {
   [key: string]: unknown;
 }
 
-interface TaskGraphViewProps {
+export interface TaskGraphViewProps {
   ws?: WebSocket | null;
   activeSessionId?: string;
   onSelectNode?: (node: PlanNode) => void;
+  plan?: PlanDAG | Record<string, unknown> | null;
+  isEmbedded?: boolean;
 }
 
 const PRESET_GOALS = [
@@ -166,6 +168,8 @@ export default function TaskGraphView({
   ws,
   activeSessionId = "default_session",
   onSelectNode,
+  plan,
+  isEmbedded = false,
 }: TaskGraphViewProps) {
   const [goal, setGoal] = useState<string>(PRESET_GOALS[0].goal);
   const [preferLlm, setPreferLlm] = useState<boolean>(true);
@@ -185,6 +189,70 @@ export default function TaskGraphView({
     const timer = setTimeout(() => setStatusFeedback(null), 3500);
     return () => clearTimeout(timer);
   }, []);
+
+  // Memoize normalized plan if provided as prop
+  const normalizedPlanFromProp = useMemo<PlanDAG | null>(() => {
+    if (!plan || typeof plan !== "object") return null;
+    const planObj = plan as Record<string, unknown>;
+    const rawNodes = (planObj.nodes as Array<Record<string, unknown>>) || [];
+    if (rawNodes.length === 0) return null;
+
+    const normalizedNodes: PlanNode[] = rawNodes.map((n) => {
+      let parsedResult: Record<string, unknown> | undefined = undefined;
+      if (typeof n.result === "string") {
+        try {
+          parsedResult = JSON.parse(n.result);
+        } catch {
+          parsedResult = { raw: n.result };
+        }
+      } else if (typeof n.result === "object" && n.result !== null) {
+        parsedResult = n.result as Record<string, unknown>;
+      }
+
+      const toolName =
+        (n.assigned_tool as string) ||
+        (n.tool_id as string) ||
+        (n.tool_name as string) ||
+        (parsedResult?.tool_id as string);
+
+      const toolSel = parsedResult?.tool_selection as Record<string, unknown> | undefined;
+      const rationaleText =
+        (n.rationale as string) ||
+        (parsedResult?.rationale as string) ||
+        (toolSel?.selection_reason as string);
+
+      return {
+        node_id: String(n.node_id || ""),
+        label: (n.label as string) || String(n.node_id || ""),
+        capability: (n.capability as string) || (n.tool_name as string) || "general_execution",
+        description: (n.description as string) || "",
+        dependencies: Array.isArray(n.dependencies) ? (n.dependencies as string[]) : [],
+        status: String(n.status || "queued").toLowerCase(),
+        depth_level: typeof n.depth_level === "number" ? n.depth_level : undefined,
+        assigned_tool: toolName,
+        rationale: rationaleText,
+        expected_outputs: Array.isArray(n.expected_outputs) ? (n.expected_outputs as string[]) : [],
+        result: parsedResult,
+      };
+    });
+
+    return {
+      plan_id: String(planObj.plan_id || "active_plan"),
+      goal: String(planObj.goal || "Task Plan"),
+      session_id: String(planObj.session_id || activeSessionId),
+      status: (String(planObj.status || "executing").toLowerCase() as PlanDAG["status"]),
+      total_nodes: normalizedNodes.length,
+      created_at: String(planObj.created_at || new Date().toISOString()),
+      updated_at: planObj.updated_at ? String(planObj.updated_at) : undefined,
+      nodes: normalizedNodes,
+      depth_levels: (planObj.depth_levels as { [node_id: string]: number }) || undefined,
+      is_dag: planObj.is_dag !== false,
+      parallel_roots: Array.isArray(planObj.parallel_roots) ? (planObj.parallel_roots as string[]) : undefined,
+      convergence_nodes: Array.isArray(planObj.convergence_nodes) ? (planObj.convergence_nodes as string[]) : undefined,
+    };
+  }, [plan, activeSessionId]);
+
+  const activePlan = normalizedPlanFromProp || currentPlan;
 
   const handleGenerateReport = async (planId: string) => {
     setIsGeneratingReport(true);
@@ -224,8 +292,8 @@ export default function TaskGraphView({
     try {
       const res = await fetch(`http://localhost:4000/planner/plans/${planId}`);
       if (res.ok) {
-        const plan = await res.json();
-        setCurrentPlan(plan);
+        const loadedPlan = await res.json();
+        setCurrentPlan(loadedPlan);
         setSelectedNode(null);
         fetchReadyNodes(planId);
       } else {
@@ -244,7 +312,7 @@ export default function TaskGraphView({
         const data = await res.json();
         const plans = data.plans || [];
         setRecentPlans(plans);
-        if (plans.length > 0) {
+        if (plans.length > 0 && !plan) {
           loadPlan(plans[0].plan_id);
         }
       }
@@ -252,10 +320,11 @@ export default function TaskGraphView({
       const msg = err instanceof Error ? err.message : String(err);
       console.warn("Could not fetch recent plans:", msg);
     }
-  }, [loadPlan]);
+  }, [loadPlan, plan]);
 
-  // Load recent plans on mount
+  // Load recent plans on mount if no explicit plan prop provided
   useEffect(() => {
+    if (plan) return;
     let ignore = false;
     const loadInitial = async () => {
       try {
@@ -277,7 +346,7 @@ export default function TaskGraphView({
     return () => {
       ignore = true;
     };
-  }, [loadPlan]);
+  }, [loadPlan, plan]);
 
   // Listen for WebSocket planner messages
   useEffect(() => {
@@ -291,6 +360,8 @@ export default function TaskGraphView({
           setCurrentPlan(data.plan);
           fetchPlansList();
           showNotification(`Task Graph created: ${data.plan.plan_id}`);
+        } else if (data.type === "agent_response" && data.plan) {
+          setCurrentPlan(data.plan);
         } else if (data.type === "planner_plan_details" && data.plan) {
           setCurrentPlan(data.plan);
         } else if (data.type === "planner_plan_updated" && data.plan) {
@@ -361,11 +432,11 @@ export default function TaskGraphView({
     nodeId: string,
     newStatus: "queued" | "running" | "success" | "warning" | "failed"
   ) => {
-    if (!currentPlan) return;
+    if (!activePlan) return;
 
     try {
       const res = await fetch(
-        `http://localhost:4000/planner/plans/${currentPlan.plan_id}/nodes/${nodeId}/status`,
+        `http://localhost:4000/planner/plans/${activePlan.plan_id}/nodes/${nodeId}/status`,
         {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -379,7 +450,7 @@ export default function TaskGraphView({
       if (res.ok) {
         const updated = await res.json();
         setCurrentPlan(updated);
-        fetchReadyNodes(currentPlan.plan_id);
+        fetchReadyNodes(activePlan.plan_id);
         showNotification(`Node ${nodeId} marked as ${newStatus}`);
       } else {
         const err = await res.json().catch(() => ({}));
@@ -392,18 +463,18 @@ export default function TaskGraphView({
   };
 
   const handleExecuteTaskGraph = async () => {
-    if (!currentPlan) return;
+    if (!activePlan) return;
     setIsExecutingGraph(true);
     setErrorMsg(null);
     try {
-      const res = await fetch(`http://localhost:4000/planner/plans/${currentPlan.plan_id}/execute`, {
+      const res = await fetch(`http://localhost:4000/planner/plans/${activePlan.plan_id}/execute`, {
         method: "POST",
       });
       if (res.ok) {
         const data = await res.json();
         if (data.updated_plan) {
           setCurrentPlan(data.updated_plan);
-          fetchReadyNodes(currentPlan.plan_id);
+          fetchReadyNodes(activePlan.plan_id);
         }
         showNotification(
           `Executed ${data.executed_count || 0} node(s) through Observer, Critic & Recovery Agent.`
@@ -421,10 +492,10 @@ export default function TaskGraphView({
   };
 
   const handleExecuteSingleNode = async (nodeId: string) => {
-    if (!currentPlan) return;
+    if (!activePlan) return;
     try {
       const res = await fetch(
-        `http://localhost:4000/planner/plans/${currentPlan.plan_id}/nodes/${nodeId}/execute`,
+        `http://localhost:4000/planner/plans/${activePlan.plan_id}/nodes/${nodeId}/execute`,
         {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -435,7 +506,7 @@ export default function TaskGraphView({
         const data = await res.json();
         if (data.updated_plan) {
           setCurrentPlan(data.updated_plan);
-          fetchReadyNodes(currentPlan.plan_id);
+          fetchReadyNodes(activePlan.plan_id);
           const updatedTarget = data.updated_plan.nodes?.find((n: PlanNode) => n.node_id === nodeId);
           if (updatedTarget) setSelectedNode(updatedTarget);
         }
@@ -455,12 +526,38 @@ export default function TaskGraphView({
 
   // Group nodes into topological layers by depth_level
   const groupedColumns = useMemo(() => {
-    if (!currentPlan || !currentPlan.nodes) return [];
+    if (!activePlan || !activePlan.nodes || activePlan.nodes.length === 0) return [];
+
+    const depths: { [node_id: string]: number } = { ...(activePlan.depth_levels || {}) };
+    const nodes = activePlan.nodes;
+
+    // Dynamically calculate topological depths if missing or empty
+    const nodeMap = new Map<string, PlanNode>();
+    nodes.forEach((n) => nodeMap.set(n.node_id, n));
+
+    const computeDepth = (id: string, visited = new Set<string>()): number => {
+      if (depths[id] !== undefined) return depths[id];
+      if (visited.has(id)) return 0;
+      visited.add(id);
+
+      const n = nodeMap.get(id);
+      if (!n || !n.dependencies || n.dependencies.length === 0) {
+        depths[id] = 0;
+        return 0;
+      }
+
+      let maxDep = 0;
+      for (const depId of n.dependencies) {
+        maxDep = Math.max(maxDep, computeDepth(depId, new Set(visited)) + 1);
+      }
+      depths[id] = maxDep;
+      return maxDep;
+    };
+
+    nodes.forEach((n) => computeDepth(n.node_id));
 
     const depthMap: { [key: number]: PlanNode[] } = {};
-    const depths = currentPlan.depth_levels || {};
-
-    currentPlan.nodes.forEach((node) => {
+    nodes.forEach((node) => {
       const d = depths[node.node_id] !== undefined ? depths[node.node_id] : (node.depth_level || 0);
       if (!depthMap[d]) depthMap[d] = [];
       depthMap[d].push(node);
@@ -474,17 +571,30 @@ export default function TaskGraphView({
       level: lvl,
       nodes: depthMap[lvl],
     }));
-  }, [currentPlan]);
+  }, [activePlan]);
 
   // Compute status summary counts
   const statusCounts = useMemo(() => {
-    const counts = { queued: 0, running: 0, success: 0, warning: 0, failed: 0 };
-    if (!currentPlan?.nodes) return counts;
-    currentPlan.nodes.forEach((n) => {
-      if (counts[n.status] !== undefined) counts[n.status]++;
+    const counts: Record<string, number> = {
+      queued: 0,
+      running: 0,
+      success: 0,
+      warning: 0,
+      failed: 0,
+      skipped: 0,
+      blocked: 0,
+    };
+    if (!activePlan?.nodes) return counts;
+    activePlan.nodes.forEach((n) => {
+      const st = (n.status || "queued").toLowerCase();
+      if (counts[st] !== undefined) {
+        counts[st]++;
+      } else {
+        counts[st] = 1;
+      }
     });
     return counts;
-  }, [currentPlan]);
+  }, [activePlan]);
 
   const getLayerTitle = (lvl: number) => {
     if (lvl === 0) return "Layer 0: Parallel Recon Roots";
@@ -494,160 +604,189 @@ export default function TaskGraphView({
   };
 
   return (
-    <div className="task-graph-root">
+    <div className="task-graph-root" style={isEmbedded ? { border: "none", minHeight: "360px", maxHeight: "600px" } : undefined}>
       {/* Top Input & Goal Formulation Bar */}
-      <div className="task-graph-top-bar">
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: "8px" }}>
-          <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
-            <span style={{ fontSize: "13px", fontWeight: "600", color: "var(--text-primary)" }}>
-              Task Graph (DAG Planner)
-            </span>
-            <span style={{ fontSize: "11px", color: "var(--text-muted)" }}>
-              Parallel branching &amp; multi-parent convergence
-            </span>
+      {!isEmbedded ? (
+        <div className="task-graph-top-bar">
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: "8px" }}>
+            <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+              <span style={{ fontSize: "13px", fontWeight: "600", color: "var(--text-primary)" }}>
+                Task Graph (DAG Planner)
+              </span>
+              <span style={{ fontSize: "11px", color: "var(--text-muted)" }}>
+                Parallel branching &amp; multi-parent convergence
+              </span>
+            </div>
+
+            {/* Saved Plans Selector */}
+            <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+              <span style={{ fontSize: "11px", color: "var(--text-muted)" }}>Load Plan:</span>
+              <select
+                style={{
+                  background: "var(--bg-surface-raised)",
+                  border: "1px solid var(--border-subtle)",
+                  color: "var(--text-primary)",
+                  fontSize: "11px",
+                  padding: "4px 8px",
+                  borderRadius: "6px",
+                  outline: "none",
+                }}
+                value={activePlan?.plan_id || ""}
+                onChange={(e) => {
+                  if (e.target.value) loadPlan(e.target.value);
+                }}
+              >
+                <option value="">-- Recent Saved Plans ({recentPlans.length}) --</option>
+                {recentPlans.map((p) => (
+                  <option key={p.plan_id} value={p.plan_id}>
+                    {p.plan_id} — {p.goal ? p.goal.slice(0, 36) + "..." : "No goal"}
+                  </option>
+                ))}
+              </select>
+              <button
+                className="quick-btn secondary"
+                style={{ padding: "4px 8px", fontSize: "11px" }}
+                onClick={fetchPlansList}
+                title="Refresh saved plans list"
+              >
+                🔄
+              </button>
+            </div>
           </div>
 
-          {/* Saved Plans Selector */}
-          <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
-            <span style={{ fontSize: "11px", color: "var(--text-muted)" }}>Load Plan:</span>
-            <select
-              style={{
-                background: "var(--bg-surface-raised)",
-                border: "1px solid var(--border-subtle)",
-                color: "var(--text-primary)",
-                fontSize: "11px",
-                padding: "4px 8px",
-                borderRadius: "6px",
-                outline: "none",
+          {/* Goal Input Row */}
+          <div className="task-graph-input-row">
+            <input
+              type="text"
+              className="task-graph-input"
+              value={goal}
+              onChange={(e) => setGoal(e.target.value)}
+              placeholder="Describe your security goal to decompose into an execution DAG..."
+              disabled={isPlanning}
+              onKeyDown={(e) => {
+                if (e.key === "Enter" && !isPlanning) handleDecompose();
               }}
-              value={currentPlan?.plan_id || ""}
-              onChange={(e) => {
-                if (e.target.value) loadPlan(e.target.value);
-              }}
-            >
-              <option value="">-- Recent Saved Plans ({recentPlans.length}) --</option>
-              {recentPlans.map((p) => (
-                <option key={p.plan_id} value={p.plan_id}>
-                  {p.plan_id} — {p.goal ? p.goal.slice(0, 36) + "..." : "No goal"}
-                </option>
-              ))}
-            </select>
+            />
+
             <button
-              className="quick-btn secondary"
-              style={{ padding: "4px 8px", fontSize: "11px" }}
-              onClick={fetchPlansList}
-              title="Refresh saved plans list"
+              className="quick-btn"
+              style={{
+                padding: "8px 14px",
+                fontSize: "11px",
+                fontWeight: 600,
+              }}
+              onClick={handleDecompose}
+              disabled={isPlanning || !goal.trim()}
             >
-              🔄
+              {isPlanning ? "🧠 Decomposing..." : "⚡ Decompose to DAG"}
             </button>
           </div>
+
+          {/* Options & Scenario Presets */}
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: "8px" }}>
+            {/* Quick Presets */}
+            <div style={{ display: "flex", alignItems: "center", gap: "6px", flexWrap: "wrap" }}>
+              <span style={{ fontSize: "10px", color: "var(--text-muted)", textTransform: "uppercase", fontWeight: 700 }}>
+                Presets:
+              </span>
+              {PRESET_GOALS.map((preset, idx) => (
+                <button
+                  key={idx}
+                  className="quick-btn secondary"
+                  style={{ padding: "2px 7px", fontSize: "10px" }}
+                  onClick={() => setGoal(preset.goal)}
+                  title={preset.goal}
+                >
+                  {preset.title}
+                </button>
+              ))}
+            </div>
+
+            {/* Model Prefer Checkbox */}
+            <label style={{ display: "flex", alignItems: "center", gap: "6px", fontSize: "11px", color: "var(--text-muted)", cursor: "pointer" }}>
+              <input
+                type="checkbox"
+                checked={preferLlm}
+                onChange={(e) => setPreferLlm(e.target.checked)}
+                style={{ cursor: "pointer" }}
+              />
+              <span>Prefer Local LLM (llama.cpp)</span>
+            </label>
+          </div>
+
+          {/* Error / Status Feedback */}
+          {errorMsg && (
+            <div style={{ background: "rgba(240, 99, 107, 0.15)", border: "1px solid rgba(240, 99, 107, 0.4)", color: "#fca5a5", padding: "6px 10px", borderRadius: "4px", fontSize: "11px" }}>
+              ⚠️ {errorMsg}
+            </div>
+          )}
+          {statusFeedback && (
+            <div style={{ background: "rgba(62, 207, 142, 0.15)", border: "1px solid rgba(62, 207, 142, 0.4)", color: "var(--status-success)", padding: "6px 10px", borderRadius: "4px", fontSize: "11px" }}>
+              ✓ {statusFeedback}
+            </div>
+          )}
         </div>
-
-        {/* Goal Input Row */}
-        <div className="task-graph-input-row">
-          <input
-            type="text"
-            className="task-graph-input"
-            value={goal}
-            onChange={(e) => setGoal(e.target.value)}
-            placeholder="Describe your security goal to decompose into an execution DAG..."
-            disabled={isPlanning}
-            onKeyDown={(e) => {
-              if (e.key === "Enter" && !isPlanning) handleDecompose();
-            }}
-          />
-
-          <button
-            className="quick-btn"
-            style={{
-              padding: "8px 14px",
-              fontSize: "11px",
-              fontWeight: 600,
-            }}
-            onClick={handleDecompose}
-            disabled={isPlanning || !goal.trim()}
-          >
-            {isPlanning ? "🧠 Decomposing..." : "⚡ Decompose to DAG"}
-          </button>
-        </div>
-
-        {/* Options & Scenario Presets */}
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: "8px" }}>
-          {/* Quick Presets */}
-          <div style={{ display: "flex", alignItems: "center", gap: "6px", flexWrap: "wrap" }}>
-            <span style={{ fontSize: "10px", color: "var(--text-muted)", textTransform: "uppercase", fontWeight: 700 }}>
-              Presets:
+      ) : (
+        <div
+          style={{
+            padding: "8px 14px",
+            background: "rgba(15, 23, 42, 0.8)",
+            borderBottom: "1px solid var(--border-subtle)",
+            display: "flex",
+            justifyContent: "space-between",
+            alignItems: "center",
+            flexWrap: "wrap",
+            gap: "8px",
+          }}
+        >
+          <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+            <span style={{ fontSize: "12px", fontWeight: "600", color: "#f8fafc" }}>
+              🕸️ Task Execution DAG
             </span>
-            {PRESET_GOALS.map((preset, idx) => (
-              <button
-                key={idx}
-                className="quick-btn secondary"
-                style={{ padding: "2px 7px", fontSize: "10px" }}
-                onClick={() => setGoal(preset.goal)}
-                title={preset.goal}
-              >
-                {preset.title}
-              </button>
-            ))}
+            <span style={{ fontSize: "11px", color: "var(--text-muted)" }}>
+              {activePlan?.nodes.length || 0} node(s) &bull; Status: {activePlan?.status || "ready"}
+            </span>
           </div>
-
-          {/* Model Prefer Checkbox */}
-          <label style={{ display: "flex", alignItems: "center", gap: "6px", fontSize: "11px", color: "var(--text-muted)", cursor: "pointer" }}>
-            <input
-              type="checkbox"
-              checked={preferLlm}
-              onChange={(e) => setPreferLlm(e.target.checked)}
-              style={{ cursor: "pointer" }}
-            />
-            <span>Prefer Local LLM (llama.cpp)</span>
-          </label>
+          {activePlan?.plan_id && (
+            <span style={{ fontSize: "10px", fontFamily: "var(--font-mono)", color: "var(--accent)" }}>
+              ID: {activePlan.plan_id}
+            </span>
+          )}
         </div>
-
-        {/* Error / Status Feedback */}
-        {errorMsg && (
-          <div style={{ background: "rgba(240, 99, 107, 0.15)", border: "1px solid rgba(240, 99, 107, 0.4)", color: "#fca5a5", padding: "6px 10px", borderRadius: "4px", fontSize: "11px" }}>
-            ⚠️ {errorMsg}
-          </div>
-        )}
-        {statusFeedback && (
-          <div style={{ background: "rgba(62, 207, 142, 0.15)", border: "1px solid rgba(62, 207, 142, 0.4)", color: "var(--status-success)", padding: "6px 10px", borderRadius: "4px", fontSize: "11px" }}>
-            ✓ {statusFeedback}
-          </div>
-        )}
-      </div>
+      )}
 
       {/* DAG Plan Metrics Banner */}
-      {currentPlan && (
+      {activePlan && (
         <div className="dag-metrics-banner">
           <div className="dag-metric-item">
             <span className="dag-metric-label">Plan ID:</span>
             <span className="dag-metric-val" style={{ color: "var(--accent)" }}>
-              {currentPlan.plan_id}
+              {activePlan.plan_id}
             </span>
           </div>
 
           <div className="dag-metric-item">
             <span className="dag-metric-label">Total Nodes:</span>
-            <span className="dag-metric-val">{currentPlan.total_nodes || currentPlan.nodes.length}</span>
+            <span className="dag-metric-val">{activePlan.total_nodes || activePlan.nodes.length}</span>
           </div>
 
           <div className="dag-metric-item">
             <span className="dag-metric-label">Parallel Roots:</span>
             <span className="dag-metric-val" style={{ color: "var(--status-success)" }}>
-              {currentPlan.parallel_roots ? currentPlan.parallel_roots.length : groupedColumns[0]?.nodes.length || 0}
+              {activePlan.parallel_roots ? activePlan.parallel_roots.length : groupedColumns[0]?.nodes.length || 0}
             </span>
           </div>
 
           <div className="dag-metric-item">
             <span className="dag-metric-label">Convergence Nodes:</span>
             <span className="dag-metric-val">
-              {currentPlan.convergence_nodes ? currentPlan.convergence_nodes.length : 0}
+              {activePlan.convergence_nodes ? activePlan.convergence_nodes.length : 0}
             </span>
           </div>
 
           <div className="dag-metric-item">
             <span className="dag-metric-label">Status:</span>
-            <div style={{ display: "flex", gap: "4px" }}>
+            <div style={{ display: "flex", gap: "4px", flexWrap: "wrap" }}>
               <span className="dag-status-pill queued">{statusCounts.queued} Queued</span>
               <span className="dag-status-pill running">{statusCounts.running} Running</span>
               <span className="dag-status-pill success">{statusCounts.success} Success</span>
@@ -656,6 +795,12 @@ export default function TaskGraphView({
               )}
               {statusCounts.failed > 0 && (
                 <span className="dag-status-pill failed">{statusCounts.failed} Failed</span>
+              )}
+              {statusCounts.skipped > 0 && (
+                <span className="dag-status-pill skipped">{statusCounts.skipped} Skipped</span>
+              )}
+              {statusCounts.blocked > 0 && (
+                <span className="dag-status-pill blocked">{statusCounts.blocked} Blocked</span>
               )}
             </div>
           </div>
@@ -680,7 +825,7 @@ export default function TaskGraphView({
                 fontSize: "10px",
                 color: readyNodeIds.length > 0 ? "var(--status-success)" : undefined,
               }}
-              onClick={() => currentPlan && fetchReadyNodes(currentPlan.plan_id)}
+              onClick={() => activePlan && fetchReadyNodes(activePlan.plan_id)}
               title="Query ready nodes whose dependencies are satisfied"
             >
               Ready to Run ({readyNodeIds.length})
@@ -691,7 +836,7 @@ export default function TaskGraphView({
                 padding: "3px 8px",
                 fontSize: "10px",
               }}
-              onClick={() => currentPlan && handleGenerateReport(currentPlan.plan_id)}
+              onClick={() => activePlan && handleGenerateReport(activePlan.plan_id)}
               disabled={isGeneratingReport}
               title="Generate final security report with failure-aware recovery lineage and SHA-256 artifacts"
             >
@@ -700,7 +845,7 @@ export default function TaskGraphView({
             <button
               className="quick-btn secondary"
               style={{ padding: "3px 8px", fontSize: "10px" }}
-              onClick={() => currentPlan && loadPlan(currentPlan.plan_id)}
+              onClick={() => activePlan && loadPlan(activePlan.plan_id)}
               title="Reload plan"
             >
               🔄 Refresh
@@ -710,8 +855,8 @@ export default function TaskGraphView({
       )}
 
       {/* DAG Visual Canvas / Columns */}
-      <div className="dag-canvas-container">
-        {!currentPlan ? (
+      <div className="dag-canvas-container" style={isEmbedded ? { minHeight: "280px", maxHeight: "480px" } : undefined}>
+        {!activePlan ? (
           <div style={{ textAlign: "center", color: "var(--text-muted)", marginTop: "80px" }}>
             <div style={{ fontSize: "28px", marginBottom: "12px" }}>🕸️</div>
             <h3 style={{ color: "#e2e8f0", marginBottom: "6px" }}>No Task Graph Loaded</h3>
@@ -775,9 +920,51 @@ export default function TaskGraphView({
                         🎯 {node.capability}
                       </div>
 
+                      {/* Tool Pill */}
+                      {node.assigned_tool && (
+                        <div
+                          style={{
+                            display: "inline-flex",
+                            alignItems: "center",
+                            gap: "4px",
+                            fontSize: "10px",
+                            fontFamily: "var(--font-mono, monospace)",
+                            background: "rgba(56, 189, 248, 0.12)",
+                            color: "#38bdf8",
+                            border: "1px solid rgba(56, 189, 248, 0.3)",
+                            borderRadius: "4px",
+                            padding: "2px 6px",
+                            width: "fit-content",
+                            fontWeight: 600,
+                          }}
+                        >
+                          🔧 Tool: {node.assigned_tool}
+                        </div>
+                      )}
+
                       {/* Node Title & Description */}
                       <div className="dag-node-label">{node.label}</div>
                       <div className="dag-node-desc">{node.description}</div>
+
+                      {/* Why this tool was chosen rationale */}
+                      {node.rationale && (
+                        <div
+                          style={{
+                            fontSize: "10px",
+                            color: "#94a3b8",
+                            fontStyle: "italic",
+                            lineHeight: "1.35",
+                            background: "rgba(255, 255, 255, 0.03)",
+                            borderLeft: "2px solid rgba(56, 189, 248, 0.5)",
+                            padding: "3px 6px",
+                            borderRadius: "0 4px 4px 0",
+                            marginTop: "2px",
+                          }}
+                          title={node.rationale}
+                        >
+                          💡 Why: {node.rationale}
+                        </div>
+                      )}
 
                       {/* Dependencies */}
                       <div className="dag-deps-box">
@@ -788,7 +975,7 @@ export default function TaskGraphView({
                           </span>
                         ) : (
                           node.dependencies.map((depId) => {
-                            const depNode = currentPlan.nodes.find((n) => n.node_id === depId);
+                            const depNode = activePlan.nodes.find((n) => n.node_id === depId);
                             const depStatus = depNode?.status || "unknown";
                             return (
                               <span

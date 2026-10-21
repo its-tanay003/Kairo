@@ -1038,6 +1038,13 @@ class AgentLoop:
             "timestamp": datetime.now(timezone.utc).isoformat(),
         }
 
+        if plan_id:
+            try:
+                from events.db import get_plan
+                step_payload["plan"] = get_plan(plan_id, self.db_path)
+            except Exception:
+                pass
+
         # 1. Post to Gateway streaming endpoint (port 4000)
         gateway_http = os.environ.get("GATEWAY_HTTP", "http://127.0.0.1:4000")
         try:
@@ -1867,6 +1874,24 @@ class AgentLoop:
                         tool_selection_data = {}
                         logger.warning(f"Could not calculate candidate scores: {e}")
 
+                    step_rationale = ""
+                    if tool_selection_data:
+                        step_rationale = tool_selection_data.get("selection_reason") or ""
+                        sel_tool_dict = tool_selection_data.get("selected_tool") or {}
+                        if sel_tool_dict.get("summary_rationale"):
+                            step_rationale = f"{step_rationale} {sel_tool_dict.get('summary_rationale')}".strip()
+                    if not step_rationale:
+                        step_rationale = f"Selected {selected_tool} satisfying capability '{capability}' based on DAG node specifications."
+
+                    # Mark node as running in database
+                    update_node_status(
+                        plan_id=plan_id,
+                        node_id=node_id,
+                        status="running",
+                        assigned_tool=selected_tool,
+                        db_path=self.db_path,
+                    )
+
                     node_prov: Dict[str, Any] = {}
                     # 3. Execute step's tool via the SAME adapter_registry.get() / adapter.execute() path
                     step_exec_result = self._execute_single_tool(
@@ -1933,6 +1958,7 @@ class AgentLoop:
                             observation = exec_details.get("observation") or {}
                             artifacts = exec_details.get("artifacts") or []
                             node_status = "success"
+                            step_rationale = f"Primary tool failed (exit {exit_code}); recovered with fallback '{fb_tool}' for '{capability}'."
 
                     # Update node status in DB
                     update_node_status(
@@ -1945,6 +1971,8 @@ class AgentLoop:
                             "exit_code": exit_code,
                             "command_line": exec_details.get("command_line", ""),
                             "duration_ms": duration_ms,
+                            "rationale": step_rationale,
+                            "tool_selection": tool_selection_data,
                             "observation": observation if node_status == "success" else {},
                         },
                         assigned_tool=selected_tool,
@@ -1977,6 +2005,8 @@ class AgentLoop:
                         typed_invocation=exec_details.get("typed_invocation"),
                         findings_count=len(context.findings),
                         artifacts=artifacts,
+                        rationale=step_rationale,
+                        tool_selection=tool_selection_data,
                     )
                     nodes_executed.append(node_exec)
                     executed_steps.append(step_exec_result)
@@ -2178,6 +2208,18 @@ class AgentLoop:
             })
             if "exit_code" not in first_details:
                 first_details["exit_code"] = 0 if overall_status in ("completed", "partial") and len(completed_nodes) > 0 else 1
+
+            # Fetch refreshed plan DAG from database with updated node statuses, tools, and rationales
+            updated_plan = get_plan(plan_id, self.db_path)
+            if updated_plan:
+                plan_dict = updated_plan
+            else:
+                for node_item in plan_dict.get("nodes", []):
+                    for n_exec in nodes_executed:
+                        if n_exec.node_id == node_item.get("node_id"):
+                            node_item["status"] = n_exec.status
+                            node_item["assigned_tool"] = n_exec.tool_id
+                            node_item["rationale"] = getattr(n_exec, "rationale", None)
 
             ret_dict = {
                 "intent": "tool_request" if (is_single_node and intent_res.intent == IntentType.TOOL_REQUEST) else "task_request",

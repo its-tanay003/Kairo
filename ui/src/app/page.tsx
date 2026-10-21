@@ -272,6 +272,7 @@ export default function Home() {
   // Messages and Input
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [inputVal, setInputVal] = useState<string>("");
+  const [latestPlan, setLatestPlan] = useState<ClaudeTaskPlan | null>(null);
 
   // Drawer and Dialogs State
   const [isAdvancedOpen, setIsAdvancedOpen] = useState<boolean>(false);
@@ -535,6 +536,9 @@ export default function Home() {
           } else if (data.type === "agent_response") {
             setActiveTaskId(null);
             setRunningToolName(null);
+            if (data.plan) {
+              setLatestPlan(data.plan);
+            }
             if (data.modelId) {
               const found = AVAILABLE_MODELS.find((m) => m.id === data.modelId);
               if (found) {
@@ -600,6 +604,14 @@ export default function Home() {
                 timestamp: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
               },
             ]);
+          } else if (
+            data.type === "planner_plan_created" ||
+            data.type === "planner_plan_updated" ||
+            data.type === "planner_plan_details"
+          ) {
+            if (data.plan) {
+              setLatestPlan(data.plan);
+            }
           } else if (data.type === "error") {
             setActiveTaskId(null);
             setRunningToolName(null);
@@ -1113,6 +1125,11 @@ export default function Home() {
                           textareaRef.current?.focus();
                         }}
                         onOpenConsole={(toolId) => openToolInConsole(toolId)}
+                        onOpenGraph={(plan) => {
+                          setLatestPlan(plan);
+                          setAdvancedTab("graph");
+                          setIsAdvancedOpen(true);
+                        }}
                       />
                     ) : (
                       <div className="system-notice">{m.text}</div>
@@ -1573,7 +1590,7 @@ export default function Home() {
                 {advancedTab === "graph" && (
                   <div style={{ height: "100%", display: "flex", flexDirection: "column" }}>
                     <div style={{ flex: 1, minHeight: "450px" }}>
-                      <TaskGraphView ws={wsInstance} activeSessionId={sessionId} />
+                      <TaskGraphView ws={wsInstance} activeSessionId={sessionId} plan={latestPlan} />
                     </div>
                   </div>
                 )}

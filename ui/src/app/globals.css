@@ -2168,6 +2168,17 @@ body {
   background-color: rgba(240, 99, 107, 0.15);
 }
 
+.dag-status-pill.skipped {
+  color: #94a3b8;
+  background-color: rgba(148, 163, 184, 0.15);
+}
+
+.dag-status-pill.blocked {
+  color: #f87171;
+  background-color: rgba(248, 113, 113, 0.15);
+}
+
+
 .dag-canvas-container {
   flex: 1;
   overflow: auto;

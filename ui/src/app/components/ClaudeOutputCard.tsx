@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useState } from "react";
+import TaskGraphView from "./TaskGraphView";
 
 export interface ClaudeProcessMeta {
   title?: string;
@@ -117,12 +118,20 @@ export interface ClaudeStepProvenanceItem {
 
 export interface ClaudeTaskPlanNode {
   node_id: string;
+  label?: string;
+  description?: string;
   capability?: string;
   tool_name?: string;
+  assigned_tool?: string;
+  rationale?: string;
   target?: string;
   parameters?: Record<string, unknown>;
   dependencies?: string[];
-  status?: string;
+  status?: "queued" | "running" | "success" | "warning" | "failed" | "skipped" | "blocked" | string;
+  depth_level?: number;
+  exit_code?: number;
+  duration_ms?: number;
+  result?: Record<string, unknown> | string;
 }
 
 export interface ClaudeTaskPlanEdge {
@@ -187,6 +196,7 @@ export interface ClaudeOutputCardProps {
   handledByFallback?: boolean;
   onRunPrompt?: (prompt: string) => void;
   onOpenConsole?: (toolId?: string) => void;
+  onOpenGraph?: (plan: ClaudeTaskPlan) => void;
 }
 
 export default function ClaudeOutputCard({
@@ -217,6 +227,7 @@ export default function ClaudeOutputCard({
   handledByFallback,
   onRunPrompt,
   onOpenConsole,
+  onOpenGraph,
 }: ClaudeOutputCardProps) {
   // Merged synthesis from prop or execution payload
   const synth = propSynthesis || execution?.synthesis;
@@ -236,6 +247,7 @@ export default function ClaudeOutputCard({
   const effValidatedArgs = validatedArgs || modelVerification?.validated_args || execution?.args;
 
   // Local state for expandable sections
+  const [planViewMode, setPlanViewMode] = useState<"list" | "graph">("list");
   const [isThinkingOpen, setIsThinkingOpen] = useState<boolean>(false);
   const [isModelVerifiedOpen, setIsModelVerifiedOpen] = useState<boolean>(false);
   const [activeStepTab, setActiveStepTab] = useState<"overview" | "terminal" | "telemetry">("overview");
@@ -1016,12 +1028,14 @@ export default function ClaudeOutputCard({
         <div
           style={{
             margin: "12px 0",
-            border: "1px solid rgba(168, 85, 247, 0.25)",
+            border: "1px solid rgba(168, 85, 247, 0.3)",
             borderRadius: "10px",
-            background: "linear-gradient(135deg, rgba(30, 27, 75, 0.45) 0%, rgba(15, 23, 42, 0.6) 100%)",
+            background: "linear-gradient(135deg, rgba(30, 27, 75, 0.5) 0%, rgba(15, 23, 42, 0.7) 100%)",
             overflow: "hidden",
+            boxShadow: "0 4px 16px rgba(0, 0, 0, 0.25)",
           }}
         >
+          {/* Plan Header */}
           <div
             style={{
               padding: "10px 14px",
@@ -1037,7 +1051,7 @@ export default function ClaudeOutputCard({
             <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
               <span style={{ fontSize: "16px" }}>🗺️</span>
               <strong style={{ color: "#f3e8ff", fontSize: "13px" }}>
-                {planOnly ? "Plan-Only Request (Zero Execution)" : "Structured Task Plan (DAG)"}
+                {planOnly ? "Plan-Only Request (Zero Execution)" : "Structured Task Execution Plan"}
               </strong>
               <span
                 style={{
@@ -1050,92 +1064,271 @@ export default function ClaudeOutputCard({
                   fontWeight: 600,
                 }}
               >
-                {planOnly ? "EXPLAIN PLAN • EXECUTE NOTHING" : "ACTIVE TASK DECOMPOSITION"}
+                {planOnly ? "PLAN ONLY" : plan?.status ? String(plan.status).toUpperCase() : "TASK DAG"}
+              </span>
+              <span style={{ fontSize: "11px", color: "#c084fc", fontFamily: "monospace" }}>
+                {(plan?.nodes || []).length} steps
               </span>
             </div>
-            <span style={{ fontSize: "11px", color: "#c084fc", fontFamily: "monospace" }}>
-              Nodes: {(plan?.nodes || []).length} | Edges: {(plan?.edges || []).length}
-            </span>
-          </div>
 
-          <div style={{ padding: "12px 14px", display: "flex", flexDirection: "column", gap: "8px" }}>
-            {(plan?.nodes || []).map((node: ClaudeTaskPlanNode, nIdx: number) => (
+            <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+              {/* View Switcher: Step List vs Graph Canvas */}
               <div
-                key={nIdx}
                 style={{
-                  display: "flex",
-                  alignItems: "center",
-                  justifyContent: "space-between",
-                  background: "rgba(15, 23, 42, 0.65)",
-                  border: "1px solid rgba(255, 255, 255, 0.06)",
+                  display: "inline-flex",
+                  background: "rgba(0, 0, 0, 0.35)",
                   borderRadius: "6px",
-                  padding: "8px 12px",
-                  fontSize: "12px",
-                  gap: "10px",
+                  padding: "2px",
+                  border: "1px solid rgba(255, 255, 255, 0.08)",
                 }}
               >
-                <div style={{ display: "flex", alignItems: "center", gap: "8px", minWidth: "140px" }}>
-                  <span
+                <button
+                  type="button"
+                  style={{
+                    background: planViewMode === "list" ? "rgba(168, 85, 247, 0.3)" : "transparent",
+                    color: planViewMode === "list" ? "#f3e8ff" : "#94a3b8",
+                    border: "none",
+                    padding: "3px 8px",
+                    borderRadius: "4px",
+                    fontSize: "11px",
+                    cursor: "pointer",
+                    fontWeight: 600,
+                    transition: "all 0.15s ease",
+                  }}
+                  onClick={() => setPlanViewMode("list")}
+                >
+                  📋 Step List
+                </button>
+                <button
+                  type="button"
+                  style={{
+                    background: planViewMode === "graph" ? "rgba(168, 85, 247, 0.3)" : "transparent",
+                    color: planViewMode === "graph" ? "#f3e8ff" : "#94a3b8",
+                    border: "none",
+                    padding: "3px 8px",
+                    borderRadius: "4px",
+                    fontSize: "11px",
+                    cursor: "pointer",
+                    fontWeight: 600,
+                    transition: "all 0.15s ease",
+                  }}
+                  onClick={() => setPlanViewMode("graph")}
+                >
+                  🕸️ Graph View
+                </button>
+              </div>
+
+              {/* Pop open in full Drawer if callback available */}
+              {onOpenGraph && (
+                <button
+                  type="button"
+                  style={{
+                    background: "rgba(255, 255, 255, 0.06)",
+                    color: "#e2e8f0",
+                    border: "1px solid rgba(255, 255, 255, 0.15)",
+                    padding: "3px 8px",
+                    borderRadius: "6px",
+                    fontSize: "11px",
+                    cursor: "pointer",
+                    display: "flex",
+                    alignItems: "center",
+                    gap: "4px",
+                  }}
+                  onClick={() => {
+                    if (plan) onOpenGraph(plan);
+                  }}
+                  title="Open full interactive DAG canvas in Advanced Drawer"
+                >
+                  <span>↗</span>
+                  <span>Open in Canvas</span>
+                </button>
+              )}
+            </div>
+          </div>
+
+          {/* Mode 1: Step List with Tool & Rationale */}
+          {planViewMode === "list" && (
+            <div style={{ padding: "12px 14px", display: "flex", flexDirection: "column", gap: "10px" }}>
+              {(plan?.nodes || []).map((node: ClaudeTaskPlanNode, nIdx: number) => {
+                const nodeStatus = (node.status || "queued").toLowerCase();
+                const toolName = node.assigned_tool || node.tool_name;
+                const rationaleText = node.rationale;
+
+                // Status badge styling helper
+                const getStatusStyle = (st: string) => {
+                  switch (st) {
+                    case "success":
+                    case "completed":
+                      return { bg: "rgba(16, 185, 129, 0.15)", border: "rgba(16, 185, 129, 0.3)", color: "#34d399", label: "✓ Success" };
+                    case "running":
+                      return { bg: "rgba(59, 130, 246, 0.15)", border: "rgba(59, 130, 246, 0.3)", color: "#60a5fa", label: "⚙️ Running" };
+                    case "failed":
+                      return { bg: "rgba(239, 68, 68, 0.15)", border: "rgba(239, 68, 68, 0.3)", color: "#f87171", label: "✖ Failed" };
+                    case "warning":
+                      return { bg: "rgba(245, 158, 11, 0.15)", border: "rgba(245, 158, 11, 0.3)", color: "#fbbf24", label: "⚠ Warning" };
+                    case "skipped":
+                      return { bg: "rgba(148, 163, 184, 0.15)", border: "rgba(148, 163, 184, 0.3)", color: "#94a3b8", label: "⏭ Skipped" };
+                    case "blocked":
+                      return { bg: "rgba(244, 63, 94, 0.15)", border: "rgba(244, 63, 94, 0.3)", color: "#fda4af", label: "⛔ Blocked" };
+                    case "queued":
+                    default:
+                      return { bg: "rgba(148, 163, 184, 0.1)", border: "rgba(148, 163, 184, 0.2)", color: "#94a3b8", label: "⏳ Queued" };
+                  }
+                };
+                const statusStyle = getStatusStyle(nodeStatus);
+
+                return (
+                  <div
+                    key={node.node_id || nIdx}
                     style={{
-                      width: "20px",
-                      height: "20px",
-                      borderRadius: "50%",
-                      background: "rgba(168, 85, 247, 0.2)",
-                      color: "#c084fc",
                       display: "flex",
-                      alignItems: "center",
-                      justifyContent: "center",
-                      fontSize: "10px",
-                      fontWeight: 700,
+                      flexDirection: "column",
+                      background: "rgba(15, 23, 42, 0.75)",
+                      border: "1px solid rgba(255, 255, 255, 0.08)",
+                      borderRadius: "8px",
+                      padding: "10px 14px",
+                      fontSize: "12px",
+                      gap: "8px",
+                      transition: "border-color 0.15s ease",
                     }}
                   >
-                    {nIdx + 1}
-                  </span>
-                  <code style={{ color: "#e2e8f0", fontSize: "11px" }}>{node.node_id}</code>
-                </div>
+                    {/* Top Row: Index, ID, Capability & Status */}
+                    <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: "8px" }}>
+                      <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                        <span
+                          style={{
+                            width: "22px",
+                            height: "22px",
+                            borderRadius: "50%",
+                            background: "rgba(168, 85, 247, 0.2)",
+                            color: "#c084fc",
+                            display: "flex",
+                            alignItems: "center",
+                            justifyContent: "center",
+                            fontSize: "11px",
+                            fontWeight: 700,
+                          }}
+                        >
+                          {nIdx + 1}
+                        </span>
+                        <code style={{ color: "#e2e8f0", fontSize: "11px", fontWeight: 600 }}>
+                          #{node.node_id}
+                        </code>
+                        <span style={{ color: "#f8fafc", fontWeight: 600, fontSize: "12px" }}>
+                          {node.label || node.capability}
+                        </span>
+                      </div>
 
-                <div style={{ flex: 1, display: "flex", flexDirection: "column", gap: "2px" }}>
-                  <div style={{ color: "#f8fafc", fontWeight: 600, fontSize: "12px" }}>
-                    {node.capability || node.tool_name}
-                  </div>
-                  <div style={{ color: "#94a3b8", fontSize: "11px" }}>
-                    Target: <code>{node.target || scopeTarget}</code>
-                    {node.dependencies && node.dependencies.length > 0 && (
-                      <span style={{ marginLeft: "8px", color: "#a855f7" }}>
-                        Depends on: {node.dependencies.join(", ")}
+                      <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
+                        <span
+                          style={{
+                            fontSize: "10px",
+                            padding: "2px 8px",
+                            borderRadius: "10px",
+                            fontWeight: 600,
+                            background: statusStyle.bg,
+                            color: statusStyle.color,
+                            border: `1px solid ${statusStyle.border}`,
+                          }}
+                        >
+                          {statusStyle.label}
+                        </span>
+                      </div>
+                    </div>
+
+                    {/* Description if present */}
+                    {node.description && (
+                      <div style={{ color: "#94a3b8", fontSize: "11px", lineHeight: "1.4" }}>
+                        {node.description}
+                      </div>
+                    )}
+
+                    {/* Middle Row: Tool Badge & Target */}
+                    <div style={{ display: "flex", alignItems: "center", flexWrap: "wrap", gap: "8px" }}>
+                      {toolName ? (
+                        <div
+                          style={{
+                            display: "inline-flex",
+                            alignItems: "center",
+                            gap: "5px",
+                            fontSize: "11px",
+                            fontFamily: "var(--font-mono, monospace)",
+                            background: "rgba(56, 189, 248, 0.12)",
+                            color: "#38bdf8",
+                            border: "1px solid rgba(56, 189, 248, 0.3)",
+                            borderRadius: "4px",
+                            padding: "2px 7px",
+                            fontWeight: 600,
+                          }}
+                        >
+                          <span>🔧 Tool:</span>
+                          <span>{toolName}</span>
+                        </div>
+                      ) : (
+                        <span style={{ fontSize: "11px", color: "var(--text-muted)" }}>
+                          Capability: {node.capability || "General"}
+                        </span>
+                      )}
+
+                      <span style={{ fontSize: "11px", color: "#64748b" }}>&bull;</span>
+                      <span style={{ color: "#94a3b8", fontSize: "11px" }}>
+                        Target: <code style={{ color: "#cbd5e1" }}>{node.target || scopeTarget}</code>
                       </span>
+
+                      {node.dependencies && node.dependencies.length > 0 && (
+                        <>
+                          <span style={{ fontSize: "11px", color: "#64748b" }}>&bull;</span>
+                          <span style={{ color: "#a855f7", fontSize: "11px" }}>
+                            Depends on: {node.dependencies.map((d) => `#${d}`).join(", ")}
+                          </span>
+                        </>
+                      )}
+                    </div>
+
+                    {/* Why this tool was chosen Rationale */}
+                    {rationaleText && (
+                      <div
+                        style={{
+                          fontSize: "11px",
+                          color: "#cbd5e1",
+                          fontStyle: "italic",
+                          background: "rgba(56, 189, 248, 0.05)",
+                          borderLeft: "3px solid #38bdf8",
+                          padding: "6px 10px",
+                          borderRadius: "0 6px 6px 0",
+                          lineHeight: "1.4",
+                        }}
+                      >
+                        <span style={{ fontWeight: 600, fontStyle: "normal", color: "#38bdf8", marginRight: "6px" }}>
+                          💡 Why Chosen:
+                        </span>
+                        {rationaleText}
+                      </div>
+                    )}
+
+                    {/* Duration / Exit Code info if available */}
+                    {(typeof node.duration_ms === "number" || typeof node.exit_code === "number") && (
+                      <div style={{ display: "flex", gap: "10px", fontSize: "10px", color: "#64748b", fontFamily: "var(--font-mono, monospace)" }}>
+                        {typeof node.duration_ms === "number" && (
+                          <span>Duration: {(node.duration_ms / 1000).toFixed(2)}s</span>
+                        )}
+                        {typeof node.exit_code === "number" && (
+                          <span>Exit Code: {node.exit_code}</span>
+                        )}
+                      </div>
                     )}
                   </div>
-                </div>
+                );
+              })}
+            </div>
+          )}
 
-                <div>
-                  <span
-                    style={{
-                      fontSize: "10px",
-                      padding: "2px 8px",
-                      borderRadius: "10px",
-                      fontWeight: 600,
-                      background:
-                        node.status === "COMPLETED"
-                          ? "rgba(16, 185, 129, 0.15)"
-                          : node.status === "RUNNING"
-                          ? "rgba(59, 130, 246, 0.15)"
-                          : "rgba(148, 163, 184, 0.15)",
-                      color:
-                        node.status === "COMPLETED"
-                          ? "#34d399"
-                          : node.status === "RUNNING"
-                          ? "#60a5fa"
-                          : "#94a3b8",
-                      border: "1px solid rgba(255, 255, 255, 0.08)",
-                    }}
-                  >
-                    {node.status || "PENDING"}
-                  </span>
-                </div>
-              </div>
-            ))}
-          </div>
+          {/* Mode 2: Interactive Embedded Task Graph Canvas */}
+          {planViewMode === "graph" && (
+            <div style={{ padding: "0" }}>
+              <TaskGraphView plan={plan} isEmbedded={true} activeSessionId={messageId} />
+            </div>
+          )}
         </div>
       )}
 

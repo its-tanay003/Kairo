@@ -322,6 +322,35 @@ const server = http.createServer(async (req, res) => {
     }
   }
 
+  // Planner routes: /planner/decompose, /planner/plans, /planner/plans/:id, /planner/plans/:id/ready, etc.
+  if (url.pathname.startsWith("/planner")) {
+    try {
+      const targetUrl = `${ORCHESTRATOR_URL}${url.pathname}${url.search}`;
+      if (req.method === "POST" || req.method === "PUT") {
+        const body = await parseJsonBody(req);
+        const response = await fetch(targetUrl, {
+          method: req.method,
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(body),
+        });
+        const data = await response.json();
+        res.writeHead(response.status, { "Content-Type": "application/json" });
+        res.end(JSON.stringify(data));
+        return;
+      } else {
+        const response = await fetch(targetUrl);
+        const data = await response.json();
+        res.writeHead(response.status, { "Content-Type": "application/json" });
+        res.end(JSON.stringify(data));
+        return;
+      }
+    } catch (err: any) {
+      res.writeHead(502, { "Content-Type": "application/json" });
+      res.end(JSON.stringify({ error: `Planner Proxy error: ${err.message}` }));
+      return;
+    }
+  }
+
   // Screen / VNC routes: /screen/status, /screen/snapshot.png
   if (url.pathname.startsWith("/screen/")) {
     try {

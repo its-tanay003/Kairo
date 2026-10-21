@@ -362,6 +362,8 @@ class DAGNodeExecution:
     recovery_path: List[Dict[str, Any]] = field(default_factory=list)
     findings_count: int = 0
     artifacts: List[str] = field(default_factory=list)
+    rationale: Optional[str] = None
+    tool_selection: Optional[Dict[str, Any]] = None
 
     def to_dict(self) -> Dict[str, Any]:
         return asdict(self)
