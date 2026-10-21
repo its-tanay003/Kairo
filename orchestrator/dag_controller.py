@@ -29,18 +29,24 @@ from typing import Any, Callable, Dict, List, Optional, Tuple
 from events.db import (
     DEFAULT_DB_PATH,
     Event,
+    add_node_to_plan,
     get_connection,
     get_plan,
     get_ready_nodes,
     init_db,
     insert_event,
+    record_trajectory,
     update_node_status,
 )
 from orchestrator.adapters.base import ToolObservation
 from orchestrator.adapters.registry import adapter_registry
-from orchestrator.evidence_store import EvidenceStore, Finding
+from orchestrator.evidence_store import EvidenceStore, Finding, CommandEvidence, NetworkEvidence
 from orchestrator.intent_classifier import StepProvenance
 from orchestrator.tool_selector import CAPABILITY_TOOL_AFFINITY
+from orchestrator.observer import observer
+from orchestrator.critic import critic
+from orchestrator.recovery_agent import recovery_agent
+from orchestrator.conversational_synthesizer import conversational_synthesizer
 
 logger = logging.getLogger("orchestrator.dag_controller")
 
@@ -431,6 +437,7 @@ class DAGExecutionResult:
     step_provenance: List[Dict[str, Any]]
     reply: str
     synthesis: Dict[str, Any]
+    next_step_recommendations: List[Dict[str, Any]] = field(default_factory=list)
 
     @property
     def success(self) -> bool:
@@ -476,6 +483,7 @@ class DAGExecutionResult:
         d["nodes_skipped"] = self.skipped_count
         d["evidence"] = asdict(self.evidence)
         d["synthesis_report"] = self.reply
+        d["next_step_recommendations"] = self.next_step_recommendations
         return d
 
 
@@ -677,7 +685,72 @@ class DAGController:
         else:
             args = {"target": tgt}
 
+        # Dynamically inject structured upstream evidence and resolve placeholder parameters
+        args = self._resolve_arguments_from_evidence(node, selected_tool, args, context)
+
         return selected_tool, args, candidates[1] if len(candidates) > 1 else selected_tool
+
+    def _resolve_arguments_from_evidence(
+        self,
+        node: Dict[str, Any],
+        selected_tool: str,
+        default_args: Dict[str, Any],
+        context: EvidenceContext,
+    ) -> Dict[str, Any]:
+        """
+        Dynamically resolves placeholders and injects structured findings from upstream steps.
+        Supported placeholders:
+        - {{target}} / <target> -> context.target
+        - {{target_ip}} / <target_ip> -> context.target_ip or context.target
+        - {{url}} / <url> -> context.get_primary_web_url()
+        - {{ports}} / <ports> -> context.get_open_ports_str()
+        - {{domain}} / <domain> -> cleaned target domain
+        - {{service}} / <service> -> primary detected service
+        - {{query}} / <query> -> context.get_service_query()
+        """
+        resolved = dict(default_args)
+        node_args = node.get("arguments") or node.get("params") or {}
+
+        clean_domain = re.sub(r"^https?://", "", context.target).split("/")[0].split(":")[0]
+
+        replacements = {
+            "{{target}}": context.target,
+            "<target>": context.target,
+            "{{target_ip}}": context.target_ip or context.target,
+            "<target_ip>": context.target_ip or context.target,
+            "{{url}}": context.get_primary_web_url(),
+            "<url>": context.get_primary_web_url(),
+            "{{ports}}": context.get_open_ports_str(),
+            "<ports>": context.get_open_ports_str(),
+            "{{domain}}": clean_domain,
+            "<domain>": clean_domain,
+            "{{service}}": context.get_primary_auth_service()[0] if context.has_auth_service() else "http",
+            "<service>": context.get_primary_auth_service()[0] if context.has_auth_service() else "http",
+            "{{query}}": context.get_service_query(),
+            "<query>": context.get_service_query(),
+        }
+
+        for k, v in node_args.items():
+            if isinstance(v, str):
+                val = v
+                for placeholder, rep in replacements.items():
+                    if placeholder in val:
+                        val = val.replace(placeholder, str(rep))
+                resolved[k] = val
+            elif v is not None:
+                resolved[k] = v
+
+        # If tool requires URL and url is empty or default, inject from context
+        if "url" in resolved and not resolved["url"]:
+            resolved["url"] = context.get_primary_web_url()
+        elif selected_tool in ("gobuster.dir.v1", "ffuf.fuzz.v1", "nikto.scan.v1", "wpscan.audit.v1") and "url" not in resolved:
+            resolved["url"] = context.get_primary_web_url()
+
+        # If tool requires ports and ports is missing/generic, inject from context if open ports known
+        if selected_tool == "nmap.scan.v1" and context.open_ports and ("service" in str(node.get("capability", "")).lower() or "version" in str(node.get("capability", "")).lower()):
+            resolved["ports"] = context.get_open_ports_str()
+
+        return resolved
 
     def execute_node(
         self,
@@ -896,6 +969,44 @@ class DAGController:
             evidence_store=self.evidence_store,
         )
 
+        # Store CommandEvidence in EvidenceStore
+        try:
+            cmd_ev = CommandEvidence(
+                evidence_id=f"cmd_{uuid.uuid4().hex[:10]}",
+                title=f"Command execution of {tool_to_run} ({node_id})",
+                task_id=f"{plan_id}_{node_id}",
+                session_id=session_id,
+                plan_id=plan_id,
+                command_line=cmd_line if "cmd_line" in locals() else tool_to_run,
+                stdout=stdout,
+                stderr=stderr,
+                exit_code=exit_code,
+                duration_ms=total_duration_ms,
+            )
+            self.evidence_store.store_evidence(cmd_ev)
+        except Exception as e:
+            logger.debug(f"[DAGController] Could not store CommandEvidence: {e}")
+
+        # Store NetworkEvidence in EvidenceStore for discovered ports
+        if node_success and context.open_ports:
+            try:
+                for p in context.open_ports:
+                    p_info = context.services.get(f"{p}/tcp", {}) if isinstance(context.services, dict) else {}
+                    net_ev = NetworkEvidence(
+                        evidence_id=f"net_{uuid.uuid4().hex[:10]}",
+                        title=f"Port {p}/tcp open on {context.target}",
+                        task_id=f"{plan_id}_{node_id}",
+                        session_id=session_id,
+                        plan_id=plan_id,
+                        host=context.target_ip or context.target,
+                        port=p,
+                        service=p_info.get("service") if isinstance(p_info, dict) else "unknown",
+                        banner=p_info.get("product") or p_info.get("version") if isinstance(p_info, dict) else None,
+                    )
+                    self.evidence_store.store_evidence(net_ev)
+            except Exception as e:
+                logger.debug(f"[DAGController] Could not store NetworkEvidence: {e}")
+
         result_payload = {
             "tool_id": tool_to_run,
             "status": final_status,
@@ -973,6 +1084,8 @@ class DAGController:
         max_steps: int = 50,
         stop_on_critical_failure: bool = True,
         db_path: Optional[Path | str] = None,
+        adaptive: bool = False,
+        **kwargs,
     ) -> DAGExecutionResult:
         """
         Executes a multi-step task graph from beginning to end without user manual intervention:
@@ -1080,6 +1193,10 @@ class DAGController:
                     },
                 ).to_dict())
 
+                # Adaptive Re-Planning: Propose/append follow-up nodes if new attack surface discovered
+                if (adaptive or kwargs.get("adaptive") or kwargs.get("auto_adapt")) and exec_record.status == "success":
+                    self._adapt_plan_if_new_attack_surface(plan_id, context, nodes_executed, effective_db)
+
                 if exec_record.status == "failed":
                     consecutive_failures += 1
                     if stop_on_critical_failure and consecutive_failures >= 3:
@@ -1125,6 +1242,28 @@ class DAGController:
             duration_s=round(total_duration_ms / 1000, 2),
         )
 
+        recs = synthesis_result.get("next_step_recommendations", [])
+
+        # Record trajectory for model evolution & continuous learning
+        try:
+            record_trajectory(
+                session_id=session_id,
+                plan_id=plan_id,
+                goal=effective_goal,
+                target=effective_target,
+                steps=[n.to_dict() for n in nodes_executed],
+                recommendations=recs,
+                success=overall_status in ("completed", "partial"),
+                metadata={
+                    "findings_count": len(context.findings),
+                    "duration_ms": total_duration_ms,
+                    "status": overall_status,
+                },
+                db_path=effective_db,
+            )
+        except Exception as e:
+            logger.debug(f"[DAGController] Trajectory record skipped: {e}")
+
         return DAGExecutionResult(
             plan_id=plan_id,
             session_id=session_id,
@@ -1141,7 +1280,47 @@ class DAGController:
             step_provenance=step_provenance,
             reply=synthesis_result["reply"],
             synthesis=synthesis_result,
+            next_step_recommendations=recs,
         )
+
+    def _adapt_plan_if_new_attack_surface(
+        self,
+        plan_id: str,
+        context: EvidenceContext,
+        nodes_executed: List[DAGNodeExecution],
+        effective_db: Path,
+    ) -> List[Dict[str, Any]]:
+        """
+        Dynamically proposes and appends follow-up tool nodes to the active plan
+        when newly discovered attack surface warrants immediate deep probing.
+        """
+        new_nodes: List[Dict[str, Any]] = []
+        plan_dict = get_plan(plan_id, effective_db)
+        existing_nodes = plan_dict.get("nodes", []) if plan_dict else []
+        existing_caps = {str(n.get("capability", "")).lower() for n in existing_nodes}
+        existing_ids = {str(n.get("node_id", "")).lower() for n in existing_nodes}
+
+        last_successful = [n for n in nodes_executed if n.status == "success"]
+        last_node_id = last_successful[-1].node_id if last_successful else None
+
+        # If web presence confirmed (port 80/443/8080 or web_urls) and no web directory fuzzing scheduled
+        if context.has_web_presence() and not any("dir" in c or "fuzz" in c or "web_directory" in c for c in existing_caps):
+            node_id = f"node_web_enum_{uuid.uuid4().hex[:4]}"
+            if node_id not in existing_ids:
+                new_node = {
+                    "node_id": node_id,
+                    "capability": "web_directory_enumeration",
+                    "label": "Web Route & Directory Enumeration",
+                    "description": f"Dynamically scheduled after discovering web presence on {context.get_primary_web_url()}",
+                    "dependencies": [last_node_id] if last_node_id else [],
+                    "status": "queued",
+                }
+                if add_node_to_plan(plan_id, new_node, effective_db):
+                    logger.info(f"[DAGController] Dynamically adapted plan '{plan_id}': Added follow-up node '{node_id}' ({new_node['capability']})")
+                    new_nodes.append(new_node)
+                    existing_caps.add(new_node["capability"].lower())
+
+        return new_nodes
 
     def _synthesize_dag_execution(
         self,
@@ -1152,131 +1331,19 @@ class DAGController:
         nodes_executed: List[DAGNodeExecution],
         context: EvidenceContext,
         duration_s: float,
-    ) -> Dict[str, Any]:
+    ) -> SynthesisDict:
         """Produces a comprehensive natural language synthesis of the multi-step run."""
-        completed_count = len([n for n in nodes_executed if n.status == "success"])
-        failed_count = len([n for n in nodes_executed if n.status == "failed"])
-        skipped_count = len([n for n in nodes_executed if n.status in ("skipped", "blocked")])
-
-        status_emoji = "✅" if overall_status == "completed" else ("⚠️" if overall_status == "partial" else "❌")
-        status_label = "Complete" if overall_status == "completed" else ("Partial Execution" if overall_status == "partial" else "Failed")
-
-        md_lines = [
-            f"# Security Assessment Synthesis",
-            f"",
-            f"### {status_emoji} Autonomous DAG Execution: {status_label}",
-            f"",
-            f"I autonomously executed the multi-stage security assessment graph for **`{target}`** in **{duration_s}s** without requiring manual tool invocations.",
-            f"",
-            f"#### 📊 Execution Metrics (`{plan_id}`)",
-            f"- **Target Asset:** `{target}`",
-            f"- **Operational Goal:** {goal}",
-            f"- **Execution Progress:** `{completed_count} succeeded`, `{failed_count} failed`, `{skipped_count} skipped/blocked`",
-            f"- **Discovered Open Ports:** `{len(context.open_ports)}` ({context.get_open_ports_str()})",
-            f"- **Web Endpoints Identified:** `{len(context.web_endpoints)}`",
-            f"- **Captured Artifacts:** `{len(context.artifacts)}`",
-            f"",
-            f"#### ⛓️ Autonomous Execution Timeline",
-        ]
-
-        for n in nodes_executed:
-            if n.status == "success":
-                rec_info = ""
-                if len(n.recovery_path) > 1:
-                    rec_info = f" *(Recovered: switched to {n.tool_id})*"
-                md_lines.append(f"- **`{n.node_id}`** (`{n.capability}`): ✅ Executed `{n.tool_id}` ({n.duration_ms}ms){rec_info}")
-            elif n.status == "skipped":
-                md_lines.append(f"- **`{n.node_id}`** (`{n.capability}`): ⏭️ **Skipped** — *{n.skipped_reason}*")
-            elif n.status == "blocked":
-                md_lines.append(f"- **`{n.node_id}`** (`{n.capability}`): 🚫 **Blocked** — *{n.skipped_reason}*")
-            else:
-                md_lines.append(f"- **`{n.node_id}`** (`{n.capability}`): ❌ **Failed** (exit {n.exit_code}) — `{n.tool_id}`")
-
-        md_lines.extend([
-            f"",
-            f"#### 🛡️ Attack Surface & Security Posture",
-        ])
-
-        if context.open_ports:
-            md_lines.append(f"- **Open Service Ports:** `{', '.join(str(p) for p in sorted(context.open_ports))}`")
-        else:
-            md_lines.append("- **Perimeter Status:** No open listening ports detected.")
-
-        if context.technologies:
-            md_lines.append(f"- **Detected Technologies:** `{', '.join(context.technologies)}`")
-
-        if context.web_endpoints:
-            top_ep = context.web_endpoints[:5]
-            md_lines.append(f"- **Discovered Routes:** `{', '.join(top_ep)}`")
-
-        if context.vulnerabilities:
-            md_lines.append(f"- ⚠️ **Identified Vulnerabilities:** Found `{len(context.vulnerabilities)}` potential advisories requiring verification.")
-        else:
-            md_lines.append("- **Security Posture:** Clean baseline; no critical vulnerabilities exposed.")
-
-        md_lines.extend([
-            f"",
-            f"#### 💡 Next Recommended Steps",
-            f"1. **Review Audit Graph**: Inspect individual node execution events and PCAP traces in the Audit Explorer.",
-            f"2. **Evidence Validation**: Generate cryptographically signed PDF/HTML report from the Evidence Store.",
-        ])
-
-        full_md = "\n".join(md_lines)
-
-        findings_table = []
-        for p in context.open_ports:
-            p_info = context.services.get(f"{p}/tcp", {})
-            findings_table.append({
-                "item": f"Port {p}",
-                "value": p_info.get("service", "open"),
-                "status": "Verified",
-            })
-        for ep in context.web_endpoints[:4]:
-            findings_table.append({
-                "item": "Web Endpoint",
-                "value": ep,
-                "status": "Discovered",
-            })
-
-        return SynthesisDict({
-            "reply": full_md,
-            "process": {
-                "title": "Autonomous DAG Task Execution",
-                "tool_id": "orchestrator:dag_controller",
-                "tool_name": "Autonomous DAG Controller",
-                "intent": f"Autonomously execute task graph {plan_id} on {target}",
-                "command_line": f"dag_controller run --plan {plan_id} --target {target}",
-                "target": target,
-                "duration_s": duration_s,
-                "status": "success" if overall_status == "completed" else "warning",
-                "status_label": status_label,
-                "tier": 2,
-            },
-            "output": {
-                "summary_metrics": [
-                    {"label": "Nodes Run", "value": f"{completed_count}/{len(nodes_executed)}", "type": "success"},
-                    {"label": "Open Ports", "value": str(len(context.open_ports)), "type": "info"},
-                    {"label": "Status", "value": status_label, "type": "success" if overall_status == "completed" else "warning"},
-                ],
-                "findings_table": findings_table,
-                "raw_stdout": full_md,
-                "has_raw_terminal": False,
-            },
-            "result": {
-                "headline": f"DAG Execution {status_label}: {completed_count} steps executed against {target}",
-                "status": "clean" if not context.vulnerabilities else "warning",
-                "security_posture": f"{len(context.open_ports)} exposed ports, {len(context.web_endpoints)} routes discovered",
-                "key_takeaways": [
-                    f"Autonomously executed {completed_count} DAG nodes.",
-                    f"Discovered {len(context.open_ports)} open listening ports.",
-                    f"Preserved prerequisite dependency constraints across all branches.",
-                ],
-                "recommended_actions": [
-                    {"label": f"Deep audit {target}", "prompt": f"Audit detected services on {target} for security vulnerabilities"},
-                    {"label": "Generate Report", "prompt": f"Generate signed security report for plan {plan_id}"},
-                ],
-            },
-        })
+        synth = conversational_synthesizer.synthesize(
+            plan_id=plan_id,
+            goal=goal,
+            target=target,
+            overall_status=overall_status,
+            nodes_executed=nodes_executed,
+            context=context,
+            duration_s=duration_s,
+            verified_findings=context.findings,
+        )
+        return SynthesisDict(synth)
 
 
 # Singleton instance

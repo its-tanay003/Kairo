@@ -1,4 +1,16 @@
+"""
+DEPRECATED: This script was a one-time migration utility and has been superseded
+by native Next.js React components (ClaudeOutputCard, page.tsx, modern split-views,
+and SSE stream handlers). Do not run this script against ui/src/app/page.tsx.
+"""
+import sys
 import re
+
+print("[!] WARNING: scripts/apply_claude_ui.py is deprecated and superseded by native Next.js components.")
+# Exit early to protect ui/src/app/page.tsx from accidental regression
+if __name__ == "__main__" and "--force" not in sys.argv:
+    print("[!] Exiting. Pass --force if you intentionally wish to run this legacy patch script.")
+    sys.exit(0)
 
 with open("ui/src/app/page.tsx", "r", encoding="utf-8") as f:
     code = f.read()

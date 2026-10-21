@@ -20,6 +20,11 @@ from orchestrator.reporter_templates import (
     _synthesize_generic_execution,
     _synthesize_scope_violation,
 )
+from orchestrator.conversational_synthesizer import (
+    ConversationalSynthesizer,
+    conversational_synthesizer,
+    NextStepRecommendation,
+)
 
 __all__ = [
     "synthesize_agent_response",
@@ -29,4 +34,7 @@ __all__ = [
     "_synthesize_domain_recon",
     "_synthesize_generic_execution",
     "_synthesize_scope_violation",
+    "ConversationalSynthesizer",
+    "conversational_synthesizer",
+    "NextStepRecommendation",
 ]

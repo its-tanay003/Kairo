@@ -49,11 +49,22 @@ export interface ClaudeResultData {
   recommended_actions?: Array<{ label: string; prompt: string }>;
 }
 
+export interface ClaudeNextStepRec {
+  title: string;
+  description?: string;
+  tool_id?: string;
+  prompt: string;
+  priority?: "high" | "medium" | "low" | string;
+  rationale?: string;
+}
+
 export interface ClaudeSynthesisPayload {
   reply?: string;
   process?: ClaudeProcessMeta;
   output?: ClaudeOutputData;
   result?: ClaudeResultData;
+  next_step_recommendations?: ClaudeNextStepRec[];
+  recommendations?: ClaudeNextStepRec[];
 }
 
 export interface ClaudeToolSelectionCandidate {
@@ -194,6 +205,22 @@ export interface ClaudeOutputCardProps {
   stepProvenance?: ClaudeStepProvenanceItem[];
   handledByCustomModel?: boolean;
   handledByFallback?: boolean;
+  nextStepRecommendations?: Array<{
+    title: string;
+    description?: string;
+    tool_id?: string;
+    prompt: string;
+    priority?: string;
+    rationale?: string;
+  }>;
+  next_step_recommendations?: Array<{
+    title: string;
+    description?: string;
+    tool_id?: string;
+    prompt: string;
+    priority?: string;
+    rationale?: string;
+  }>;
   onRunPrompt?: (prompt: string) => void;
   onOpenConsole?: (toolId?: string) => void;
   onOpenGraph?: (plan: ClaudeTaskPlan) => void;
@@ -225,6 +252,8 @@ export default function ClaudeOutputCard({
   stepProvenance,
   handledByCustomModel,
   handledByFallback,
+  nextStepRecommendations: propNextStepRecs,
+  next_step_recommendations: propNextStepRecsSnake,
   onRunPrompt,
   onOpenConsole,
   onOpenGraph,
@@ -248,6 +277,10 @@ export default function ClaudeOutputCard({
 
   // Local state for expandable sections
   const [planViewMode, setPlanViewMode] = useState<"list" | "graph">("list");
+  const [expandedNodes, setExpandedNodes] = useState<Record<string, boolean>>({});
+  const toggleNodeExpanded = (nodeId: string) => {
+    setExpandedNodes((prev) => ({ ...prev, [nodeId]: !prev[nodeId] }));
+  };
   const [isThinkingOpen, setIsThinkingOpen] = useState<boolean>(false);
   const [isModelVerifiedOpen, setIsModelVerifiedOpen] = useState<boolean>(false);
   const [activeStepTab, setActiveStepTab] = useState<"overview" | "terminal" | "telemetry">("overview");
@@ -1177,6 +1210,8 @@ export default function ClaudeOutputCard({
                 };
                 const statusStyle = getStatusStyle(nodeStatus);
 
+                const isNodeExpanded = Boolean(expandedNodes[node.node_id]);
+
                 return (
                   <div
                     key={node.node_id || nIdx}
@@ -1184,16 +1219,20 @@ export default function ClaudeOutputCard({
                       display: "flex",
                       flexDirection: "column",
                       background: "rgba(15, 23, 42, 0.75)",
-                      border: "1px solid rgba(255, 255, 255, 0.08)",
+                      border: isNodeExpanded ? "1px solid rgba(168, 85, 247, 0.4)" : "1px solid rgba(255, 255, 255, 0.08)",
                       borderRadius: "8px",
                       padding: "10px 14px",
                       fontSize: "12px",
                       gap: "8px",
-                      transition: "border-color 0.15s ease",
+                      transition: "all 0.15s ease",
                     }}
                   >
-                    {/* Top Row: Index, ID, Capability & Status */}
-                    <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: "8px" }}>
+                    {/* Top Row: Index, ID, Capability & Status (Clickable to Toggle) */}
+                    <div
+                      style={{ display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: "8px", cursor: "pointer" }}
+                      onClick={() => toggleNodeExpanded(node.node_id)}
+                      title="Click to toggle step details"
+                    >
                       <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
                         <span
                           style={{
@@ -1232,6 +1271,9 @@ export default function ClaudeOutputCard({
                           }}
                         >
                           {statusStyle.label}
+                        </span>
+                        <span style={{ fontSize: "10px", color: "#94a3b8" }}>
+                          {isNodeExpanded ? "▲" : "▼"}
                         </span>
                       </div>
                     </div>
@@ -1303,6 +1345,40 @@ export default function ClaudeOutputCard({
                           💡 Why Chosen:
                         </span>
                         {rationaleText}
+                      </div>
+                    )}
+
+                    {/* Collapsible Expanded Details */}
+                    {isNodeExpanded && (
+                      <div
+                        style={{
+                          marginTop: "4px",
+                          padding: "10px",
+                          background: "rgba(0, 0, 0, 0.4)",
+                          borderRadius: "6px",
+                          border: "1px solid rgba(255, 255, 255, 0.06)",
+                          display: "flex",
+                          flexDirection: "column",
+                          gap: "6px",
+                          fontSize: "11px",
+                        }}
+                      >
+                        {node.parameters && Object.keys(node.parameters).length > 0 && (
+                          <div>
+                            <span style={{ color: "#94a3b8", fontWeight: 600 }}>Parameters:</span>
+                            <pre style={{ margin: "4px 0", padding: "6px", background: "rgba(0,0,0,0.3)", borderRadius: "4px", color: "#cbd5e1", fontFamily: "monospace", fontSize: "10px" }}>
+                              {JSON.stringify(node.parameters, null, 2)}
+                            </pre>
+                          </div>
+                        )}
+                        {node.result && (
+                          <div>
+                            <span style={{ color: "#94a3b8", fontWeight: 600 }}>Execution Result:</span>
+                            <pre style={{ margin: "4px 0", padding: "6px", background: "rgba(0,0,0,0.3)", borderRadius: "4px", color: "#34d399", fontFamily: "monospace", fontSize: "10px", maxHeight: "150px", overflowY: "auto" }}>
+                              {typeof node.result === "string" ? node.result : JSON.stringify(node.result, null, 2)}
+                            </pre>
+                          </div>
+                        )}
                       </div>
                     )}
 
@@ -1384,25 +1460,112 @@ export default function ClaudeOutputCard({
         </div>
       )}
 
-      {/* 6. Actionable Recommended Next Steps (Click to Run) */}
-      {resultData?.recommended_actions && resultData.recommended_actions.length > 0 && (
-        <div className="claude-next-steps-container">
-          <div className="next-steps-label">Suggested Next Steps:</div>
-          <div className="next-steps-pills">
-            {resultData.recommended_actions.map((act, i) => (
-              <button
-                key={i}
-                className="next-step-pill-btn"
-                onClick={() => onRunPrompt && onRunPrompt(act.prompt)}
-                title={`Run: ${act.prompt}`}
-              >
-                <span className="pill-spark">👉</span>
-                <span>{act.label}</span>
-              </button>
-            ))}
+      {/* 6. Actionable Recommended Next Steps (Click to Run) with ToolSpec badges & priority */}
+      {(() => {
+        const rawRecs: ClaudeNextStepRec[] =
+          propNextStepRecs ||
+          propNextStepRecsSnake ||
+          synth?.next_step_recommendations ||
+          synth?.recommendations ||
+          execution?.synthesis?.next_step_recommendations ||
+          resultData?.recommended_actions?.map((act) => ({
+            title: act.label,
+            prompt: act.prompt,
+            tool_id: undefined,
+            priority: "medium",
+            description: undefined,
+          })) ||
+          [];
+
+        if (!rawRecs || rawRecs.length === 0) return null;
+
+        return (
+          <div
+            className="claude-next-steps-container"
+            style={{
+              marginTop: "16px",
+              padding: "14px",
+              borderRadius: "12px",
+              background: "rgba(16, 185, 129, 0.04)",
+              border: "1px solid rgba(16, 185, 129, 0.2)",
+            }}
+          >
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "10px" }}>
+              <div style={{ display: "flex", alignItems: "center", gap: "6px", fontWeight: 700, fontSize: "12px", textTransform: "uppercase", letterSpacing: "0.05em", color: "#34d399" }}>
+                <span>⚡</span>
+                <span>Proactive Next-Step Recommendations ({rawRecs.length})</span>
+              </div>
+              <span style={{ fontSize: "11px", color: "#94a3b8" }}>Click any action to execute instantly</span>
+            </div>
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(260px, 1fr))", gap: "10px" }}>
+              {rawRecs.map((rec: ClaudeNextStepRec, i: number) => {
+                const priority = (rec.priority || "medium").toLowerCase();
+                const priStyle =
+                  priority === "high"
+                    ? { bg: "rgba(239, 68, 68, 0.15)", color: "#f87171", border: "rgba(239, 68, 68, 0.3)" }
+                    : priority === "low"
+                    ? { bg: "rgba(148, 163, 184, 0.15)", color: "#94a3b8", border: "rgba(148, 163, 184, 0.3)" }
+                    : { bg: "rgba(245, 158, 11, 0.15)", color: "#fbbf24", border: "rgba(245, 158, 11, 0.3)" };
+
+                return (
+                  <button
+                    key={i}
+                    type="button"
+                    style={{
+                      display: "flex",
+                      flexDirection: "column",
+                      alignItems: "flex-start",
+                      textAlign: "left",
+                      padding: "12px",
+                      borderRadius: "10px",
+                      background: "rgba(15, 23, 42, 0.8)",
+                      border: "1px solid rgba(255, 255, 255, 0.08)",
+                      cursor: "pointer",
+                      transition: "all 0.15s ease",
+                    }}
+                    onMouseEnter={(e) => {
+                      e.currentTarget.style.borderColor = "rgba(16, 185, 129, 0.4)";
+                      e.currentTarget.style.background = "rgba(15, 23, 42, 0.95)";
+                      e.currentTarget.style.transform = "translateY(-1px)";
+                    }}
+                    onMouseLeave={(e) => {
+                      e.currentTarget.style.borderColor = "rgba(255, 255, 255, 0.08)";
+                      e.currentTarget.style.background = "rgba(15, 23, 42, 0.8)";
+                      e.currentTarget.style.transform = "none";
+                    }}
+                    onClick={() => onRunPrompt && onRunPrompt(rec.prompt)}
+                    title={`Click to execute: ${rec.prompt}`}
+                  >
+                    <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", width: "100%", marginBottom: "6px" }}>
+                      <span style={{ fontWeight: 600, fontSize: "12px", color: "#f1f5f9" }}>
+                        {rec.title}
+                      </span>
+                      <span style={{ fontSize: "10px", fontWeight: 700, textTransform: "uppercase", padding: "1px 6px", borderRadius: "4px", background: priStyle.bg, color: priStyle.color, border: `1px solid ${priStyle.border}` }}>
+                        {priority}
+                      </span>
+                    </div>
+                    {rec.description && (
+                      <p style={{ fontSize: "11px", color: "#94a3b8", margin: "0 0 8px 0", lineHeight: "1.4" }}>
+                        {rec.description}
+                      </p>
+                    )}
+                    <div style={{ marginTop: "auto", display: "flex", alignItems: "center", justifyContent: "space-between", width: "100%", fontSize: "10px" }}>
+                      {rec.tool_id ? (
+                        <code style={{ background: "rgba(0, 0, 0, 0.4)", color: "#38bdf8", padding: "2px 6px", borderRadius: "4px", border: "1px solid rgba(56, 189, 248, 0.2)" }}>
+                          {rec.tool_id}
+                        </code>
+                      ) : <span />}
+                      <span style={{ color: "#34d399", fontWeight: 600, display: "flex", alignItems: "center", gap: "4px" }}>
+                        Run ➔
+                      </span>
+                    </div>
+                  </button>
+                );
+              })}
+            </div>
           </div>
-        </div>
-      )}
+        );
+      })()}
     </div>
   );
 }

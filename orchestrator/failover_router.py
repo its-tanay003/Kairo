@@ -39,6 +39,16 @@ class FailoverEventRecord:
     task_id: str
 
 
+def build_self_correction_prompt(tool_id: str, arguments: Dict[str, Any], schema_error: str) -> str:
+    """Builds a concise self-correction prompt instructing the model to fix invalid tool arguments."""
+    return (
+        f"CRITICAL: Your proposed tool call for '{tool_id}' failed ToolSpec schema validation:\n"
+        f"Input Arguments: {json.dumps(arguments)}\n"
+        f"Validation Error: {schema_error}\n\n"
+        f"Please self-correct immediately and respond with valid JSON arguments adhering strictly to the ToolSpec schema for '{tool_id}'."
+    )
+
+
 class FailoverRouter:
     """
     Manages runtime schema validation and automatic fallback switching.
@@ -103,6 +113,37 @@ class FailoverRouter:
         err = "; ".join(res.errors) if res.errors else None
         return res.is_valid, err
 
+    def attempt_self_correction(
+        self,
+        tool_id: str,
+        arguments: Dict[str, Any],
+        error_msg: str,
+        generator_fn: Optional[Any] = None,
+    ) -> Optional[Dict[str, Any]]:
+        """
+        Executes a fast self-correction attempt for invalid arguments.
+        """
+        prompt = build_self_correction_prompt(tool_id, arguments, error_msg)
+        if callable(generator_fn):
+            try:
+                resp = generator_fn(prompt)
+                if isinstance(resp, str):
+                    try:
+                        parsed = json.loads(resp)
+                        if isinstance(parsed, dict):
+                            valid, _ = self.validate_tool_call(tool_id, parsed)
+                            if valid:
+                                return parsed
+                    except Exception:
+                        pass
+                elif isinstance(resp, dict):
+                    valid, _ = self.validate_tool_call(tool_id, resp)
+                    if valid:
+                        return resp
+            except Exception as e:
+                logger.warning(f"attempt_self_correction failed: {e}")
+        return None
+
     def handle_tool_call_output(
         self,
         tool_id: str,
@@ -110,11 +151,13 @@ class FailoverRouter:
         session_id: str = "default_session",
         task_id: str = "task_0",
         current_model_id: Optional[str] = None,
+        self_correct_callback: Optional[Any] = None,
     ) -> Dict[str, Any]:
         """
         Processes a tool call candidate from the active model.
         If the active model is primary-custom and fails schema validation repeatedly,
         triggers automatic failover to the fallback model.
+        Supports fast self-correction callback prior to incrementing failover failure count.
         """
         active_model_meta = self.model_center.get_active_model()
         model_id = current_model_id or active_model_meta.get("model_id", "kairo-custom-model")
@@ -131,6 +174,35 @@ class FailoverRouter:
 
         # Validate against registered ToolSpec JSON schemas
         is_valid, error_msg = self.validate_tool_call(tool_id, arguments)
+
+        # Fast self-correction attempt before incrementing failure count
+        if not is_valid and callable(self_correct_callback):
+            try:
+                prompt = build_self_correction_prompt(tool_id, arguments, error_msg or "Invalid schema")
+                corrected_args = self_correct_callback(tool_id, arguments, error_msg or "", prompt)
+                if isinstance(corrected_args, dict):
+                    corr_valid, corr_err = self.validate_tool_call(tool_id, corrected_args)
+                    if corr_valid:
+                        logger.info(
+                            f"Fast self-correction succeeded for model '{model_id}' on tool '{tool_id}'."
+                        )
+                        self.consecutive_schema_failures = 0
+                        return {
+                            "valid": True,
+                            "self_corrected": True,
+                            "failover_triggered": False,
+                            "failover_active": self.failover_active,
+                            "model_id": model_id,
+                            "role": current_role,
+                            "tool_id": tool_id,
+                            "arguments": corrected_args,
+                            "error": None,
+                            "consecutive_failures": 0,
+                        }
+                    else:
+                        logger.warning(f"Self-corrected arguments still invalid: {corr_err}")
+            except Exception as e:
+                logger.warning(f"Self-correction callback encountered error: {e}")
 
         if is_valid:
             # Successful schema validation resets consecutive failure counter

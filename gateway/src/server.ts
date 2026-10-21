@@ -142,6 +142,45 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
+  // SSE Streaming proxy endpoint to Orchestrator: /chat/stream and /events/stream
+  if (url.pathname === "/chat/stream" || url.pathname === "/events/stream") {
+    try {
+      let bodyData: string | undefined = undefined;
+      if (req.method === "POST") {
+        bodyData = JSON.stringify(await parseJsonBody(req));
+      }
+      const orchUrl = `${ORCHESTRATOR_URL}${url.pathname}${url.search}`;
+      const orchResp = await fetch(orchUrl, {
+        method: req.method,
+        headers: {
+          "Content-Type": "application/json",
+          "Accept": "text/event-stream",
+        },
+        body: bodyData,
+      });
+
+      res.writeHead(orchResp.status, {
+        "Content-Type": "text/event-stream",
+        "Cache-Control": "no-cache",
+        "Connection": "keep-alive",
+        "Access-Control-Allow-Origin": "*",
+      });
+
+      if (orchResp.body) {
+        // @ts-ignore
+        for await (const chunk of orchResp.body) {
+          res.write(chunk);
+        }
+      }
+      res.end();
+      return;
+    } catch (err: any) {
+      res.writeHead(502, { "Content-Type": "application/json" });
+      res.end(JSON.stringify({ error: "Failed to proxy stream from orchestrator", details: err.message }));
+      return;
+    }
+  }
+
   // Incremental Agent Tool Card Stream endpoint: POST /agent/stream_step or POST /broadcast
   if ((url.pathname === "/agent/stream_step" || url.pathname === "/broadcast") && req.method === "POST") {
     try {
@@ -1719,6 +1758,8 @@ wss.on("connection", async (ws: WebSocket, req) => {
             stepProvenance: result.step_provenance,
             handledByCustomModel: result.handled_by_custom_model,
             handledByFallback: result.handled_by_fallback,
+            next_step_recommendations: result.next_step_recommendations || (result.synthesis || {}).next_step_recommendations || [],
+            nextStepRecommendations: result.next_step_recommendations || (result.synthesis || {}).next_step_recommendations || [],
             timestamp: new Date().toISOString(),
           });
         } catch (err: any) {

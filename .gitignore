@@ -58,3 +58,8 @@ workspaces/
 ui_screenshots/
 nikto_*.csv
 *.csv
+
+# Binaries and runtime lab data
+tools/cloudflared.exe
+lab/history.json
+events/artifacts/*

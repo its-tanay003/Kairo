@@ -21,6 +21,7 @@ if str(ROOT_DIR) not in sys.path:
     sys.path.insert(0, str(ROOT_DIR))
 
 from fastapi import FastAPI, HTTPException, Response, Header
+from fastapi.responses import StreamingResponse
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from orchestrator.vnc_server import vnc_server
@@ -450,6 +451,155 @@ def chat_endpoint(req: ChatRequest):
     except Exception as e:
         logger.exception(f"Chat endpoint error: {e}")
         raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/chat/stream")
+def chat_stream_endpoint(req: ChatRequest):
+    """
+    Server-Sent Events (SSE) streaming endpoint for real-time lifecycle monitoring of autonomous execution.
+    Emits unified lifecycle events:
+    - intent_classified
+    - plan_created
+    - step_started
+    - step_output_chunk
+    - step_completed
+    - agent_message_chunk
+    - next_step_recommendations
+    """
+    import queue
+    import threading
+
+    q: queue.Queue = queue.Queue()
+
+    def run_worker():
+        try:
+            # 1. Intent Classified
+            intent = "tool_request"
+            if hasattr(agent, "intent_classifier") and agent.intent_classifier:
+                try:
+                    c_res = agent.intent_classifier.classify(req.message)
+                    intent = getattr(c_res, "intent", str(c_res))
+                except Exception:
+                    pass
+            q.put({
+                "event": "intent_classified",
+                "data": {
+                    "session_id": req.session_id,
+                    "task_id": req.task_id or f"task_{uuid.uuid4().hex[:8]}",
+                    "intent": intent,
+                    "message": req.message,
+                }
+            })
+
+            # Step streaming callback
+            def on_step(step_res: Dict[str, Any]):
+                tool_id = (step_res.get("tool_executed") or {}).get("id") or step_res.get("tool_id", "tool")
+                node_id = step_res.get("node_id") or "node_0"
+                plan_id = step_res.get("plan_id") or "plan_0"
+                q.put({
+                    "event": "step_started",
+                    "data": {
+                        "session_id": req.session_id,
+                        "plan_id": plan_id,
+                        "node_id": node_id,
+                        "tool_id": tool_id,
+                    }
+                })
+                raw_out = (step_res.get("execution") or {}).get("stdout") or step_res.get("reply", "")
+                if raw_out:
+                    q.put({
+                        "event": "step_output_chunk",
+                        "data": {
+                            "session_id": req.session_id,
+                            "plan_id": plan_id,
+                            "node_id": node_id,
+                            "chunk": raw_out[:1000],
+                        }
+                    })
+                q.put({
+                    "event": "step_completed",
+                    "data": {
+                        "session_id": req.session_id,
+                        "plan_id": plan_id,
+                        "node_id": node_id,
+                        "tool_id": tool_id,
+                        "exit_code": (step_res.get("execution") or {}).get("exit_code", 0),
+                        "duration_ms": step_res.get("duration_ms", 0),
+                        "status": step_res.get("status", "success"),
+                    }
+                })
+
+            autonomous_flag = req.autonomous
+            if req.mode in ("autonomous_task", "autonomous"):
+                autonomous_flag = True
+            elif req.mode in ("single_step", "manual"):
+                autonomous_flag = False
+
+            result = agent.execute_task(
+                session_id=req.session_id,
+                message=req.message,
+                task_id=req.task_id,
+                parent_event=req.parent_event,
+                explicit_tool=req.explicit_tool,
+                explicit_args=req.explicit_args,
+                model_id=req.model_id,
+                autonomous=autonomous_flag,
+                mode=req.mode,
+                step_callback=on_step,
+            )
+
+            # Plan created event
+            if result.get("plan") or result.get("plan_id"):
+                q.put({
+                    "event": "plan_created",
+                    "data": {
+                        "session_id": req.session_id,
+                        "plan": result.get("plan"),
+                        "plan_id": result.get("plan_id"),
+                        "nodes": (result.get("plan") or {}).get("nodes", []),
+                    }
+                })
+
+            # Agent message chunk
+            reply = result.get("reply", "")
+            if reply:
+                q.put({
+                    "event": "agent_message_chunk",
+                    "data": {
+                        "session_id": req.session_id,
+                        "chunk": reply,
+                        "complete": True,
+                    }
+                })
+
+            # Next step recommendations
+            recs = result.get("next_step_recommendations") or (result.get("synthesis") or {}).get("next_step_recommendations", [])
+            q.put({
+                "event": "next_step_recommendations",
+                "data": {
+                    "session_id": req.session_id,
+                    "recommendations": recs,
+                }
+            })
+            q.put(None)
+        except Exception as e:
+            logger.error(f"[chat_stream_endpoint] Worker error: {e}")
+            q.put({"event": "error", "data": {"error": str(e)}})
+            q.put(None)
+
+    th = threading.Thread(target=run_worker, daemon=True)
+    th.start()
+
+    def sse_event_stream():
+        while True:
+            item = q.get()
+            if item is None:
+                break
+            evt = item.get("event", "message")
+            data_str = json.dumps(item.get("data", {}))
+            yield f"event: {evt}\ndata: {data_str}\n\n"
+
+    return StreamingResponse(sse_event_stream(), media_type="text/event-stream")
 
 
 @app.post("/run")

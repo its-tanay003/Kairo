@@ -8,7 +8,13 @@ import AuditExplorer from "./components/AuditExplorer";
 import DatasetCurationPanel from "./components/DatasetCurationPanel";
 import BenchmarkLeaderboard from "./components/BenchmarkLeaderboard";
 import ModelEvolutionPanel from "./components/ModelEvolutionPanel";
-import ClaudeOutputCard, { ClaudeSynthesisPayload, ClaudeToolSelectionMeta, ClaudeTaskPlan, ClaudeStepProvenanceItem } from "./components/ClaudeOutputCard";
+import ClaudeOutputCard, {
+  ClaudeSynthesisPayload,
+  ClaudeToolSelectionMeta,
+  ClaudeTaskPlan,
+  ClaudeStepProvenanceItem,
+  ClaudeNextStepRec,
+} from "./components/ClaudeOutputCard";
 
 interface EventRecord {
   id?: number;
@@ -151,6 +157,8 @@ interface ChatMessage {
   stepProvenance?: ClaudeStepProvenanceItem[];
   handledByCustomModel?: boolean;
   handledByFallback?: boolean;
+  nextStepRecommendations?: ClaudeNextStepRec[];
+  next_step_recommendations?: ClaudeNextStepRec[];
 }
 
 export interface ModelOption {
@@ -164,7 +172,7 @@ export interface ModelOption {
   role: string;
 }
 
-export const AVAILABLE_MODELS: ModelOption[] = [
+const AVAILABLE_MODELS: ModelOption[] = [
   {
     id: "kairo-scale-2b",
     name: "Kairo Scale 2B (Custom Primary)",
@@ -645,6 +653,8 @@ export default function Home() {
               stepProvenance: data.stepProvenance,
               handledByCustomModel: data.handledByCustomModel,
               handledByFallback: data.handledByFallback,
+              nextStepRecommendations: data.nextStepRecommendations || data.next_step_recommendations || (data.synthesis || {}).next_step_recommendations || [],
+              next_step_recommendations: data.nextStepRecommendations || data.next_step_recommendations || (data.synthesis || {}).next_step_recommendations || [],
             };
 
             setMessages((prev) => {
@@ -1011,6 +1021,45 @@ export default function Home() {
             )}
           </div>
 
+          {/* Quick Split-View Toggles for Terminal and Kali GUI (VNC) */}
+          <div className="top-bar-split-toggles" style={{ display: "flex", alignItems: "center", gap: "6px" }}>
+            <button
+              className={`console-btn ${isAdvancedOpen && advancedTab === "terminal" ? "active" : ""}`}
+              onClick={() => {
+                if (isAdvancedOpen && advancedTab === "terminal") {
+                  setIsAdvancedOpen(false);
+                } else {
+                  setAdvancedTab("terminal");
+                  setIsAdvancedOpen(true);
+                }
+              }}
+              aria-label="Toggle Terminal Split View"
+              title="Toggle Terminal Shell (CLI)"
+              style={isAdvancedOpen && advancedTab === "terminal" ? { borderColor: "#38bdf8", color: "#38bdf8", background: "rgba(56, 189, 248, 0.12)" } : undefined}
+            >
+              <span style={{ fontSize: "11px", fontFamily: "monospace", fontWeight: 700 }}>&gt;_</span>
+              <span>Terminal</span>
+            </button>
+
+            <button
+              className={`console-btn ${isAdvancedOpen && advancedTab === "screen" ? "active" : ""}`}
+              onClick={() => {
+                if (isAdvancedOpen && advancedTab === "screen") {
+                  setIsAdvancedOpen(false);
+                } else {
+                  setAdvancedTab("screen");
+                  setIsAdvancedOpen(true);
+                }
+              }}
+              aria-label="Toggle Kali GUI VNC Split View"
+              title="Toggle Kali GUI (VNC Desktop)"
+              style={isAdvancedOpen && advancedTab === "screen" ? { borderColor: "#c084fc", color: "#c084fc", background: "rgba(192, 132, 252, 0.12)" } : undefined}
+            >
+              <span style={{ fontSize: "11px" }}>🖥️</span>
+              <span>Kali GUI</span>
+            </button>
+          </div>
+
           {/* Claude Split Console / Artifacts Button */}
           <button
             className="console-btn"
@@ -1197,6 +1246,8 @@ export default function Home() {
                         stepProvenance={m.stepProvenance}
                         handledByCustomModel={m.handledByCustomModel}
                         handledByFallback={m.handledByFallback}
+                        nextStepRecommendations={m.nextStepRecommendations || m.next_step_recommendations}
+                        next_step_recommendations={m.next_step_recommendations || m.nextStepRecommendations}
                         onRunPrompt={(prompt) => {
                           setInputVal(prompt);
                           textareaRef.current?.focus();

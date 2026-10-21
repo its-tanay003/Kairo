@@ -136,7 +136,18 @@ class CognitiveEngine:
                     "surfaced_to_user": True,
                 }
 
-            # Step 2: Execute Tool via Agent / Sandbox (chained via parent_event)
+            # Step 2: Validate Tool Arguments & Apply Fast Self-Correction if needed
+            from orchestrator.failover_router import failover_router
+            is_valid, schema_err = failover_router.validate_tool_call(current_tool, current_args)
+            if not is_valid and schema_err:
+                logger.info(f"[CognitiveEngine] Tool '{current_tool}' args failed schema: {schema_err}. Attempting fast self-correction.")
+                corrected = self._self_correct_arguments(current_tool, current_args, schema_err, node, plan)
+                corr_valid, _ = failover_router.validate_tool_call(current_tool, corrected)
+                if corr_valid:
+                    logger.info(f"[CognitiveEngine] Self-correction succeeded for '{current_tool}'. Repaired args: {corrected}")
+                    current_args = corrected
+
+            # Step 3: Execute Tool via Agent / Sandbox (chained via parent_event)
             t0 = time.time()
             exec_res = self.agent.execute_task(
                 session_id=session_id,
@@ -426,6 +437,42 @@ class CognitiveEngine:
             "attempts": max_attempts,
             "surfaced_to_user": True,
         }
+
+    def _self_correct_arguments(
+        self,
+        tool_id: str,
+        arguments: Dict[str, Any],
+        schema_error: str,
+        node: Dict[str, Any],
+        plan: Dict[str, Any],
+    ) -> Dict[str, Any]:
+        """
+        Fast self-correction for tool arguments failing schema validation.
+        Leverages plan context, node parameters, and target normalizations.
+        """
+        corrected = dict(arguments)
+        target = node.get("target") or plan.get("target") or ""
+
+        # Check for missing target
+        if "target" in schema_error.lower() and not corrected.get("target") and target:
+            clean_tgt = target.replace("http://", "").replace("https://", "").split("/")[0].split(":")[0]
+            corrected["target"] = clean_tgt
+
+        # Check for missing url
+        if "url" in schema_error.lower() and not corrected.get("url"):
+            if target:
+                if not target.startswith("http://") and not target.startswith("https://"):
+                    corrected["url"] = f"http://{target}"
+                else:
+                    corrected["url"] = target
+
+        # Check for type errors (e.g. integer instead of string)
+        if "target" in corrected and not isinstance(corrected["target"], str):
+            corrected["target"] = str(corrected["target"])
+        if "url" in corrected and not isinstance(corrected["url"], str):
+            corrected["url"] = str(corrected["url"])
+
+        return corrected
 
 
 # Global singleton

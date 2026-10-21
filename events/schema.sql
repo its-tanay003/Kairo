@@ -174,3 +174,21 @@ CREATE TABLE IF NOT EXISTS projects (
 CREATE INDEX IF NOT EXISTS idx_projects_owner ON projects(owner_id);
 CREATE INDEX IF NOT EXISTS idx_projects_status ON projects(status);
 CREATE INDEX IF NOT EXISTS idx_projects_workspace ON projects(active_workspace_id);
+
+-- Trajectories: Multi-step tool execution sequences, self-corrections, and recommendations for training curation
+CREATE TABLE IF NOT EXISTS trajectories (
+    trajectory_id TEXT PRIMARY KEY,
+    session_id TEXT NOT NULL,
+    plan_id TEXT,
+    goal TEXT NOT NULL,
+    target TEXT,
+    steps TEXT NOT NULL DEFAULT '[]',
+    recommendations TEXT NOT NULL DEFAULT '[]',
+    success INTEGER NOT NULL DEFAULT 1,
+    created_at TEXT NOT NULL,
+    metadata TEXT NOT NULL DEFAULT '{}'
+);
+
+CREATE INDEX IF NOT EXISTS idx_trajectories_session ON trajectories(session_id);
+CREATE INDEX IF NOT EXISTS idx_trajectories_plan ON trajectories(plan_id);
+CREATE INDEX IF NOT EXISTS idx_trajectories_success ON trajectories(success);

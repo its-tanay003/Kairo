@@ -33,6 +33,7 @@ from events.db import (
     create_scope_contract,
     get_ready_nodes,
     update_node_status,
+    record_trajectory,
 )
 from registry.loader import ToolRegistry, ToolSpec
 from orchestrator.llama_client import LlamaCppClient
@@ -940,6 +941,9 @@ class AgentLoop:
         elif is_local_fallback and not reply_text.startswith("> ⚠️"):
             reply_text = f"> ⚠️ **{fallback_notice}**\n\n{reply_text}"
 
+        synth_dict = execution_details.get("synthesis") if isinstance(execution_details.get("synthesis"), dict) else {}
+        single_recs = synth_dict.get("next_step_recommendations") or synth_dict.get("recommendations") or []
+
         return {
             "session_id": session_id,
             "task_id": task_id,
@@ -949,6 +953,8 @@ class AgentLoop:
             "typed_invocation": typed_invocation,
             "reply": reply_text,
             "synthesis": execution_details.get("synthesis"),
+            "next_step_recommendations": single_recs,
+            "recommendations": single_recs,
             "execution_plane": exec_plane,
             "fallback_notice": fallback_notice,
             "local_fallback": is_local_fallback,
@@ -1032,7 +1038,8 @@ class AgentLoop:
             "validatedArgs": step_result.get("validated_args"),
             "fallbackUsed": step_result.get("fallback_used"),
             "fallbackReason": step_result.get("fallback_reason"),
-            "localOnly": True,
+            "next_step_recommendations": step_result.get("next_step_recommendations") or (step_result.get("synthesis") or {}).get("next_step_recommendations", []),
+            "nextStepRecommendations": step_result.get("next_step_recommendations") or (step_result.get("synthesis") or {}).get("next_step_recommendations", []),
             "intent": "tool_request",
             "planOnly": False,
             "timestamp": datetime.now(timezone.utc).isoformat(),
@@ -2257,6 +2264,30 @@ class AgentLoop:
                 )
                 final_event_id = insert_event(final_event, self.db_path)
 
+            next_recs = []
+            if isinstance(final_synthesis, dict):
+                next_recs = final_synthesis.get("next_step_recommendations") or final_synthesis.get("recommendations") or []
+
+            # Record trajectory for model evolution & continuous learning
+            try:
+                record_trajectory(
+                    session_id=session_id,
+                    goal=message,
+                    steps=[n.to_dict() if hasattr(n, "to_dict") else dict(n) for n in nodes_executed],
+                    recommendations=next_recs,
+                    plan_id=plan_id,
+                    target=extracted_target or "127.0.0.1",
+                    success=overall_status in ("completed", "partial") and len(completed_nodes) > 0,
+                    metadata={
+                        "findings_count": len(getattr(context, "findings", [])) if context else 0,
+                        "duration_ms": total_duration_ms,
+                        "status": overall_status,
+                    },
+                    db_path=self.db_path,
+                )
+            except Exception as e:
+                logger.debug(f"[AgentLoop] Trajectory record skipped: {e}")
+
             ret_dict = {
                 "intent": "tool_request" if (is_single_node and intent_res.intent == IntentType.TOOL_REQUEST) else "task_request",
                 "plan_only": False,
@@ -2267,6 +2298,8 @@ class AgentLoop:
                 "task_id": task_id,
                 "reply": final_reply,
                 "synthesis": final_synthesis,
+                "next_step_recommendations": next_recs,
+                "recommendations": next_recs,
                 "tool_executed": first_tool,
                 "execution": first_details,
                 "tool_selection": first_exec.get("tool_selection") or tool_selection_data,

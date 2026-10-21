@@ -348,6 +348,97 @@ class TrainingManager:
             logger.error(f"Error expanding dataset: {e}", exc_info=True)
             return {"success": False, "status": "error", "error": str(e)}
 
+    def curate_trajectories_for_training(
+        self,
+        limit: int = 100,
+        min_success_only: bool = True,
+        output_filename: Optional[str] = "trajectories_curated.jsonl",
+        db_path: Optional[Path | str] = None,
+    ) -> Dict[str, Any]:
+        """
+        Retrieves recorded execution trajectories from SQLite EventStore, formats them into
+        high-fidelity SFT training examples (prompt -> tool sequence -> recommendations),
+        and persists them into the dataset directory for model fine-tuning.
+        """
+        from events.db import get_trajectories
+        raw_trajectories = get_trajectories(limit=limit, db_path=db_path)
+        curated_records: List[Dict[str, Any]] = []
+
+        for traj in raw_trajectories:
+            if min_success_only and not traj.get("success", 1):
+                continue
+
+            goal = traj.get("goal", "")
+            target = traj.get("target", "")
+            steps = traj.get("steps") or []
+            recommendations = traj.get("recommendations") or []
+            traj_id = traj.get("trajectory_id", f"traj_{uuid.uuid4().hex[:8]}")
+
+            # Format tool trajectory conversation
+            conversation = [
+                {"role": "user", "content": goal}
+            ]
+
+            tool_actions = []
+            for step in steps:
+                t_id = step.get("tool_id", "unknown")
+                t_args = step.get("arguments", {})
+                t_summary = step.get("summary", "")
+                tool_actions.append({
+                    "tool_id": t_id,
+                    "arguments": t_args,
+                    "summary": t_summary,
+                })
+                conversation.append({
+                    "role": "assistant",
+                    "tool_call": {
+                        "tool_id": t_id,
+                        "arguments": t_args,
+                    },
+                    "content": t_summary,
+                })
+
+            assistant_final = {
+                "role": "assistant",
+                "content": f"Task completed successfully. Next recommendations: {len(recommendations)} available.",
+                "recommendations": recommendations,
+            }
+            conversation.append(assistant_final)
+
+            curated_example = {
+                "id": f"curated_{traj_id}",
+                "type": "sft_trajectory",
+                "source_type": "recorded_trajectory",
+                "user_goal": goal,
+                "target": target,
+                "tool_actions": tool_actions,
+                "recommendations": recommendations,
+                "conversation": conversation,
+                "created_at": traj.get("created_at", datetime.now(timezone.utc).isoformat()),
+                "curation_status": "approved",
+            }
+            curated_records.append(curated_example)
+
+        out_path = None
+        if output_filename:
+            out_file = DATA_DIR / output_filename
+            try:
+                DATA_DIR.mkdir(parents=True, exist_ok=True)
+                with open(out_file, "w", encoding="utf-8") as f:
+                    for item in curated_records:
+                        f.write(json.dumps(item) + "\n")
+                out_path = str(out_file)
+            except Exception as e:
+                logger.error(f"Failed to write curated trajectories to {out_file}: {e}")
+
+        return {
+            "success": True,
+            "total_retrieved": len(raw_trajectories),
+            "curated_count": len(curated_records),
+            "output_file": out_path,
+            "examples": curated_records,
+        }
+
     # -------------------------------------------------------------------------
     # 2. TRAINING JOBS (SFT, DPO, GRPO)
     # -------------------------------------------------------------------------

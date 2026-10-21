@@ -2132,7 +2132,190 @@ def get_audit_stats(
     }
 
 
+def add_node_to_plan(
+    plan_id: str,
+    node: Union[PlanNode, Dict[str, Any]],
+    db_path: Optional[Path | str] = None,
+) -> bool:
+    """Dynamically appends a new node to an active plan DAG in the database."""
+    init_db(db_path)
+    conn = get_connection(db_path)
+    try:
+        nid = node.node_id if isinstance(node, PlanNode) else node.get("node_id")
+        cap = node.capability if isinstance(node, PlanNode) else node.get("capability")
+        lbl = (node.label if isinstance(node, PlanNode) else node.get("label")) or nid
+        desc = (node.description if isinstance(node, PlanNode) else node.get("description")) or ""
+        deps = (node.dependencies if isinstance(node, PlanNode) else node.get("dependencies")) or []
+        stat = (node.status if isinstance(node, PlanNode) else node.get("status")) or "queued"
+        assigned = (node.assigned_tool if isinstance(node, PlanNode) else node.get("assigned_tool")) or None
+        created = datetime.now(timezone.utc).isoformat()
+        deps_str = json.dumps(deps)
+
+        with conn:
+            cursor = conn.cursor()
+            cursor.execute(
+                """
+                INSERT INTO task_nodes (
+                    plan_id, node_id, capability, label, description, dependencies,
+                    status, assigned_tool, created_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT(plan_id, node_id) DO UPDATE SET
+                    capability = excluded.capability,
+                    label = excluded.label,
+                    description = excluded.description,
+                    dependencies = excluded.dependencies,
+                    status = excluded.status,
+                    assigned_tool = COALESCE(excluded.assigned_tool, task_nodes.assigned_tool)
+                """,
+                (plan_id, nid, cap, lbl, desc, deps_str, stat, assigned, created),
+            )
+            # Update node_count on task_graphs
+            cursor.execute(
+                "UPDATE task_graphs SET node_count = (SELECT COUNT(*) FROM task_nodes WHERE plan_id = ?), updated_at = ? WHERE plan_id = ?",
+                (plan_id, created, plan_id),
+            )
+        conn.close()
+        return True
+    except Exception as e:
+        logger.error(f"Failed to add node to plan {plan_id}: {e}")
+        try:
+            conn.close()
+        except Exception:
+            pass
+        return False
 
 
+def record_trajectory(
+    session_id: str,
+    goal: str,
+    steps: List[Dict[str, Any]],
+    recommendations: List[Dict[str, Any]],
+    plan_id: Optional[str] = None,
+    target: Optional[str] = None,
+    success: bool = True,
+    metadata: Optional[Dict[str, Any]] = None,
+    db_path: Optional[Path | str] = None,
+) -> str:
+    """Persists a complete multi-step tool execution trajectory for continuous SFT/DPO curation."""
+    init_db(db_path)
+    conn = get_connection(db_path)
+    traj_id = f"traj_{uuid.uuid4().hex[:12]}"
+    created_at = datetime.now(timezone.utc).isoformat()
+    steps_json = json.dumps(steps) if isinstance(steps, list) else str(steps)
+    recs_json = json.dumps(recommendations) if isinstance(recommendations, list) else str(recommendations)
+    meta_json = json.dumps(metadata or {}) if isinstance(metadata, dict) else str(metadata or "{}")
+
+    try:
+        with conn:
+            cursor = conn.cursor()
+            # Ensure trajectories table exists even if older DB file was initialized
+            cursor.execute(
+                """
+                CREATE TABLE IF NOT EXISTS trajectories (
+                    trajectory_id TEXT PRIMARY KEY,
+                    session_id TEXT NOT NULL,
+                    plan_id TEXT,
+                    goal TEXT NOT NULL,
+                    target TEXT,
+                    steps TEXT NOT NULL DEFAULT '[]',
+                    recommendations TEXT NOT NULL DEFAULT '[]',
+                    success INTEGER NOT NULL DEFAULT 1,
+                    created_at TEXT NOT NULL,
+                    metadata TEXT NOT NULL DEFAULT '{}'
+                )
+                """
+            )
+            cursor.execute(
+                """
+                INSERT INTO trajectories (
+                    trajectory_id, session_id, plan_id, goal, target,
+                    steps, recommendations, success, created_at, metadata
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    traj_id,
+                    session_id,
+                    plan_id,
+                    goal,
+                    target,
+                    steps_json,
+                    recs_json,
+                    1 if success else 0,
+                    created_at,
+                    meta_json,
+                ),
+            )
+        conn.close()
+        return traj_id
+    except Exception as e:
+        logger.error(f"Failed to record trajectory: {e}")
+        try:
+            conn.close()
+        except Exception:
+            pass
+        return ""
 
 
+def get_trajectories(
+    limit: int = 50,
+    session_id: Optional[str] = None,
+    db_path: Optional[Path | str] = None,
+) -> List[Dict[str, Any]]:
+    """Retrieves recorded tool execution trajectories for model evolution / training."""
+    init_db(db_path)
+    conn = get_connection(db_path)
+    try:
+        with conn:
+            cursor = conn.cursor()
+            cursor.execute(
+                """
+                CREATE TABLE IF NOT EXISTS trajectories (
+                    trajectory_id TEXT PRIMARY KEY,
+                    session_id TEXT NOT NULL,
+                    plan_id TEXT,
+                    goal TEXT NOT NULL,
+                    target TEXT,
+                    steps TEXT NOT NULL DEFAULT '[]',
+                    recommendations TEXT NOT NULL DEFAULT '[]',
+                    success INTEGER NOT NULL DEFAULT 1,
+                    created_at TEXT NOT NULL,
+                    metadata TEXT NOT NULL DEFAULT '{}'
+                )
+                """
+            )
+            if session_id:
+                cursor.execute(
+                    "SELECT * FROM trajectories WHERE session_id = ? ORDER BY created_at DESC LIMIT ?",
+                    (session_id, limit),
+                )
+            else:
+                cursor.execute(
+                    "SELECT * FROM trajectories ORDER BY created_at DESC LIMIT ?",
+                    (limit,),
+                )
+            rows = cursor.fetchall()
+            results = []
+            for r in rows:
+                item = dict(r)
+                try:
+                    item["steps"] = json.loads(item.get("steps") or "[]")
+                except Exception:
+                    pass
+                try:
+                    item["recommendations"] = json.loads(item.get("recommendations") or "[]")
+                except Exception:
+                    pass
+                try:
+                    item["metadata"] = json.loads(item.get("metadata") or "{}")
+                except Exception:
+                    pass
+                results.append(item)
+        conn.close()
+        return results
+    except Exception as e:
+        logger.error(f"Failed to get trajectories: {e}")
+        try:
+            conn.close()
+        except Exception:
+            pass
+        return []

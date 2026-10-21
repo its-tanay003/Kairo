@@ -17,8 +17,11 @@ strict evidence schemas.
 
 from __future__ import annotations
 import json
+import logging
 import re
 from typing import Any, Dict, List, Optional
+
+logger = logging.getLogger("orchestrator.reporter_templates")
 
 from orchestrator.kali_connector import FALLBACK_NOTICE_TEXT
 
@@ -189,6 +192,32 @@ def synthesize_agent_response(
                         "value": "Host Fallback (No VM)",
                         "type": "warning",
                     })
+
+    try:
+        from orchestrator.conversational_synthesizer import conversational_synthesizer
+        target_cand = (
+            inputs.get("target")
+            or inputs.get("url")
+            or inputs.get("domain")
+            or inputs.get("host")
+            or "127.0.0.1"
+        )
+        if isinstance(target_cand, list) and target_cand:
+            target_cand = target_cand[0]
+        target_str = str(target_cand)
+        raw_recs = conversational_synthesizer.generate_recommendations(
+            target=target_str,
+            goal=user_goal,
+            context=None,
+            executed_tools=[tool_id_clean],
+            findings=observation.get("findings") if isinstance(observation, dict) else None,
+        )
+        recs_list = [r.to_dict() for r in raw_recs]
+        if recs_list:
+            res["next_step_recommendations"] = recs_list
+            res["recommendations"] = recs_list
+    except Exception as e:
+        logger.debug(f"Could not generate next_step_recommendations in synthesize_agent_response: {e}")
 
     return res
 
@@ -566,11 +595,18 @@ def _synthesize_web_audit(
 
     findings_rows = []
     for f in findings_list[:50]:
-        findings_rows.append({
-            "item": f.get("uri") or f.get("path") or "/",
-            "value": f.get("description") or f.get("msg") or "Web finding",
-            "status": f.get("id") or f.get("osvdb") or "ALERT",
-        })
+        if isinstance(f, dict):
+            findings_rows.append({
+                "item": f.get("uri") or f.get("path") or "/",
+                "value": f.get("description") or f.get("msg") or "Web finding",
+                "status": f.get("id") or f.get("osvdb") or "ALERT",
+            })
+        else:
+            findings_rows.append({
+                "item": "/",
+                "value": str(f),
+                "status": "ALERT",
+            })
 
     is_unreachable = (
         conn_status == "unreachable"
@@ -594,16 +630,26 @@ def _synthesize_web_audit(
             if is_sim:
                 findings_md = "\n#### 🎭 Simulated Demonstration Output\n"
                 for f in findings_list[:8]:
-                    uri = f.get("uri") or "/"
-                    desc = f.get("description") or f.get("name") or "Simulated test finding"
-                    fid = f.get("id") or f.get("cwe") or "SIMULATED"
+                    if isinstance(f, dict):
+                        uri = f.get("uri") or "/"
+                        desc = f.get("description") or f.get("name") or "Simulated test finding"
+                        fid = f.get("id") or f.get("cwe") or "SIMULATED"
+                    else:
+                        uri = "/"
+                        desc = str(f)
+                        fid = "SIMULATED"
                     findings_md += f"- **`[SIMULATED] {fid}`** at `{uri}`: {desc}\n"
             else:
                 findings_md = "\n#### 🚨 Key Discovered Findings\n"
                 for f in findings_list[:8]:
-                    uri = f.get("uri") or "/"
-                    desc = f.get("description") or "Potential vulnerability"
-                    fid = f.get("id") or f.get("osvdb") or "FINDING"
+                    if isinstance(f, dict):
+                        uri = f.get("uri") or "/"
+                        desc = f.get("description") or "Potential vulnerability"
+                        fid = f.get("id") or f.get("osvdb") or "FINDING"
+                    else:
+                        uri = "/"
+                        desc = str(f)
+                        fid = "FINDING"
                     findings_md += f"- **`{fid}`** at `{uri}`: {desc}\n"
 
         if is_sim:
