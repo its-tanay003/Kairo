@@ -36,7 +36,7 @@ KAIRO is organized as a local-first, modular monorepo engineered for autonomous 
 ├── /training     # SFT, DPO, and GRPO fine-tuning pipelines & dataset repositories
 ├── /lab          # Docker Compose vulnerability testbeds (Mini-DVWA, Mini-Metasploitable)
 ├── /vm           # Headless Kali Linux VM worker agent & snapshot rollback manager
-├── /scripts      # Maintenance, screenshot capture, and deployment automation scripts
+├── /scripts      # Maintenance, testing harnesses, and deployment automation scripts
 └── /tests        # Pytest & TypeScript verification suites across all service boundaries
 ```
 

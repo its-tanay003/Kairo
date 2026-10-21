@@ -13,16 +13,11 @@ The `/scripts` directory houses maintenance utilities, chaos testing harnesses, 
 | [`create_toolspec.py`](create_toolspec.py) | Python wrapper for scaffolding third-party tools via the ToolSpec SDK: `python scripts/create_toolspec.py <tool_id> --category <cat> --binary <bin>` |
 | [`create-toolspec.bat`](create-toolspec.bat) | Windows batch file shortcut forwarding arguments to `python -m sdk create-toolspec`. |
 
-### 2. UI Styling & Visual Automation
+### 2. UI Styling & Theme Verification
 
 | Script | Command / Description |
 | :--- | :--- |
 | [`apply_claude_ui.py`](apply_claude_ui.py) | Automates injection of Claude Warm Dark design tokens, Newsreader serif typography, and component styling into `ui/`. |
-| [`capture_claude_ui_screenshots.py`](capture_claude_ui_screenshots.py) | Playwright script capturing welcome screen, chat interactions, thinking accordions, and model selector views. |
-| [`capture_drawer_views.py`](capture_drawer_views.py) | Automated capture of right-hand drawer views (Terminal, VNC Screen, DAG Graph, System Telemetry, Audit Explorer). |
-| [`capture_scrolled_views.py`](capture_scrolled_views.py) | Captures deep scroll states of high-density tables (Audit Explorer, Benchmark Leaderboard). |
-| [`capture_ui_screenshots.py`](capture_ui_screenshots.py) | Legacy UI snapshot utility. |
-| [`verify_and_capture_new_ui.py`](verify_and_capture_new_ui.py) | End-to-end visual regression pipeline verifying responsive layout across desktop (1440px, 880px, 560px) and mobile (375px). |
 
 ### 3. Chaos Engineering & Extreme Testing
 

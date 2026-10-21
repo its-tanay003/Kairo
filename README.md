@@ -12,7 +12,7 @@ An enterprise-grade, local-first autonomous agent platform engineered for defens
 | :--- | :--- | :--- |
 | **System Architecture** | [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) | Monorepo service topology, boundaries, process execution lifecycle, IPC protocols, and fault recovery |
 | **API & Protocol Reference** | [`docs/API_REFERENCE.md`](docs/API_REFERENCE.md) | Gateway WebSocket protocol, Orchestrator FastAPI REST routes, Kali worker REST API, and SQLite 20-field audit schema |
-| **Claude UI Design System** | [`DESIGN.md`](DESIGN.md) | Anthropic Claude Warm Dark design language, design tokens, Newsreader typography, interactive state specs, and screenshot gallery |
+| **Claude UI Design System** | [`DESIGN.md`](DESIGN.md) | Anthropic Claude Warm Dark design language, design tokens, Newsreader typography, interactive state specs, and visual component architecture |
 | **Claude UI Specification** | [`docs/CLAUDE_UI_SPEC.md`](docs/CLAUDE_UI_SPEC.md) | Component catalog, welcome screen, starter prompts, thinking accordions, artifact cards, and mobile responsive layout |
 | **ToolSpec Guide & SDK** | [`docs/TOOLSPEC_GUIDE.md`](docs/TOOLSPEC_GUIDE.md) | 16-field declarative ToolSpec schema, authoring workflow, 7-Gate Conformance Engine, and registry loading |
 | **Security & Scope Contracts** | [`docs/SECURITY_AND_SCOPE.md`](docs/SECURITY_AND_SCOPE.md) | Cryptographic HMAC-SHA256 scope authorization, CIDR IP validation, and Kali VM sandbox zero-trust containment |
@@ -79,21 +79,21 @@ Kairo features an executive-grade frontend interface faithfully modeled after th
 - **Floating Pill Composer**: Rounded floating input bar (`border-radius: 20px`) with integrated cryptographic Scope Contract popover and circular terracotta send button.
 - **Collapsible Console & Subsystem Drawer**: Right-hand drawer with smooth toggle (`[ | ] ⚙ Advanced`), width toggling (560px standard / 880px wide), and deep subsystem views (Terminal, Kali Screen, DAG Task Graph, System Telemetry, Audit Explorer, and Benchmark Leaderboard).
 
-### Visual Screenshot Gallery
+### Visual Architecture & Screen Registry
 
-| Screen View | Description | Screenshot |
+| Screen View | Component Path | Architecture & Interactive Capabilities |
 | :--- | :--- | :--- |
-| **Claude Welcome Screen** | Serif typography, terracotta spark monogram, and interactive starter prompt cards | ![Claude Welcome Screen](docs/assets/screenshots/01_claude_welcome_screen.png) |
-| **Claude Model Selector** | Top bar dropdown selecting canonical local models and local LLM backends | ![Claude Model Selector](docs/assets/screenshots/02_claude_model_selector.png) |
-| **Scope Contract Modal** | Cryptographic HMAC-SHA256 authorization and CIDR containment popover | ![Scope Contract Modal](docs/assets/screenshots/03_claude_scope_popover.png) |
-| **Extended Thinking & Artifacts** | Live chat stream with collapsible thinking accordions and artifact cards | ![Chat Messages & Thinking](docs/assets/screenshots/04_claude_chat_messages.png) |
-| **Console: System Telemetry** | Real-time memory, process, and Kali sandbox hardware monitoring | ![Console System](docs/assets/screenshots/05_claude_console_system.png) |
-| **Console: Interactive Terminal** | VT100 / Xterm.js streaming terminal connected to isolated Kali worker | ![Console Terminal](docs/assets/screenshots/06_claude_console_terminal.png) |
-| **Console: Kali Screen Stream** | Low-latency RFB / noVNC streaming for GUI security tool automation | ![Console Screen](docs/assets/screenshots/07_claude_console_screen.png) |
-| **Console: DAG Task Graph** | Interactive node-based Directed Acyclic Graph planner visualization | ![Console Task Graph](docs/assets/screenshots/08_claude_console_task_graph.png) |
-| **Console: Audit Explorer** | Immutable 20-field SQLite operational audit log inspector | ![Console Audit](docs/assets/screenshots/09_claude_console_audit.png) |
-| **Console: Benchmark Leaderboard** | Multi-model evaluation history and golden benchmark scoring matrix | ![Console Benchmarks](docs/assets/screenshots/10_claude_console_benchmarks.png) |
-| **Mobile Responsive View** | Fluid touch-friendly layout on narrow 375px mobile viewports | ![Mobile View](docs/assets/screenshots/11_claude_mobile_view.png) |
+| **Claude Welcome Screen** | [`ui/src/app/page.tsx`](ui/src/app/page.tsx) | Warm dark background (`#181816`), terracotta spark monogram, and interactive starter prompt cards with scope presets. |
+| **Claude Model Selector** | [`ui/src/app/page.tsx`](ui/src/app/page.tsx) | Header dropdown switching local models (Kairo Scale 2B, Qwen2.5-0.5B, Kairo GRPO, Qwen3-Coder-30B) with live backend telemetry. |
+| **Scope Contract Popover** | [`ui/src/app/page.tsx`](ui/src/app/page.tsx) | Real-time HMAC-SHA256 signature verification badge, target CIDR bounds, excluded hosts, and countdown timers. |
+| **Extended Thinking & Artifacts** | [`ClaudeOutputCard.tsx`](ui/src/app/components/ClaudeOutputCard.tsx) | Conversational stream with collapsible thinking accordions (`✦ Thought for 1.8s ▾`), verified tool cards, and synthesis reports. |
+| **Console: System Telemetry** | [`ui/src/app/page.tsx`](ui/src/app/page.tsx) | Real-time GPU VRAM meters, system RAM utilization, isolated Kali worker VM state, and air-gapped status. |
+| **Console: Interactive Terminal** | [`TerminalProcessView.tsx`](ui/src/app/components/TerminalProcessView.tsx) | VT100 / Xterm.js streaming terminal connected to isolated Kali worker with interactive process supervision. |
+| **Console: Kali Screen Stream** | [`ScreenPanel.tsx`](ui/src/app/components/ScreenPanel.tsx) | Low-latency RFB / noVNC virtual desktop frame buffer for interactive GUI tools (Burp Suite, Wireshark, Firefox). |
+| **Console: DAG Task Graph** | [`TaskGraphView.tsx`](ui/src/app/components/TaskGraphView.tsx) | Interactive node-based Directed Acyclic Graph planner visualization showing parallel task execution and dependencies. |
+| **Console: Audit Explorer** | [`AuditExplorer.tsx`](ui/src/app/components/AuditExplorer.tsx) | Immutable 20-field SQLite operational audit log inspector with JSON drilldown and search filters. |
+| **Console: Benchmark Leaderboard** | [`BenchmarkLeaderboard.tsx`](ui/src/app/components/BenchmarkLeaderboard.tsx) | Multi-model evaluation history, schema validity scoring, and golden benchmark comparison matrix. |
+| **Mobile Responsive View** | [`ui/src/app/page.tsx`](ui/src/app/page.tsx) | Single-column touch-friendly layout on narrow 375px viewports with full-screen drawer overlays. |
 
 ---
 
@@ -131,20 +131,24 @@ sequenceDiagram
 
     User->>GW: WebSocket Connect (ws://localhost:4000)
     GW-->>User: Handshake (Session ID & Auth Token)
-    User->>GW: WS Send: { type: "chat", content: "Audit web application" }
-    GW->>ORCH: HTTP POST /run { session_id, message }
-    ORCH->>EGW: execute(tool_id, args, target, session_id)
-    EGW->>EGW: Check Tool Registration (127 if missing)
-    EGW->>EGW: Validate Schema & Reject Metacharacters (400)
-    EGW->>EGW: Evaluate Scope Contract (HMAC-SHA256 CIDR Gate & Tier Bounds)
-    EGW->>EGW: Verify Operator Token (Anti-Prompt Injection Defense)
-    EGW->>VM: Execute in sandbox via Worker REST API
-    VM-->>EGW: Process telemetry (exit_code, stdout, stderr, pids)
-    EGW->>EVT: INSERT INTO events (exact 20 audit columns)
-    EGW-->>ORCH: Return ExecutionGatewayResult
-    ORCH-->>GW: Return { reply, tool, event_id, event }
-    GW-->>User: WS Emit: { type: "agent_response", reply, event }
-    User->>User: Update Chat, DAG graph, and Live Event Inspector
+    User->>GW: WS Send: { type: "chat", content: "Audit web application", autonomous: true, scopeContract }
+    GW->>ORCH: HTTP POST /chat { session_id, message, autonomous: true, mode: "autonomous_task", scope_contract }
+    ORCH->>ORCH: Decompose Goal into Task DAG (Topological Nodes & Capability Matching)
+    loop For each DAG Node
+        ORCH->>EGW: execute(tool_id, args, target, session_id)
+        EGW->>EGW: Check Tool Registration & Validate Schema
+        EGW->>EGW: Evaluate Scope Contract (HMAC-SHA256 CIDR Gate & Tier Bounds)
+        EGW->>VM: Execute in sandbox via Worker REST API
+        VM-->>EGW: Process telemetry (exit_code, stdout, stderr, pids)
+        EGW->>EVT: INSERT INTO events (exact 20 audit columns)
+        EGW-->>ORCH: Return ExecutionGatewayResult & parse facts into Context
+        ORCH-->>GW: WS Stream: Step activity card & telemetry
+        GW-->>User: WS Emit: { type: "agent_response", toolExecuted, execution }
+    end
+    ORCH->>EVT: INSERT INTO events (dag.execution.v1 synthesis event)
+    ORCH-->>GW: HTTP Return { reply, synthesis, plan_id, nodes_executed, event_id, event }
+    GW-->>User: WS Emit: { type: "agent_response", reply, synthesis, planId, nodesExecuted }
+    User->>User: Render Final Synthesis in Chat & update Console Drawer (Terminal/Graph/Audit)
 ```
 
 ### Service Directory Breakdown

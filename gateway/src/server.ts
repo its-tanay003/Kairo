@@ -1647,8 +1647,17 @@ wss.on("connection", async (ws: WebSocket, req) => {
           text: `Calling agent orchestrator at ${ORCHESTRATOR_URL}${modelId ? ` [Model: ${modelId}]` : ""}...`,
         });
 
+        const autonomous = payload.autonomous !== undefined ? payload.autonomous : true;
+        const mode = payload.mode || (autonomous ? "autonomous_task" : "single_step");
+        const preferLlm = payload.preferLlm ?? payload.prefer_llm ?? true;
+        const target = payload.target || payload.scopeTarget;
+        const scopeContract = payload.scopeContract || payload.scope_contract;
+        const explicitTool = payload.tool || payload.explicit_tool || payload.toolId;
+        const explicitArgs = payload.args || payload.explicit_args;
+        const maxSteps = payload.maxSteps || payload.max_steps;
+
         try {
-          const orchestratorResponse = await fetch(`${ORCHESTRATOR_URL}/run`, {
+          const orchestratorResponse = await fetch(`${ORCHESTRATOR_URL}/chat`, {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
@@ -1657,6 +1666,14 @@ wss.on("connection", async (ws: WebSocket, req) => {
               task_id: taskId,
               parent_event: payload.parentEvent,
               model_id: modelId,
+              autonomous,
+              mode,
+              prefer_llm: preferLlm,
+              target,
+              scope_contract: scopeContract,
+              explicit_tool: explicitTool,
+              explicit_args: explicitArgs,
+              max_steps: maxSteps,
             }),
           });
 
@@ -1695,6 +1712,10 @@ wss.on("connection", async (ws: WebSocket, req) => {
             intent: result.intent,
             planOnly: result.plan_only,
             plan: result.plan,
+            planId: result.plan_id,
+            nodesExecuted: result.nodes_executed,
+            evidence: result.evidence,
+            scopeViolation: result.scope_violation,
             stepProvenance: result.step_provenance,
             handledByCustomModel: result.handled_by_custom_model,
             handledByFallback: result.handled_by_fallback,

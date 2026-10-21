@@ -1056,7 +1056,7 @@ class AgentLoop:
                 headers={"Content-Type": "application/json"},
                 method="POST",
             )
-            with urllib.request.urlopen(req, timeout=0.3) as resp:
+            with urllib.request.urlopen(req, timeout=1.5) as resp:
                 pass
         except Exception as e:
             logger.debug(f"[AgentLoop] Gateway HTTP stream push skipped: {e}")
@@ -1070,7 +1070,7 @@ class AgentLoop:
                     import websockets
                     gateway_ws = os.environ.get("GATEWAY_WS", "ws://127.0.0.1:4000")
                     async def _send():
-                        async with websockets.connect(f"{gateway_ws}/?sessionId={session_id}", open_timeout=0.3, close_timeout=0.3) as ws:
+                        async with websockets.connect(f"{gateway_ws}/?sessionId={session_id}", open_timeout=1.0, close_timeout=1.0) as ws:
                             await ws.send(json.dumps(step_payload))
                     asyncio.run(_send())
                 except Exception:
@@ -2221,6 +2221,42 @@ class AgentLoop:
                             node_item["assigned_tool"] = n_exec.tool_id
                             node_item["rationale"] = getattr(n_exec, "rationale", None)
 
+            final_event = None
+            final_event_id = None
+            if len(nodes) > 1 and not is_single_step:
+                end_time_iso = datetime.now(timezone.utc).isoformat()
+                final_event = Event.create(
+                    session_id=session_id,
+                    task_id=task_id,
+                    actor="orchestrator:planner:synthesis",
+                    tool_id="dag.execution.v1",
+                    tool_version="1.0.0",
+                    requested_args={"goal": message, "target": extracted_target, "plan_id": plan_id},
+                    normalized_args={"nodes_total": len(nodes), "nodes_completed": len(completed_nodes), "status": overall_status},
+                    process_id=os.getpid(),
+                    start_time=start_time_iso,
+                    end_time=end_time_iso,
+                    exit_code=0 if overall_status in ("completed", "partial") and len(completed_nodes) > 0 else 1,
+                    stdout_ref=f"inline://{final_reply[:300]}...",
+                    stderr_ref=None,
+                    artifact_refs=[f"plan://{plan_id}"] + [f"sha256:{a.get('sha256')}:{a.get('filename')}" for a in context.artifacts if isinstance(a, dict) and a.get('sha256')],
+                    screenshots=[],
+                    network_context={
+                        "target": extracted_target,
+                        "plan_id": plan_id,
+                        "overall_status": overall_status,
+                        "nodes_completed": len(completed_nodes),
+                        "nodes_total": len(nodes),
+                        "model_id": exec_record.actual_model_id,
+                        "inference_runtime": exec_record.inference_runtime,
+                    },
+                    result_summary=f"Completed DAG plan {plan_id}: {len(completed_nodes)}/{len(nodes)} steps succeeded ({overall_status})",
+                    confidence=1.0,
+                    parent_event=parent_event,
+                    timestamp=end_time_iso,
+                )
+                final_event_id = insert_event(final_event, self.db_path)
+
             ret_dict = {
                 "intent": "tool_request" if (is_single_node and intent_res.intent == IntentType.TOOL_REQUEST) else "task_request",
                 "plan_only": False,
@@ -2236,8 +2272,8 @@ class AgentLoop:
                 "tool_selection": first_exec.get("tool_selection") or tool_selection_data,
                 "nodes_executed": DAGNodeExecutionList(nodes_executed),
                 "evidence": asdict(context),
-                "event_id": first_exec.get("event_id"),
-                "event": first_exec.get("event"),
+                "event_id": final_event_id if final_event_id is not None else first_exec.get("event_id"),
+                "event": as_dict_event(final_event) if final_event is not None else first_exec.get("event"),
                 "duration_ms": total_duration_ms,
                 "model_status": "transformers_custom_primary" if exec_record.inference_runtime == "transformers" else "llama.cpp_fallback",
                 "model_id": active_model_info.get("model_id"),

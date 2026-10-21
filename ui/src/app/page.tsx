@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useEffect, useRef, useState, useMemo } from "react";
+import React, { useEffect, useRef, useState, useMemo, useCallback } from "react";
 import TerminalProcessView from "./components/TerminalProcessView";
 import TaskGraphView from "./components/TaskGraphView";
 import ScreenPanel from "./components/ScreenPanel";
@@ -360,12 +360,15 @@ export default function Home() {
   const [allEvents, setAllEvents] = useState<EventRecord[]>([]);
 
   // Active Scope Contract info
-  const [scopeInfo] = useState<{
+  const [scopeInfo, setScopeInfo] = useState<{
     target: string;
     cidrAllowed: string[];
     cidrExcluded: string[];
     maxTier: string;
     status: string;
+    contractId?: string;
+    signatureValid?: boolean;
+    secondsRemaining?: number;
   }>({
     target: "192.168.1.0/24",
     cidrAllowed: ["192.168.1.0/24", "10.0.0.0/8"],
@@ -373,6 +376,46 @@ export default function Home() {
     maxTier: "Tier 2 (Active CLI)",
     status: "Active",
   });
+
+  const fetchActiveScope = useCallback(() => {
+    fetch("http://localhost:4000/scope/active")
+      .then((res) => (res.ok ? res.json() : null))
+      .then((contract) => {
+        if (contract && (contract.targets || contract.contract_id)) {
+          const maxTierNum = Math.max(...(contract.allowed_tool_tiers || [2]));
+          setScopeInfo({
+            target: (contract.targets && contract.targets[0]) || "127.0.0.1",
+            cidrAllowed: contract.targets || ["127.0.0.1"],
+            cidrExcluded: contract.metadata?.excluded_targets || ["192.168.1.1"],
+            maxTier: `Tier ${maxTierNum} (${maxTierNum === 1 ? "Read-Only" : maxTierNum === 2 ? "Active CLI" : "Interactive GUI"})`,
+            status: contract.is_expired ? "Expired" : "Active",
+            contractId: contract.contract_id,
+            signatureValid: contract.signature_valid ?? true,
+            secondsRemaining: contract.seconds_remaining,
+          });
+        }
+      })
+      .catch(() => {
+        fetch("http://localhost:8000/scope/active")
+          .then((res) => (res.ok ? res.json() : null))
+          .then((contract) => {
+            if (contract && (contract.targets || contract.contract_id)) {
+              const maxTierNum = Math.max(...(contract.allowed_tool_tiers || [2]));
+              setScopeInfo({
+                target: (contract.targets && contract.targets[0]) || "127.0.0.1",
+                cidrAllowed: contract.targets || ["127.0.0.1"],
+                cidrExcluded: contract.metadata?.excluded_targets || ["192.168.1.1"],
+                maxTier: `Tier ${maxTierNum} (${maxTierNum === 1 ? "Read-Only" : maxTierNum === 2 ? "Active CLI" : "Interactive GUI"})`,
+                status: contract.is_expired ? "Expired" : "Active",
+                contractId: contract.contract_id,
+                signatureValid: contract.signature_valid ?? true,
+                secondsRemaining: contract.seconds_remaining,
+              });
+            }
+          })
+          .catch(() => {});
+      });
+  }, []);
 
   const wsRef = useRef<WebSocket | null>(null);
   const [wsInstance, setWsInstance] = useState<WebSocket | null>(null);
@@ -443,9 +486,13 @@ export default function Home() {
 
   useEffect(() => {
     fetchTelemetry();
-    const interval = setInterval(fetchTelemetry, 6000);
+    fetchActiveScope();
+    const interval = setInterval(() => {
+      fetchTelemetry();
+      fetchActiveScope();
+    }, 6000);
     return () => clearInterval(interval);
-  }, []);
+  }, [fetchActiveScope]);
 
   // Keyboard Escape listener to close Advanced drawer
   useEffect(() => {
@@ -507,6 +554,11 @@ export default function Home() {
         }
         setWsStatus("connected");
         setWsInstance(ws);
+        try {
+          ws.send(JSON.stringify({ type: "get_active_scope" }));
+        } catch {
+          // ignore
+        }
       };
 
       ws.onmessage = (event) => {
@@ -520,6 +572,21 @@ export default function Home() {
             if (data.taskId) {
               setActiveTaskId(data.taskId);
               setRunningToolName(data.tool || "task");
+            }
+          } else if (data.type === "active_scope_contract" || data.type === "scope_contract_updated") {
+            const contract = data.contract || data.scope_contract || data;
+            if (contract && (contract.targets || contract.contract_id)) {
+              const maxTierNum = Math.max(...(contract.allowed_tool_tiers || [2]));
+              setScopeInfo({
+                target: (contract.targets && contract.targets[0]) || "127.0.0.1",
+                cidrAllowed: contract.targets || ["127.0.0.1"],
+                cidrExcluded: contract.metadata?.excluded_targets || ["192.168.1.1"],
+                maxTier: `Tier ${maxTierNum} (${maxTierNum === 1 ? "Read-Only" : maxTierNum === 2 ? "Active CLI" : "Interactive GUI"})`,
+                status: contract.is_expired ? "Expired" : "Active",
+                contractId: contract.contract_id,
+                signatureValid: contract.signature_valid ?? true,
+                secondsRemaining: contract.seconds_remaining,
+              });
             }
           } else if (data.type === "model_switched") {
             const switchedId = data.model_id || data.model?.model_id;
@@ -547,45 +614,46 @@ export default function Home() {
               }
             }
             const msgId = createUniqueMsgId("resp", data.id || data.messageId);
+            const responseMsg: ChatMessage = {
+              id: msgId,
+              eventId: data.eventId,
+              sender: "agent",
+              text: data.reply || "",
+              timestamp: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
+              tool: data.toolExecuted,
+              execution: data.execution,
+              durationMs: data.durationMs,
+              toolSelection: data.toolSelection,
+              recovery_narrative: data.execution?.recovery_narrative,
+              recovery_path: data.execution?.recovery_path,
+              synthesis: data.synthesis || data.execution?.synthesis,
+              modelId: data.modelId,
+              modelRole: data.modelRole,
+              modelVerification: data.modelVerification,
+              selectedModel: data.selectedModel,
+              actualModelId: data.actualModelId || data.modelId,
+              inferenceRuntime: data.inferenceRuntime,
+              processedBySelectedModel: data.processedBySelectedModel,
+              structuredOutput: data.structuredOutput,
+              selectedTool: data.selectedTool,
+              validatedArgs: data.validatedArgs,
+              fallbackUsed: data.fallbackUsed,
+              fallbackReason: data.fallbackReason,
+              intent: data.intent,
+              planOnly: data.planOnly,
+              plan: data.plan,
+              stepProvenance: data.stepProvenance,
+              handledByCustomModel: data.handledByCustomModel,
+              handledByFallback: data.handledByFallback,
+            };
+
             setMessages((prev) => {
               if (data.eventId && prev.some((m) => m.eventId === data.eventId)) {
-                return prev;
+                return prev.map((m) =>
+                  m.eventId === data.eventId ? { ...m, ...responseMsg, id: m.id } : m
+                );
               }
-              return [
-                ...prev,
-                {
-                  id: msgId,
-                  eventId: data.eventId,
-                  sender: "agent",
-                  text: data.reply || "",
-                  timestamp: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
-                  tool: data.toolExecuted,
-                  execution: data.execution,
-                  durationMs: data.durationMs,
-                  toolSelection: data.toolSelection,
-                  recovery_narrative: data.execution?.recovery_narrative,
-                  recovery_path: data.execution?.recovery_path,
-                  synthesis: data.synthesis || data.execution?.synthesis,
-                  modelId: data.modelId,
-                  modelRole: data.modelRole,
-                  modelVerification: data.modelVerification,
-                  selectedModel: data.selectedModel,
-                  actualModelId: data.actualModelId || data.modelId,
-                  inferenceRuntime: data.inferenceRuntime,
-                  processedBySelectedModel: data.processedBySelectedModel,
-                  structuredOutput: data.structuredOutput,
-                  selectedTool: data.selectedTool,
-                  validatedArgs: data.validatedArgs,
-                  fallbackUsed: data.fallbackUsed,
-                  fallbackReason: data.fallbackReason,
-                  intent: data.intent,
-                  planOnly: data.planOnly,
-                  plan: data.plan,
-                  stepProvenance: data.stepProvenance,
-                  handledByCustomModel: data.handledByCustomModel,
-                  handledByFallback: data.handledByFallback,
-                },
-              ];
+              return [...prev, responseMsg];
             });
 
             if (data.event) {
@@ -708,6 +776,15 @@ export default function Home() {
         sessionId,
         taskId,
         modelId: selectedModelId,
+        autonomous: true,
+        mode: "autonomous_task",
+        target: scopeInfo.target,
+        scopeContract: {
+          contract_id: scopeInfo.contractId,
+          target: scopeInfo.target,
+          targets: scopeInfo.cidrAllowed,
+          allowed_tool_tiers: [1, 2],
+        },
       })
     );
   };
@@ -1173,7 +1250,14 @@ export default function Home() {
               {showScopePopover && (
                 <div key="scope-popover" className="scope-popover">
                   <div className="scope-popover-title">
-                    <span>Scope Contract</span>
+                    <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
+                      <span>Scope Contract</span>
+                      {scopeInfo.contractId && (
+                        <span style={{ fontSize: "10px", color: "var(--text-secondary)", fontFamily: "monospace" }}>
+                          ({scopeInfo.contractId.slice(0, 10)})
+                        </span>
+                      )}
+                    </div>
                     <button
                       className="ghost-btn"
                       style={{ padding: "0 4px" }}
@@ -1182,8 +1266,29 @@ export default function Home() {
                       ✕
                     </button>
                   </div>
+                  <div style={{ display: "flex", alignItems: "center", gap: "8px", margin: "4px 0" }}>
+                    <strong style={{ color: "var(--text-primary)" }}>Status:</strong>
+                    <span
+                      style={{
+                        fontSize: "11px",
+                        padding: "1px 6px",
+                        borderRadius: "4px",
+                        background: scopeInfo.signatureValid !== false ? "rgba(16, 185, 129, 0.15)" : "rgba(239, 68, 68, 0.15)",
+                        color: scopeInfo.signatureValid !== false ? "#10b981" : "#ef4444",
+                        border: `1px solid ${scopeInfo.signatureValid !== false ? "rgba(16, 185, 129, 0.3)" : "rgba(239, 68, 68, 0.3)"}`,
+                        fontWeight: 600,
+                      }}
+                    >
+                      {scopeInfo.signatureValid !== false ? "HMAC-SHA256 Valid" : "Signature Invalid"}
+                    </span>
+                    {scopeInfo.secondsRemaining !== undefined && scopeInfo.secondsRemaining > 0 && (
+                      <span style={{ fontSize: "10px", color: "var(--text-secondary)" }}>
+                        ({Math.round(scopeInfo.secondsRemaining / 60)}m left)
+                      </span>
+                    )}
+                  </div>
                   <div>
-                    <strong style={{ color: "var(--text-primary)" }}>Target:</strong> {scopeInfo.target}
+                    <strong style={{ color: "var(--text-primary)" }}>Primary Target:</strong> {scopeInfo.target}
                   </div>
                   <div>
                     <strong style={{ color: "var(--text-primary)" }}>Allowed CIDRs:</strong>{" "}

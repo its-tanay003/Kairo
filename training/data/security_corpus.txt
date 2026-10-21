@@ -265,6 +265,152 @@ INPUT PROPERTIES: {
 }
 REQUIRED INPUTS: ["target"]
 --------------------------------------------------
+TOOL SPECIFICATION: dnsenum.enum.v1
+NAME: Dnsenum Domain Enumerator (Version 1.0.0)
+CATEGORY: recon | TIER: 1 | NOISE: low
+BINARY: dnsenum
+DESCRIPTION: Multithreaded perl script to enumerate DNS information of a domain and discover non-contiguous ip blocks.
+CAPABILITIES: dns_enumeration, host_discovery, zone_transfer, subdomain_enumeration, name_servers_discovery
+SYNOPSIS:
+NAME
+    dnsenum - Dnsenum Domain Enumerator (Version 1.0.0)
+
+SYNOPSIS
+    dnsenum --target=<string> [--noreverse=<boolean>] [--subfile=<string>] [--threads=<integer>] [--timeout=<integer>] [--extra_args=<array>]
+
+DESCRIPTION
+    Multithreaded perl script to enumerate DNS information of a domain and discover non-contiguous ip blocks.
+    Category: RECON | Security Tier: 1 | Noise Rating: LOW
+    Capabilities: dns_enumeration, host_discovery, zone_transfer, subdomain_enumeration, name_servers_discovery
+
+OPTIONS & PARAMETERS
+    --target <string> [REQUIRED]
+        Target domain to enumerate (e.g. example.com)
+    --noreverse <boolean> [OPTIONAL] (default: True)
+        Skip reverse lookup operations
+    --subfile <string> [OPTIONAL] (default: )
+        Wordlist for subdomain brute forcing
+    --threads <integer> [OPTIONAL] (default: 5)
+        Number of threads to use
+    --timeout <integer> [OPTIONAL] (default: 10)
+        Timeout in seconds for DNS operations
+    --extra_args <array> [OPTIONAL] (default: [])
+        No description provided.
+HELP TEXT:
+Usage: dnsenum [OPTIONS]
+
+Multithreaded perl script to enumerate DNS information of a domain and discover non-contiguous ip blocks.
+
+Options:
+  --target               Target domain to enumerate (e.g. example.com)
+  --noreverse            Skip reverse lookup operations [default: True]
+  --subfile              Wordlist for subdomain brute forcing [default: ]
+  --threads              Number of threads to use [default: 5]
+  --timeout              Timeout in seconds for DNS operations [default: 10]
+  --extra_args            [default: []]
+INPUT PROPERTIES: {
+  "target": {
+    "type": "string",
+    "description": "Target domain to enumerate (e.g. example.com)"
+  },
+  "noreverse": {
+    "type": "boolean",
+    "description": "Skip reverse lookup operations",
+    "default": true
+  },
+  "subfile": {
+    "type": "string",
+    "description": "Wordlist for subdomain brute forcing",
+    "default": ""
+  },
+  "threads": {
+    "type": "integer",
+    "description": "Number of threads to use",
+    "default": 5
+  },
+  "timeout": {
+    "type": "integer",
+    "description": "Timeout in seconds for DNS operations",
+    "default": 10
+  },
+  "extra_args": {
+    "type": "array",
+    "items": {
+      "type": "string"
+    },
+    "default": []
+  }
+}
+REQUIRED INPUTS: ["target"]
+--------------------------------------------------
+TOOL SPECIFICATION: dnsrecon.enum.v1
+NAME: DNSRecon Enumerator (Version 1.0.0)
+CATEGORY: recon | TIER: 2 | NOISE: medium
+BINARY: dnsrecon
+DESCRIPTION: Advanced DNS enumeration, zone transfer audit, and record discovery tool.
+CAPABILITIES: dns_enumeration, zone_transfer_audit, subdomain_discovery, structured_observation
+SYNOPSIS:
+NAME
+    dnsrecon - DNSRecon Enumerator (Version 1.0.0)
+
+SYNOPSIS
+    dnsrecon --target=<string> [--scan_type=<string>] [--dictionary=<string>] [--options=<string>]
+
+DESCRIPTION
+    Advanced DNS enumeration, zone transfer audit, and record discovery tool.
+    Category: RECON | Security Tier: 2 | Noise Rating: MEDIUM
+    Capabilities: dns_enumeration, zone_transfer_audit, subdomain_discovery, structured_observation
+
+OPTIONS & PARAMETERS
+    --target <string> [REQUIRED] (default: target.lab)
+        Target domain or host to enumerate
+    --scan_type <string> [OPTIONAL] (default: std) [Choices: std, rvl, brt, srv, axfr]
+        Scan type (std, rvl, brt, srv, axfr)
+    --dictionary <string> [OPTIONAL] (default: )
+        Subdomain dictionary file path for brute force
+    --options <string> [OPTIONAL] (default: )
+        Additional CLI arguments
+HELP TEXT:
+Usage: dnsrecon [OPTIONS]
+
+Advanced DNS enumeration, zone transfer audit, and record discovery tool.
+
+Options:
+  --target               Target domain or host to enumerate [default: target.lab]
+  --scan_type            Scan type (std, rvl, brt, srv, axfr) [default: std]
+  --dictionary           Subdomain dictionary file path for brute force [default: ]
+  --options              Additional CLI arguments [default: ]
+INPUT PROPERTIES: {
+  "target": {
+    "type": "string",
+    "description": "Target domain or host to enumerate",
+    "default": "target.lab"
+  },
+  "scan_type": {
+    "type": "string",
+    "description": "Scan type (std, rvl, brt, srv, axfr)",
+    "enum": [
+      "std",
+      "rvl",
+      "brt",
+      "srv",
+      "axfr"
+    ],
+    "default": "std"
+  },
+  "dictionary": {
+    "type": "string",
+    "description": "Subdomain dictionary file path for brute force",
+    "default": ""
+  },
+  "options": {
+    "type": "string",
+    "description": "Additional CLI arguments",
+    "default": ""
+  }
+}
+REQUIRED INPUTS: ["target"]
+--------------------------------------------------
 TOOL SPECIFICATION: exiftool.extract.v1
 NAME: ExifTool Metadata Extractor (Version 1.0.0)
 CATEGORY: recon | TIER: 1 | NOISE: low
@@ -1379,6 +1525,59 @@ INPUT PROPERTIES: {
 }
 REQUIRED INPUTS: ["url"]
 --------------------------------------------------
+TOOL SPECIFICATION: subfinder.enum.v1
+NAME: Subfinder Security Tool (Version 1.0.0)
+CATEGORY: recon | TIER: 2 | NOISE: medium
+BINARY: subfinder
+DESCRIPTION: Automated execution and evidence gathering adapter for subfinder.
+CAPABILITIES: recon_scan, structured_observation, evidence_collection
+SYNOPSIS:
+NAME
+    subfinder - Subfinder Security Tool (Version 1.0.0)
+
+SYNOPSIS
+    subfinder --target=<string> [--options=<string>] [--timeout_s=<integer>]
+
+DESCRIPTION
+    Automated execution and evidence gathering adapter for subfinder.
+    Category: RECON | Security Tier: 2 | Noise Rating: MEDIUM
+    Capabilities: recon_scan, structured_observation, evidence_collection
+
+OPTIONS & PARAMETERS
+    --target <string> [REQUIRED] (default: 127.0.0.1)
+        Target host, IP, or domain
+    --options <string> [OPTIONAL] (default: )
+        Optional flags for tool execution
+    --timeout_s <integer> [OPTIONAL] (default: 30)
+        Per-command execution timeout in seconds
+HELP TEXT:
+Usage: subfinder [OPTIONS]
+
+Automated execution and evidence gathering adapter for subfinder.
+
+Options:
+  --target               Target host, IP, or domain [default: 127.0.0.1]
+  --options              Optional flags for tool execution [default: ]
+  --timeout_s            Per-command execution timeout in seconds [default: 30]
+INPUT PROPERTIES: {
+  "target": {
+    "type": "string",
+    "description": "Target host, IP, or domain",
+    "default": "127.0.0.1"
+  },
+  "options": {
+    "type": "string",
+    "description": "Optional flags for tool execution",
+    "default": ""
+  },
+  "timeout_s": {
+    "type": "integer",
+    "description": "Per-command execution timeout in seconds",
+    "default": 30
+  }
+}
+REQUIRED INPUTS: ["target"]
+--------------------------------------------------
 TOOL SPECIFICATION: system_ping
 NAME: System Ping Tool (Version 1.0.0)
 CATEGORY: diagnostic | TIER: 1 | NOISE: low
@@ -1501,6 +1700,79 @@ INPUT PROPERTIES: {
   }
 }
 REQUIRED INPUTS: ["interface"]
+--------------------------------------------------
+TOOL SPECIFICATION: trivy.fs.v1
+NAME: Trivy Filesystem Vulnerability Scanner (Version 1.0.0)
+CATEGORY: analysis | TIER: 1 | NOISE: low
+BINARY: trivy
+DESCRIPTION: Fast security scanner for container images, filesystems, Git repos, secrets, and configuration flaws.
+CAPABILITIES: filesystem_vulnerability_scan, secret_detection, misconfiguration_audit, dependency_cve_analysis, structured_observation
+SYNOPSIS:
+NAME
+    trivy - Trivy Filesystem Vulnerability Scanner (Version 1.0.0)
+
+SYNOPSIS
+    trivy --target=<string> [--severity=<string>] [--scanners=<string>] [--format=<string>] [--options=<string>]
+
+DESCRIPTION
+    Fast security scanner for container images, filesystems, Git repos, secrets, and configuration flaws.
+    Category: ANALYSIS | Security Tier: 1 | Noise Rating: LOW
+    Capabilities: filesystem_vulnerability_scan, secret_detection, misconfiguration_audit, dependency_cve_analysis, structured_observation
+
+OPTIONS & PARAMETERS
+    --target <string> [REQUIRED] (default: /home/kali)
+        Target directory path to scan
+    --severity <string> [OPTIONAL] (default: HIGH,CRITICAL)
+        Comma-separated severity filter
+    --scanners <string> [OPTIONAL] (default: vuln,secret)
+        Scanners to enable (vuln, secret, misconfig)
+    --format <string> [OPTIONAL] (default: json) [Choices: table, json]
+        Output format (table or json)
+    --options <string> [OPTIONAL] (default: )
+        Additional CLI flags
+HELP TEXT:
+Usage: trivy [OPTIONS]
+
+Fast security scanner for container images, filesystems, Git repos, secrets, and configuration flaws.
+
+Options:
+  --target               Target directory path to scan [default: /home/kali]
+  --severity             Comma-separated severity filter [default: HIGH,CRITICAL]
+  --scanners             Scanners to enable (vuln, secret, misconfig) [default: vuln,secret]
+  --format               Output format (table or json) [default: json]
+  --options              Additional CLI flags [default: ]
+INPUT PROPERTIES: {
+  "target": {
+    "type": "string",
+    "description": "Target directory path to scan",
+    "default": "/home/kali"
+  },
+  "severity": {
+    "type": "string",
+    "description": "Comma-separated severity filter",
+    "default": "HIGH,CRITICAL"
+  },
+  "scanners": {
+    "type": "string",
+    "description": "Scanners to enable (vuln, secret, misconfig)",
+    "default": "vuln,secret"
+  },
+  "format": {
+    "type": "string",
+    "description": "Output format (table or json)",
+    "enum": [
+      "table",
+      "json"
+    ],
+    "default": "json"
+  },
+  "options": {
+    "type": "string",
+    "description": "Additional CLI flags",
+    "default": ""
+  }
+}
+REQUIRED INPUTS: ["target"]
 --------------------------------------------------
 TOOL SPECIFICATION: whatweb.scan.v1
 NAME: WhatWeb Technology Fingerprinter (Version 1.0.0)
@@ -1715,6 +1987,72 @@ INPUT PROPERTIES: {
   }
 }
 REQUIRED INPUTS: []
+--------------------------------------------------
+TOOL SPECIFICATION: wpscan.audit.v1
+NAME: WPScan WordPress Security Auditor (Version 1.0.0)
+CATEGORY: web | TIER: 2 | NOISE: medium
+BINARY: wpscan
+DESCRIPTION: Black box WordPress vulnerability scanner for core, plugin, and theme security auditing.
+CAPABILITIES: wordpress_enumeration, plugin_vulnerability_audit, theme_vulnerability_audit, user_enumeration, structured_observation
+SYNOPSIS:
+NAME
+    wpscan - WPScan WordPress Security Auditor (Version 1.0.0)
+
+SYNOPSIS
+    wpscan --target=<string> [--detection_mode=<string>] [--enumerate=<string>] [--options=<string>]
+
+DESCRIPTION
+    Black box WordPress vulnerability scanner for core, plugin, and theme security auditing.
+    Category: WEB | Security Tier: 2 | Noise Rating: MEDIUM
+    Capabilities: wordpress_enumeration, plugin_vulnerability_audit, theme_vulnerability_audit, user_enumeration, structured_observation
+
+OPTIONS & PARAMETERS
+    --target <string> [REQUIRED] (default: http://127.0.0.1:8080)
+        Target WordPress URL or domain
+    --detection_mode <string> [OPTIONAL] (default: passive) [Choices: passive, aggressive, mixed]
+        Detection mode for plugins/themes
+    --enumerate <string> [OPTIONAL] (default: vp,u)
+        Enumeration targets (e.g. vp,vt,u)
+    --options <string> [OPTIONAL] (default: )
+        Additional flags (e.g. --random-user-agent)
+HELP TEXT:
+Usage: wpscan [OPTIONS]
+
+Black box WordPress vulnerability scanner for core, plugin, and theme security auditing.
+
+Options:
+  --target               Target WordPress URL or domain [default: http://127.0.0.1:8080]
+  --detection_mode       Detection mode for plugins/themes [default: passive]
+  --enumerate            Enumeration targets (e.g. vp,vt,u) [default: vp,u]
+  --options              Additional flags (e.g. --random-user-agent) [default: ]
+INPUT PROPERTIES: {
+  "target": {
+    "type": "string",
+    "description": "Target WordPress URL or domain",
+    "default": "http://127.0.0.1:8080"
+  },
+  "detection_mode": {
+    "type": "string",
+    "description": "Detection mode for plugins/themes",
+    "enum": [
+      "passive",
+      "aggressive",
+      "mixed"
+    ],
+    "default": "passive"
+  },
+  "enumerate": {
+    "type": "string",
+    "description": "Enumeration targets (e.g. vp,vt,u)",
+    "default": "vp,u"
+  },
+  "options": {
+    "type": "string",
+    "description": "Additional flags (e.g. --random-user-agent)",
+    "default": ""
+  }
+}
+REQUIRED INPUTS: ["target"]
 --------------------------------------------------
 TOOL SPECIFICATION: zap.gui.v1
 NAME: OWASP ZAP GUI Adapter (Version 1.0.0)

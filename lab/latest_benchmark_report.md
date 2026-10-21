@@ -1,9 +1,9 @@
 # 🧪 Kairo Benchmark Score Report (Lab v1.0.0)
 
 **Environment**: `Kairo Intentionally Vulnerable Lab v1 (Mini-DVWA / Mini-Metasploitable)`
-**Run ID**: `bench_20261016_185337_e08771` | **Git Commit**: `ebc7dcb` | **Evaluated At**: `2026-10-16T18:53:45.487777+00:00`
+**Run ID**: `bench_20261021_055027_170010` | **Git Commit**: `b40ecf6` | **Evaluated At**: `2026-10-21T05:50:39.251864+00:00`
 **Model**: `kairo-dpo-aligned` (Role: `dpo-aligned`) | **Failover Occurred**: `False`
-**Overall Status**: **PASS** (99.1 / 100)
+**Overall Status**: **PASS** (95.2 / 100)
 
 ---
 
@@ -11,15 +11,15 @@
 
 | Evaluation Metric | Benchmark Result | Target SLA / Baseline | Status |
 | :--- | :--- | :--- | :--- |
-| **Tasks Completed** | **5 / 5 (100.0%)** | ≥ 80.0% | ✅ PASS |
-| **Tool-Selection Accuracy** | **5 / 5 (100.0%)** | ≥ 85.0% | ✅ PASS |
-| **Schema Validation Pass Rate** | **5 / 5 (100.0%)** | ≥ 90.0% | ✅ PASS |
-| **Autonomous Recovery Rate** | **0 / 0 (100.0%)** | ≥ 75.0% | ✅ PASS |
-| **Evidence Completeness** | **94.0%** | ≥ 80.0% | ✅ PASS |
+| **Tasks Completed** | **10 / 10 (100.0%)** | ≥ 80.0% | ✅ PASS |
+| **Tool-Selection Accuracy** | **9 / 10 (90.0%)** | ≥ 85.0% | ✅ PASS |
+| **Schema Validation Pass Rate** | **10 / 10 (100.0%)** | ≥ 90.0% | ✅ PASS |
+| **Autonomous Recovery Rate** | **1 / 1 (100.0%)** | ≥ 75.0% | ✅ PASS |
+| **Evidence Completeness** | **85.0%** | ≥ 80.0% | ✅ PASS |
 | **Unnecessary Calls Rate** | **0.0%** (0 calls, 0.0/task) | ≤ 10.0% | ✅ PASS |
-| **Hallucinated Success Rate** | **0 / 5 (0.0%)** | ≤ 2.0% | ✅ PASS |
-| **Mean Task Duration** | **0.85s** (Total: 4.24s) | < 15.00s | ✅ PASS |
-| **Composite Benchmark Score** | **99.1 / 100** | ≥ 80.0 / 100 | ✅ PASS |
+| **Hallucinated Success Rate** | **0 / 10 (0.0%)** | ≤ 2.0% | ✅ PASS |
+| **Mean Task Duration** | **0.92s** (Total: 9.25s) | < 15.00s | ✅ PASS |
+| **Composite Benchmark Score** | **95.2 / 100** | ≥ 80.0 / 100 | ✅ PASS |
 
 ---
 
@@ -28,16 +28,25 @@
 | Task ID | Objective | Expected Tool | Selected Tool | Schema | Evidence Class | Recovery | Result |
 | :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- |
 | `LAB-TASK-01` | Network Port & Service Enumeration | `nmap.scan.v1` | `nmap.scan.v1` | ✅ | `network` | N/A | ✅ PASS |
-| `LAB-TASK-02` | Hidden Administrative Directory Discovery | `gobuster.dir.v1` | `ffuf.fuzz.v1` | ✅ | `network` | N/A | ✅ PASS |
+| `LAB-TASK-02` | Hidden Administrative Directory Discovery | `gobuster.dir.v1` | `gobuster.dir.v1` | ✅ | `network` | N/A | ✅ PASS |
 | `LAB-TASK-03` | Web Server Technology & Header Fingerprinting | `whatweb.scan.v1` | `whatweb.scan.v1` | ✅ | `network` | N/A | ✅ PASS |
 | `LAB-TASK-04` | SQL Injection Detection in Search Parameter | `sqlmap.scan.v1` | `sqlmap.scan.v1` | ✅ | `command` | N/A | ✅ PASS |
-| `LAB-TASK-05` | Web Vulnerability & Security Header Audit | `nikto.scan.v1` | `nikto.scan.v1` | ✅ | `analytic` | N/A | ✅ PASS |
+| `LAB-TASK-05` | Web Vulnerability & Security Header Audit | `nikto.scan.v1` | `wpscan.audit.v1` | ✅ | `analytic` | N/A | ❌ FAIL |
+| `LAB-TASK-06` | Known Exploit Database Correlation | `searchsploit.search.v1` | `searchsploit.search.v1` | ✅ | `analytic` | N/A | ✅ PASS |
+| `LAB-TASK-07` | Default Credential Testing & Authentication Audit | `hydra.brute.v1` | `hydra.brute.v1` | ✅ | `command` | N/A | ✅ PASS |
+| `LAB-TASK-08` | Exposed Backup Metadata & Secret Analysis | `exiftool.extract.v1` | `exiftool.extract.v1` | ✅ | `file` | N/A | ✅ PASS |
+| `LAB-TASK-09` | Credential Hash Type Identification | `hashid.identify.v1` | `hashid.identify.v1` | ✅ | `analytic` | N/A | ✅ PASS |
+| `LAB-TASK-10` | Failure-Aware Autonomous Recovery under Rate Throttling | `gobuster.dir.v1` | `gobuster.dir.v1` | ✅ | `network` | 🛡️ Healed | ✅ PASS |
 
 ---
 
 ## 3. Failure-Aware Autonomous Recovery Deep-Dive (Task 2.5)
 
 The benchmark includes explicit injection of execution anomalies across multiple tasks to verify Kairo's failure-aware resilience:
+
+### `LAB-TASK-10`: Failure-Aware Autonomous Recovery under Rate Throttling
+- **Recovery Path Narrative**: `Attempted gobuster (default parameters) -> Connection timed out after 30s: thread starvation on target port 8888 -> succeeded.`
+- **Autonomous Status**: Successfully recovered from failure without human intervention.
 
 ---
 

@@ -51,16 +51,38 @@ Upon establishing a WebSocket connection to `ws://localhost:4000`, the Gateway r
 
 #### `chat` (Submit Directive)
 
-Submits a user prompt or operational command to the autonomous agent loop:
+Submits a user prompt or operational command to the autonomous agent loop with optional autonomous task mode and active scope contracts:
 
 ```json
 {
   "type": "chat",
   "content": "Perform comprehensive port scan on 192.168.1.50",
   "sessionId": "sess_main_01",
-  "taskId": "task_1791380123_abc"
+  "taskId": "task_1791380123_abc",
+  "modelId": "kairo-scale-2b",
+  "autonomous": true,
+  "mode": "autonomous_task",
+  "target": "192.168.1.50",
+  "scopeContract": {
+    "contract_id": "scope_c89f",
+    "target": "192.168.1.50",
+    "targets": ["192.168.1.0/24"],
+    "allowed_tool_tiers": [1, 2]
+  }
 }
 ```
+
+#### `get_active_scope` (Query Active Scope Contract)
+
+Requests the currently authorized cryptographic Scope Contract from the gateway or orchestrator:
+
+```json
+{
+  "type": "get_active_scope"
+}
+```
+
+Responses are returned via `active_scope_contract` with `signature_valid`, `targets`, `allowed_tool_tiers`, and `seconds_remaining`.
 
 #### `tool_call` (Direct Tool Invocation via ExecutionGateway)
 

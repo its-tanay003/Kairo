@@ -647,7 +647,14 @@ class HybridToolSelector:
         if any(w in q_lower for w in ["whois", "registrar", "asn"]) and "whois" in tool.id:
             keyword_boosts += 0.35
             bonus_reasons.append("whois terms")
-        if any(w in q_lower for w in ["dns", "dig", "record", "mx", "ns"]) and "dig" in tool.id:
+        # Explicit binary / tool prefix mention in user prompt
+        tool_prefix = tool.id.split(".")[0].lower()
+        tool_binary = getattr(tool, "binary", "").lower()
+        if (tool_prefix and tool_prefix in q_lower) or (tool_binary and tool_binary in q_lower):
+            keyword_boosts += 0.50
+            bonus_reasons.append(f"explicit tool invocation '{tool_prefix or tool_binary}'")
+
+        if any(w in q_lower for w in ["dig", "dns lookup", "mx", "ns record"]) and "dig" in tool.id:
             keyword_boosts += 0.35
             bonus_reasons.append("DNS terms")
         if any(w in q_lower for w in ["pcap", "traffic", "tcpdump", "sniff", "packet"]) and "tcpdump" in tool.id:
@@ -858,6 +865,11 @@ class HybridToolSelector:
 
         if tot == 0:
             return 0.90, "no prior execution history recorded (baseline neutral prior 0.90)"
+
+        if tot < 5:
+            # Laplace smoothing for small sample sizes to avoid zeroing out tools
+            smoothed_score = round((succ + 2.0) / (tot + 2.5), 4)
+            return smoothed_score, f"succeeded {succ}/{tot} prior runs (smoothed {smoothed_score:.2f}, avg duration {avg_ms/1000.0:.1f}s)"
 
         raw = f"succeeded {succ}/{tot} prior runs (avg duration {avg_ms/1000.0:.1f}s, {mem.get('timeout_runs', 0)} timeouts)"
         return rel_score, raw

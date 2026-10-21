@@ -19,7 +19,7 @@
 8. [Chat Stream: Extended Thinking & Claude Artifacts](#8-chat-stream-extended-thinking--claude-artifacts)
 9. [The Claude Floating Composer](#9-the-claude-floating-composer)
 10. [Right Split Console & Artifacts Drawer](#10-right-split-console--artifacts-drawer)
-11. [Visual Interface Walkthrough & High-Resolution Screenshots](#11-visual-interface-walkthrough--high-resolution-screenshots)
+11. [Visual Interface Architecture & Screen Wireframe Specifications](#11-visual-interface-architecture--screen-wireframe-specifications)
     - [11.1 Claude Welcome Surface](#111-claude-welcome-surface)
     - [11.2 Claude Model Selector Dropdown](#112-claude-model-selector-dropdown)
     - [11.3 Cryptographic Scope Contract Popover](#113-cryptographic-scope-contract-popover)
@@ -220,53 +220,239 @@ Slide-out drawer functioning like Claude's Artifacts side-by-side pane:
 
 ---
 
-## 11. Visual Interface Walkthrough & High-Resolution Screenshots
+## 11. Visual Interface Architecture & Screen Wireframe Specifications
 
-All screenshots are stored in [`docs/assets/screenshots/`](file:///c:/New%20Volume%20(D)/dev/docs/assets/screenshots/) and verified at 1.25x DPI:
+The Kairo interface implements an executive visual hierarchy modeled after the Anthropic Claude Warm Dark design system. The following structural wireframes document the layout, state machines, and component hierarchy across all primary views.
 
 ### 11.1 Claude Welcome Surface
-![Claude Welcome Surface](file:///c:/New%20Volume%20(D)/dev/docs/assets/screenshots/01_claude_welcome_screen.png)
-*Figure 11.1: Signature Claude welcome screen with serif headline, starburst spark icon, prompt starter grid, and floating composer.*
+
+```text
++-----------------------------------------------------------------------------------+
+| [Sidebar] Kairo [Claude v3.0]      [✦ Kairo Scale 2B (Custom) ▼]   [● Ready] [⚙]  |
++-----------------------------------------------------------------------------------+
+|                                                                                   |
+|                                       ✦                                           |
+|                              Welcome to Kairo                                     |
+|                 Autonomous Cyber Security Operations Agent                        |
+|                                                                                   |
+|    +------------------------------------+  +------------------------------------+ |
+|    | Full Scope Subdomain Discovery    |  | Web Vulnerability & CVE Audit      | |
+|    | Enumerate subdomains and DNS       |  | Run Nikto/ZAP across web endpoints  | |
+|    | Target: 192.168.1.0/24             |  | Target: http://127.0.0.1:8080      | |
+|    +------------------------------------+  +------------------------------------+ |
+|    | Network Port & Service Scan        |  | Threat Model & Attack Graph Plan   | |
+|    | Fast SYN stealth port discovery    |  | Decompose objective into task DAG  | |
+|    | Target: 10.0.0.0/8                 |  | Target: Autonomous Plan Only       | |
+|    +------------------------------------+  +------------------------------------+ |
+|                                                                                   |
+|               [ 🔒 Scope: 192.168.1.0/24 · Active (HMAC Valid) ]                  |
+|   +---------------------------------------------------------------------------+   |
+|   | Enter cyber security directive or prompt...                 [✦ Model] [▲] |   |
+|   +---------------------------------------------------------------------------+   |
++-----------------------------------------------------------------------------------+
+```
 
 ### 11.2 Claude Model Selector Dropdown
-![Claude Model Selector](file:///c:/New%20Volume%20(D)/dev/docs/assets/screenshots/02_claude_model_selector.png)
-*Figure 11.2: Model picker dropdown in top navigation bar displaying Kairo Scale 2B (Custom Primary), Qwen2.5-0.5B (Local Fallback), Kairo GRPO Final (Reasoner), and Qwen3-Coder-30B (MoE Base).*
+
+```text
++-----------------------------------------------------------------------------------+
+| Top Navigation Center: [✦ Kairo Scale 2B (Custom Primary) [Backend: Ready] ▲]     |
+| +-------------------------------------------------------------------------------+ |
+| | ✦ Kairo Scale 2B (Custom Primary)    [Primary Custom]                         | |
+| |   Locally-trained 2B causal architecture with GRPO schema alignment           | |
+| |-------------------------------------------------------------------------------| |
+| | ⚡ Qwen2.5-0.5B (Local Fallback)       [Local Fallback]                         | |
+| |   Lightweight quantized GGUF local model for fast offline triage              | |
+| |-------------------------------------------------------------------------------| |
+| | ✦ Kairo GRPO Final (Reasoner)         [RL Aligned]                            | |
+| |   Checkpoint reinforced with schema validation and verifier rewards           | |
+| |-------------------------------------------------------------------------------| |
+| | ✦ Qwen3-Coder-30B (MoE Base)          [Advanced]                              | |
+| |   Large local Mixture-of-Experts coder model for exploit generation           | |
+| +-------------------------------------------------------------------------------+ |
++-----------------------------------------------------------------------------------+
+```
 
 ### 11.3 Cryptographic Scope Contract Popover
-![Scope Contract Popover](file:///c:/New%20Volume%20(D)/dev/docs/assets/screenshots/03_claude_scope_popover.png)
-*Figure 11.3: Cryptographic Scope Contract popover detailing CIDR ranges, excluded gateways, and active safety tiers.*
+
+```text
++-----------------------------------------------------------------------------------+
+| Floating Pill: [ 🔒 Scope: 192.168.1.0/24 · Active ]                             |
+| +-------------------------------------------------------------------------------+ |
+| | Scope Contract (scope_c89f)                                               [✕] | |
+| | Status: [HMAC-SHA256 Valid] (58m left)                                        | |
+| | Primary Target: 192.168.1.0/24                                                | |
+| | Allowed CIDRs: 192.168.1.0/24, 10.0.0.0/8                                     | |
+| | Excluded Hosts: 192.168.1.1, 10.0.0.1                                         | |
+| | Max Tool Tier: Tier 2 (Active CLI)                                            | |
+| +-------------------------------------------------------------------------------+ |
++-----------------------------------------------------------------------------------+
+```
 
 ### 11.4 Active Conversation: Thinking & Artifacts
-![Active Conversation Turn](file:///c:/New%20Volume%20(D)/dev/docs/assets/screenshots/04_claude_chat_messages.png)
-*Figure 11.4: Conversational stream displaying user bubble, Claude 3.7 Extended Thinking block, and verified Artifact tool card.*
+
+```text
++-----------------------------------------------------------------------------------+
+| [User]: Run an nmap service scan against 192.168.1.50 and report findings         |
+|                                                                                   |
+| [Agent]:                                                                          |
+|   +-----------------------------------------------------------------------------+ |
+|   | ✦ Thought for 1.8s                                                        ▾ | |
+|   |   Analyzing target 192.168.1.50 against active Scope Contract...            | |
+|   |   Selecting tool: nmap.scan.v1 (confidence: 0.96, smoothed prior: 0.94)    | |
+|   +-----------------------------------------------------------------------------+ |
+|   | I initiated an authorized network service scan on 192.168.1.50.             | |
+|   |                                                                             | |
+|   | +--- [Artifact: nmap.scan.v1] --------------------------------------------+ | |
+|   | | Status: Success · Duration: 2410ms · Tier 2 (Active CLI)                 | | |
+|   | | Ports Detected: 22/tcp (SSH), 80/tcp (HTTP), 443/tcp (HTTPS)            | | |
+|   | | [Copy Raw JSON]                                    [Open in Console ↗]  | | |
+|   | +-------------------------------------------------------------------------+ | |
+|   |                                                                             | |
+|   | **Synthesis Summary**:                                                      | |
+|   | Host 192.168.1.50 is online with web services exposed. Next recommended    | |
+|   | step: web enumeration using `whatweb.scan.v1` and `nikto.scan.v1`.          | |
++-----------------------------------------------------------------------------------+
+```
 
 ### 11.5 Console Drawer: System & Hardware Telemetry
-![System Telemetry Tab](file:///c:/New%20Volume%20(D)/dev/docs/assets/screenshots/05_claude_console_system.png)
-*Figure 11.5: Advanced Drawer System tab with GPU VRAM meters, Kali VM worker state, and active runtime information.*
+
+```text
++-----------------------------------------------------------------------------------+
+| Advanced Console [System] [Events] [Terminal] [Screen] [Graph] [Audit] [Leaderboard]
++-----------------------------------------------------------------------------------+
+| Local LLM Status: Online (Transformers Custom Primary)                            |
+| Model ID: kairo-scale-2b | Quantization: None (BF16) | Context Length: 4096      |
+| Air-Gapped Privacy: 100% Local (Cloud Prevented)                                  |
+|                                                                                   |
+| GPU VRAM Usage: [██████████████░░░░░░] 7.2 GB / 12.0 GB (60.0%)                   |
+| System RAM:     [████████████░░░░░░░░] 14.1 GB / 32.0 GB (44.0%)                  |
+| Kali Worker VM: Online (VirtualBox / WSL2 Plane) | Snapshots: 4 Available         |
++-----------------------------------------------------------------------------------+
+```
 
 ### 11.6 Console Drawer: Live Kali Terminal Stream
-![Live Kali Terminal Stream](file:///c:/New%20Volume%20(D)/dev/docs/assets/screenshots/06_claude_console_terminal.png)
-*Figure 11.6: Advanced Drawer Terminal view with Kali sandbox CLI greeting, process supervisor tree, and quick scenario triggers.*
+
+```text
++-----------------------------------------------------------------------------------+
+| Advanced Console [System] [Events] [Terminal] [Screen] [Graph] [Audit] [Leaderboard]
++-----------------------------------------------------------------------------------+
+|  ____  __.      .__                                                               |
+| |    |/ _|____  |__|______  ____                                                  |
+| |      < \__  \ |  \_  __ \/  _ \      KAIRO HEADLESS KALI ISOLATION WORKER       |
+| |    |  \ / __ \|  ||  | \(  <_> )     Session: sess_main_01 | PID: 14829         |
+| |____|__ (____  /__||__|   \____/      Plane: windows_wsl2 | Root: /root          |
+|                                                                                   |
+| kali@kairo-worker:~$ nmap -sV -sC 192.168.1.50                                    |
+| Starting Nmap 7.94 ( https://nmap.org ) at 2026-10-21 11:30 UTC                   |
+| Nmap scan report for 192.168.1.50                                                 |
+| Host is up (0.00042s latency).                                                    |
+| PORT    STATE SERVICE VERSION                                                     |
+| 22/tcp  open  ssh     OpenSSH 8.9p1 Ubuntu                                        |
+| 80/tcp  open  http    Apache httpd 2.4.52                                         |
+| 443/tcp open  ssl/ssl Apache httpd 2.4.52                                         |
+| [Stream Connected: ws://localhost:4000/terminal/stream]                           |
++-----------------------------------------------------------------------------------+
+```
 
 ### 11.7 Console Drawer: Kali Desktop Screen Stream (noVNC)
-![Kali Desktop Stream](file:///c:/New%20Volume%20(D)/dev/docs/assets/screenshots/07_claude_console_screen.png)
-*Figure 11.7: Built-in noVNC virtual desktop frame buffer for interactive GUI tools (Burp Suite, Wireshark, Firefox).*
+
+```text
++-----------------------------------------------------------------------------------+
+| Advanced Console [System] [Events] [Terminal] [Screen] [Graph] [Audit] [Leaderboard]
++-----------------------------------------------------------------------------------+
+| [ Kali XFCE Virtual Desktop (RFB / noVNC Stream :5900) ]                           |
+| +-------------------------------------------------------------------------------+ |
+| | [Applications]   [Terminal]   [Burp Suite Pro]   [Wireshark]                  | |
+| | +---------------------------------------------------------------------------+ | |
+| | | Burp Suite Community Edition v2026.1                                      | | |
+| | | Target: http://192.168.1.50/dvwa/                                          | | |
+| | | Issues Identified: 3 Low, 2 Medium, 1 High (SQLi in login parameter)     | | |
+| | +---------------------------------------------------------------------------+ | |
+| +-------------------------------------------------------------------------------+ |
+| Low Latency RFB Stream Active · 1280x720 · 30 FPS · WebSockets Tunneling Enabled  |
++-----------------------------------------------------------------------------------+
+```
 
 ### 11.8 Console Drawer: Task Graph DAG Planner
-![Task Graph DAG Planner](file:///c:/New%20Volume%20(D)/dev/docs/assets/screenshots/08_claude_console_task_graph.png)
-*Figure 11.8: Task Graph view showing parallel reconnaissance roots, dependency resolution, and terracotta Decompose button.*
+
+```text
++-----------------------------------------------------------------------------------+
+| Advanced Console [System] [Events] [Terminal] [Screen] [Graph] [Audit] [Leaderboard]
++-----------------------------------------------------------------------------------+
+| Active DAG Plan: plan_1792562_recon | Status: Executing Node 3 of 4               |
+|                                                                                   |
+|   [Node 1: Port Scan] =========> [Node 2: Web Enum] ====> [Node 4: CVE Search]    |
+|   nmap.scan.v1 (Completed)       whatweb.scan.v1 (Completed)  cve.search.v1 (Pending)
+|          |                                                      ▲                 |
+|          +=====================> [Node 3: Vuln Audit] ==========+                 |
+|                                  nikto.scan.v1 (Running)                          |
+|                                                                                   |
+| [Decompose Sub-Objective]                [Pause Plan]               [Abort Plan]  |
++-----------------------------------------------------------------------------------+
+```
 
 ### 11.9 Console Drawer: Audit Findings & Evidence Explorer
-![Audit Findings Explorer](file:///c:/New%20Volume%20(D)/dev/docs/assets/screenshots/09_claude_console_audit.png)
-*Figure 11.9: Cryptographic evidence cards, verified findings, and audit export tools.*
+
+```text
++-----------------------------------------------------------------------------------+
+| Advanced Console [System] [Events] [Terminal] [Screen] [Graph] [Audit] [Leaderboard]
++-----------------------------------------------------------------------------------+
+| Immutable SQLite Event Store (`events.db`) · Total Events: 1,482                  |
+| Filter: [All] [Success] [Error] | Search: [ 192.168.1.50                      ]   |
+|                                                                                   |
+| Event ID #1482 · 11:30:14 · nmap.scan.v1 · Exit: 0 · Duration: 2.41s              |
+|   Actor: orchestrator:agent | Target: 192.168.1.50 | SHA256: 3a9f...b82c          |
+|   Summary: Discovered 3 open ports (22, 80, 443). Host state: up.                 |
+|                                                                                   |
+| Event ID #1481 · 11:29:58 · dag.execution.v1 · Exit: 0 · Nodes: 4/4 Completed     |
+|   Actor: orchestrator:planner:synthesis | Plan: plan_recon_01                      |
+|   Summary: Completed DAG plan: 4/4 steps succeeded (completed).                   |
++-----------------------------------------------------------------------------------+
+```
 
 ### 11.10 Console Drawer: Benchmark Leaderboard
-![Benchmark Leaderboard](file:///c:/New%20Volume%20(D)/dev/docs/assets/screenshots/10_claude_console_benchmarks.png)
-*Figure 11.10: Multi-model evaluation scores across the 50-task Golden & 120-task Full benchmark suites.*
+
+```text
++-----------------------------------------------------------------------------------+
+| Advanced Console [System] [Events] [Terminal] [Screen] [Graph] [Audit] [Leaderboard]
++-----------------------------------------------------------------------------------+
+| Model Performance Benchmark Leaderboard (50-Task Golden & 120-Task Extended Suite)|
+|                                                                                   |
+| Model ID                     Role              Accuracy   Avg Dur   Schema Score  |
+| --------------------------------------------------------------------------------- |
+| kairo-scale-2b-grpo          Custom Primary    96.4%      1.82s     1.00          |
+| Qwen3-Coder-30B              MoE Base          94.1%      3.14s     0.98          |
+| kairo-scale-2b               Custom Base       91.8%      1.95s     0.97          |
+| Qwen2.5-0.5B-Instruct        Local Fallback    82.5%      0.84s     0.92          |
++-----------------------------------------------------------------------------------+
+```
 
 ### 11.11 Mobile Responsive Viewport (375px)
-![Mobile Responsive Viewport](file:///c:/New%20Volume%20(D)/dev/docs/assets/screenshots/11_claude_mobile_view.png)
-*Figure 11.11: Mobile responsive layout on iPhone viewport (375x812) with full-screen drawer overlays.*
+
+```text
++-----------------------------------+
+| [☰] Kairo [Claude] [✦ Scale 2B] [⚙]|
++-----------------------------------+
+|                                   |
+| [User]: Port scan 10.0.0.5        |
+|                                   |
+| [Agent]:                          |
+| ✦ Thought for 1.2s ▾              |
+| Executed authorized port scan.    |
+|                                   |
+| +--- [Artifact: nmap.scan.v1] --+ |
+| | Status: Success (1.4s)        | |
+| | 80/tcp open (HTTP)            | |
+| | [Copy JSON]    [Console ↗]    | |
+| +-------------------------------+ |
+|                                   |
+| 🔒 Scope: 10.0.0.5 · Active       |
+| +-------------------------------+ |
+| | Enter prompt...         [▲]   | |
+| +-------------------------------+ |
++-----------------------------------+
+```
 
 ---
 
