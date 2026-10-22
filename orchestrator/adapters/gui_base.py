@@ -110,6 +110,9 @@ class BaseGuiAdapter(ToolAdapter):
         self.last_screenshot_path: Optional[str] = None
         self.last_screenshot_hash: Optional[str] = None
         self.last_screenshot_time: Optional[str] = None
+        self.last_screenshot_is_simulated: bool = True
+        self.last_screenshot_source: str = "synthetic_fallback"
+        self.has_real_captures: bool = False
 
         # Periodic capture engine
         self.screenshot_interval_s: float = 3.0
@@ -172,6 +175,9 @@ class BaseGuiAdapter(ToolAdapter):
                     "sha256": initial_vis.sha256,
                 },
                 "ui_state": self.extract_ui_state(),
+                "is_simulated": initial_vis.metadata.get("is_simulated", True),
+                "simulation_notice": initial_vis.metadata.get("simulation_notice"),
+                "execution_plane": initial_vis.metadata.get("execution_plane", ExecutionPlaneType.SIMULATED_MOCK.value),
             }
 
     def stop(self, task_id: Optional[str] = None) -> Dict[str, Any]:
@@ -200,6 +206,9 @@ class BaseGuiAdapter(ToolAdapter):
                     "filepath": final_vis.filepath,
                     "sha256": final_vis.sha256,
                 },
+                "is_simulated": final_vis.metadata.get("is_simulated", True),
+                "simulation_notice": final_vis.metadata.get("simulation_notice"),
+                "execution_plane": final_vis.metadata.get("execution_plane", ExecutionPlaneType.SIMULATED_MOCK.value),
             }
 
     # ------------------------------------------------------------------
@@ -252,34 +261,77 @@ class BaseGuiAdapter(ToolAdapter):
         workflow_step: Optional[str] = None,
     ) -> VisualEvidence:
         """
-        Renders the active application frame, saves as PNG artifact with SHA-256 provenance,
-        records in SQLite via EvidenceStore, and updates tracking lists.
+        Captures the active application frame (attempting real screen capture via VNC / Kali worker first,
+        falling back to high-fidelity synthesized frame with honest simulation notice if no live session is reachable),
+        saves as PNG artifact with SHA-256 provenance, records in SQLite via EvidenceStore, and updates tracking.
         """
         with self._lock:
-            # Render high-fidelity visual image
-            pil_image = self.render_frame()
+            # 1. Attempt real screen capture from live GUI session inside Kali worker / upstream VNC
+            real_image = None
+            try:
+                from orchestrator.vnc_server import vnc_server
+                real_image = vnc_server.capture_screen(
+                    tool_id=self.tool_id,
+                    app_name=self.app_name,
+                    connector=self.kali_connector,
+                )
+            except Exception as e:
+                logger.debug(f"[{self.tool_id}] Live VNC screen capture attempt failed: {e}")
+                real_image = None
 
-            # Burn prominent honest simulation watermark directly into frame
-            if pil_image and hasattr(pil_image, "convert"):
-                pil_image = pil_image.convert("RGBA")
-                draw = ImageDraw.Draw(pil_image)
-                iw, ih = pil_image.size
+            is_simulated = (real_image is None)
 
-                # Top banner (height 26px) with high-visibility amber warning
-                banner_h = 26
-                draw.rectangle([(0, 0), (iw, banner_h)], fill=(35, 20, 10, 240), outline=(245, 158, 11, 255), width=1)
-                banner_text = f"WARNING {SIMULATION_NOTICE_TEXT} (Synthetic Frame - No Live GUI Active)"
-                draw.text((10, 6), banner_text, fill=(251, 191, 36, 255))
+            if not is_simulated and real_image is not None:
+                # Real screen capture succeeded! Genuine live GUI session frame
+                pil_image = real_image
+                simulation_notice = None
+                exec_plane = self._resolve_live_plane()
+                capture_source = "vnc_live"
+                self.has_real_captures = True
 
-                # Bottom-right watermark pill
-                watermark_text = "SIMULATED MOCK"
-                pill_w, pill_h = 140, 20
-                px1 = iw - pill_w - 10
-                py1 = ih - pill_h - 10
-                px2 = iw - 10
-                py2 = ih - 10
-                draw.rectangle([(px1, py1), (px2, py2)], fill=(15, 23, 42, 220), outline=(245, 158, 11, 200), width=1)
-                draw.text((px1 + 8, py1 + 3), f"[MOCK] {watermark_text}", fill=(245, 158, 11, 255))
+                # Clear synthetic [SIMULATED] tag if present in caption
+                raw_caption = caption or f"{self.app_name}: {self.visible_panel} ({self.window_title})"
+                if raw_caption.startswith("[SIMULATED] "):
+                    caption_str = raw_caption[len("[SIMULATED] "):]
+                elif raw_caption.startswith("[SIMULATED]"):
+                    caption_str = raw_caption[len("[SIMULATED]"):]
+                else:
+                    caption_str = raw_caption
+            else:
+                # Fallback path: render high-fidelity visual image with honest simulation watermark
+                pil_image = self.render_frame()
+
+                # Burn prominent honest simulation watermark directly into frame
+                if pil_image and hasattr(pil_image, "convert"):
+                    pil_image = pil_image.convert("RGBA")
+                    draw = ImageDraw.Draw(pil_image)
+                    iw, ih = pil_image.size
+
+                    # Top banner (height 26px) with high-visibility amber warning
+                    banner_h = 26
+                    draw.rectangle([(0, 0), (iw, banner_h)], fill=(35, 20, 10, 240), outline=(245, 158, 11, 255), width=1)
+                    banner_text = f"WARNING {SIMULATION_NOTICE_TEXT} (Synthetic Frame - No Live GUI Active)"
+                    draw.text((10, 6), banner_text, fill=(251, 191, 36, 255))
+
+                    # Bottom-right watermark pill
+                    watermark_text = "SIMULATED MOCK"
+                    pill_w, pill_h = 140, 20
+                    px1 = iw - pill_w - 10
+                    py1 = ih - pill_h - 10
+                    px2 = iw - 10
+                    py2 = ih - 10
+                    draw.rectangle([(px1, py1), (px2, py2)], fill=(15, 23, 42, 220), outline=(245, 158, 11, 200), width=1)
+                    draw.text((px1 + 8, py1 + 3), f"[MOCK] {watermark_text}", fill=(245, 158, 11, 255))
+
+                simulation_notice = SIMULATION_NOTICE_TEXT
+                exec_plane = ExecutionPlaneType.SIMULATED_MOCK.value
+                capture_source = "synthetic_fallback"
+
+                raw_caption = caption or f"{self.app_name}: {self.visible_panel} ({self.window_title})"
+                caption_str = raw_caption if raw_caption.startswith("[SIMULATED]") else f"[SIMULATED] {raw_caption}"
+
+            self.last_screenshot_is_simulated = is_simulated
+            self.last_screenshot_source = capture_source
 
             meta = {
                 "tool_id": self.tool_id,
@@ -290,13 +342,12 @@ class BaseGuiAdapter(ToolAdapter):
                 "workflow": workflow_step or "manual",
                 "status_bar": self.status_bar,
                 "pid": self.pid,
-                "is_simulated": True,
-                "simulation_notice": SIMULATION_NOTICE_TEXT,
-                "execution_plane": ExecutionPlaneType.SIMULATED_MOCK.value,
+                "is_simulated": is_simulated,
+                "simulation_notice": simulation_notice,
+                "execution_plane": exec_plane,
+                "capture_source": capture_source,
             }
 
-            raw_caption = caption or f"{self.app_name}: {self.visible_panel} ({self.window_title})"
-            caption_str = raw_caption if raw_caption.startswith("[SIMULATED]") else f"[SIMULATED] {raw_caption}"
             vis_ev = self.evidence_store.save_visual_evidence(
                 task_id=task_id,
                 caption=caption_str,
@@ -321,12 +372,24 @@ class BaseGuiAdapter(ToolAdapter):
                 "timestamp": vis_ev.timestamp,
                 "panel": self.visible_panel,
                 "workflow": workflow_step,
-                "is_simulated": True,
-                "simulation_notice": SIMULATION_NOTICE_TEXT,
-                "execution_plane": ExecutionPlaneType.SIMULATED_MOCK.value,
+                "is_simulated": is_simulated,
+                "simulation_notice": simulation_notice,
+                "execution_plane": exec_plane,
+                "capture_source": capture_source,
             })
 
             return vis_ev
+
+    def _resolve_live_plane(self) -> str:
+        """Resolves the live execution plane type when a live session is captured."""
+        if self.kali_connector:
+            try:
+                info = self.kali_connector.get_info()
+                if info.is_connected and info.plane_type != ExecutionPlaneType.SIMULATED_MOCK:
+                    return info.plane_type.value
+            except Exception:
+                pass
+        return ExecutionPlaneType.LINUX_NATIVE.value
 
     # ------------------------------------------------------------------
     # UI-State Extraction
@@ -338,6 +401,9 @@ class BaseGuiAdapter(ToolAdapter):
         Lets the agent LLM know exactly what is on screen without open-ended vision.
         """
         with self._lock:
+            is_sim = getattr(self, "last_screenshot_is_simulated", True)
+            notice = SIMULATION_NOTICE_TEXT if is_sim else None
+            plane = ExecutionPlaneType.SIMULATED_MOCK.value if is_sim else self._resolve_live_plane()
             return {
                 "tool_id": self.tool_id,
                 "tool_version": self.tool_version,
@@ -356,17 +422,21 @@ class BaseGuiAdapter(ToolAdapter):
                     "filepath": self.last_screenshot_path,
                     "sha256": self.last_screenshot_hash,
                     "timestamp": self.last_screenshot_time,
+                    "is_simulated": is_sim,
+                    "source": getattr(self, "last_screenshot_source", "synthetic_fallback"),
                 },
                 "recent_logs": self.log_messages[-6:],
-                "is_simulated": True,
-                "simulation_notice": SIMULATION_NOTICE_TEXT,
-                "execution_plane": ExecutionPlaneType.SIMULATED_MOCK.value,
+                "is_simulated": is_sim,
+                "simulation_notice": notice,
+                "execution_plane": plane,
             }
 
     def get_state_summary(self) -> str:
         """Returns concise human/agent-readable summary of the current UI state."""
+        is_sim = getattr(self, "last_screenshot_is_simulated", True)
+        prefix = f"{SIMULATION_NOTICE_TEXT} " if is_sim else ""
         return (
-            f"{SIMULATION_NOTICE_TEXT} [{self.app_name}] Window '{self.window_title}' | Active Tab: {self.visible_panel} "
+            f"{prefix}[{self.app_name}] Window '{self.window_title}' | Active Tab: {self.visible_panel} "
             f"-> {self.visible_subpanel} | Status: {self.status_bar} | Process: {'Running' if self._running else 'Stopped'}"
         )
 
@@ -396,6 +466,14 @@ class BaseGuiAdapter(ToolAdapter):
             result = self._on_click(x, y, clicked_control)
             self._log(f"Clicked at ({x}, {y}) -> {clicked_control.id if clicked_control else 'canvas'}")
 
+            # Forward interaction event to VNC desktop if available
+            try:
+                from orchestrator.vnc_server import vnc_server
+                vnc_server.desktop.handle_pointer(1, x, y)
+                vnc_server.desktop.handle_pointer(0, x, y)
+            except Exception:
+                pass
+
             vis = self.capture_screenshot(
                 task_id=task_id,
                 caption=f"Click at ({x}, {y}) - Control: {clicked_control.id if clicked_control else 'window'}",
@@ -409,6 +487,9 @@ class BaseGuiAdapter(ToolAdapter):
                 "action_result": result,
                 "new_ui_state": self.extract_ui_state(),
                 "screenshot_sha256": vis.sha256,
+                "is_simulated": vis.metadata.get("is_simulated", True),
+                "simulation_notice": vis.metadata.get("simulation_notice"),
+                "execution_plane": vis.metadata.get("execution_plane", ExecutionPlaneType.SIMULATED_MOCK.value),
             }
 
     def bounded_click_control(self, task_id: str, control_id: str) -> Dict[str, Any]:
@@ -431,6 +512,16 @@ class BaseGuiAdapter(ToolAdapter):
             result = self._on_type(text, control_id)
             self._log(f"Typed text '{text[:20]}' into {control_id or 'focus'}")
 
+            # Forward keyboard event to VNC desktop if available
+            try:
+                from orchestrator.vnc_server import vnc_server
+                for ch in text:
+                    code = ord(ch)
+                    vnc_server.desktop.handle_key(1, code)
+                    vnc_server.desktop.handle_key(0, code)
+            except Exception:
+                pass
+
             vis = self.capture_screenshot(
                 task_id=task_id,
                 caption=f"Typed text into {control_id or 'active input'}",
@@ -444,6 +535,9 @@ class BaseGuiAdapter(ToolAdapter):
                 "action_result": result,
                 "new_ui_state": self.extract_ui_state(),
                 "screenshot_sha256": vis.sha256,
+                "is_simulated": vis.metadata.get("is_simulated", True),
+                "simulation_notice": vis.metadata.get("simulation_notice"),
+                "execution_plane": vis.metadata.get("execution_plane", ExecutionPlaneType.SIMULATED_MOCK.value),
             }
 
     # ------------------------------------------------------------------
@@ -587,6 +681,10 @@ class BaseGuiAdapter(ToolAdapter):
                     "filepath": vis.filepath,
                     "sha256": vis.sha256,
                     "caption": vis.caption,
+                    "is_simulated": vis.metadata.get("is_simulated", True),
+                    "simulation_notice": vis.metadata.get("simulation_notice"),
+                    "execution_plane": vis.metadata.get("execution_plane", ExecutionPlaneType.SIMULATED_MOCK.value),
+                    "capture_source": vis.metadata.get("capture_source", "synthetic_fallback"),
                 }
             else:
                 status = "error"
@@ -604,12 +702,20 @@ class BaseGuiAdapter(ToolAdapter):
             if s.get("filepath") and s["filepath"] not in captured_artifacts:
                 captured_artifacts.append(s["filepath"])
 
-        # Ensure observation and stdout clearly signal simulated mock plane
-        observation_data["is_simulated"] = True
-        observation_data["simulation_notice"] = SIMULATION_NOTICE_TEXT
-        observation_data["execution_plane"] = ExecutionPlaneType.SIMULATED_MOCK.value
+        # Determine overall simulation state based on whether real screen capture was achieved
+        is_sim = observation_data.get("is_simulated", getattr(self, "last_screenshot_is_simulated", True))
+        plane = observation_data.get("execution_plane", ExecutionPlaneType.SIMULATED_MOCK.value if is_sim else self._resolve_live_plane())
+        notice = SIMULATION_NOTICE_TEXT if is_sim else None
 
-        raw_stdout = f"{SIMULATION_NOTICE_TEXT}\n" + json.dumps(observation_data, indent=2)
+        observation_data["is_simulated"] = is_sim
+        observation_data["simulation_notice"] = notice
+        observation_data["execution_plane"] = plane
+
+        if is_sim:
+            raw_stdout = f"{SIMULATION_NOTICE_TEXT}\n" + json.dumps(observation_data, indent=2)
+        else:
+            raw_stdout = json.dumps(observation_data, indent=2)
+
         dur_ms = round((time.perf_counter() - t0) * 1000, 2)
         return ToolObservation(
             tool_id=self.tool_id,
@@ -623,10 +729,10 @@ class BaseGuiAdapter(ToolAdapter):
             observation=observation_data,
             artifacts=captured_artifacts,
             error=error_msg,
-            execution_plane=ExecutionPlaneType.SIMULATED_MOCK.value,
-            fallback_notice=SIMULATION_NOTICE_TEXT,
-            is_simulated=True,
-            simulation_notice=SIMULATION_NOTICE_TEXT,
+            execution_plane=plane,
+            fallback_notice=notice,
+            is_simulated=is_sim,
+            simulation_notice=notice,
         )
 
     # ------------------------------------------------------------------

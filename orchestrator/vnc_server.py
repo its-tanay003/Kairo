@@ -17,6 +17,7 @@ Features:
 from __future__ import annotations
 
 import asyncio
+import base64
 from datetime import datetime, timezone
 import io
 import json
@@ -27,7 +28,8 @@ import socket
 import struct
 import sys
 import time
-from typing import Any, Dict, List, Optional, Set, Tuple
+from typing import Any, Callable, Dict, List, Optional, Set, Tuple
+import uuid
 
 from PIL import Image, ImageDraw, ImageFont
 import websockets
@@ -90,6 +92,7 @@ class VirtualKaliDesktop:
         self.mouse_x = width // 2
         self.mouse_y = height // 2
         self.mouse_buttons = 0
+        self._has_real_frame: bool = False
 
         # Virtual Terminal State
         self.terminal_focused = True
@@ -255,7 +258,8 @@ class VirtualKaliDesktop:
         Returns raw BGRX (or RGBX) pixel bytes for RFB FramebufferUpdate.
         RFB standard 32bpp true color expects 4 bytes per pixel.
         """
-        self._render_full_desktop()
+        if not getattr(self, "_has_real_frame", False):
+            self._render_full_desktop()
         # Convert RGBA to RGBX / BGRX matching ServerInit pixel format
         # In our ServerInit: red_shift=16, green_shift=8, blue_shift=0 (standard BGRX)
         r, g, b, _ = self.image.split()
@@ -264,7 +268,8 @@ class VirtualKaliDesktop:
 
     def get_png_bytes(self) -> bytes:
         """Returns PNG encoded image for HTTP preview or snapshots."""
-        self._render_full_desktop()
+        if not getattr(self, "_has_real_frame", False):
+            self._render_full_desktop()
         buf = io.BytesIO()
         self.image.save(buf, format="PNG")
         return buf.getvalue()
@@ -404,6 +409,163 @@ class VirtualKaliDesktop:
             self.terminal_history.append(f"[exec] {command} (exit code 0)")
 
 
+def _capture_from_vnc_socket(
+    host: str = "127.0.0.1",
+    port: int = 5900,
+    timeout: float = 2.0,
+) -> Optional[Image.Image]:
+    """
+    Connects to an active VNC / RFB 3.8 server (e.g. Win-KeX / x11vnc), performs handshake,
+    requests a framebuffer update, and decodes the pixel buffer into a PIL Image.
+    """
+    s = None
+    try:
+        s = socket.create_connection((host, port), timeout=timeout)
+        s.settimeout(timeout)
+
+        # 1. Version Handshake
+        server_ver = s.recv(12)
+        if not server_ver or not server_ver.startswith(b"RFB "):
+            return None
+        s.sendall(RFB_VERSION_3_8)
+
+        # 2. Security Handshake
+        num_types_data = s.recv(1)
+        if not num_types_data:
+            return None
+        num_types = num_types_data[0]
+        if num_types == 0:
+            return None
+        sec_types = s.recv(num_types)
+        if SECURITY_TYPE_NONE in sec_types:
+            s.sendall(bytes([SECURITY_TYPE_NONE]))
+            sec_res = s.recv(4)
+            if len(sec_res) < 4 or struct.unpack(">I", sec_res)[0] != 0:
+                return None
+        else:
+            return None
+
+        # 3. ClientInit (shared flag = 1)
+        s.sendall(b"\x01")
+
+        # 4. ServerInit
+        server_init_head = s.recv(24)
+        if len(server_init_head) < 24:
+            return None
+        width, height = struct.unpack(">HH", server_init_head[:4])
+        bpp = server_init_head[4]
+        red_shift = server_init_head[14]
+        blue_shift = server_init_head[16]
+        name_len = struct.unpack(">I", server_init_head[20:24])[0]
+        if name_len > 0:
+            remaining = name_len
+            while remaining > 0:
+                chunk = s.recv(min(4096, remaining))
+                if not chunk:
+                    break
+                remaining -= len(chunk)
+
+        # 5. SetEncodings (Raw)
+        s.sendall(struct.pack(">BBHi", MSG_SET_ENCODINGS, 0, 1, ENCODING_RAW))
+
+        # 6. FramebufferUpdateRequest (incremental = 0, full screen)
+        s.sendall(struct.pack(">BBHHHH", MSG_FRAMEBUFFER_UPDATE_REQUEST, 0, 0, 0, width, height))
+
+        # 7. Read FramebufferUpdate
+        update_hdr = s.recv(4)
+        if len(update_hdr) < 4 or update_hdr[0] != MSG_FRAMEBUFFER_UPDATE:
+            return None
+        num_rects = struct.unpack(">H", update_hdr[2:4])[0]
+        if num_rects == 0:
+            return None
+
+        img = Image.new("RGBA", (width, height), (0, 0, 0, 255))
+        bytes_per_pixel = max(1, bpp // 8)
+
+        for _ in range(num_rects):
+            rect_hdr = s.recv(12)
+            if len(rect_hdr) < 12:
+                break
+            rx, ry, rw, rh, encoding = struct.unpack(">HHHHi", rect_hdr)
+            if encoding == ENCODING_RAW:
+                total_bytes = rw * rh * bytes_per_pixel
+                rect_data = bytearray()
+                while len(rect_data) < total_bytes:
+                    chunk = s.recv(min(65536, total_bytes - len(rect_data)))
+                    if not chunk:
+                        break
+                    rect_data.extend(chunk)
+
+                if len(rect_data) == total_bytes:
+                    if bytes_per_pixel == 4:
+                        mode = "BGRX" if red_shift > blue_shift else "RGBX"
+                        rect_img = Image.frombytes("RGB", (rw, rh), bytes(rect_data), "raw", mode)
+                        img.paste(rect_img, (rx, ry))
+                    elif bytes_per_pixel == 3:
+                        rect_img = Image.frombytes("RGB", (rw, rh), bytes(rect_data), "raw", "RGB")
+                        img.paste(rect_img, (rx, ry))
+
+        return img
+    except Exception as e:
+        logger.debug(f"[noVNC] _capture_from_vnc_socket({host}:{port}) failed: {e}")
+        return None
+    finally:
+        if s:
+            try:
+                s.close()
+            except Exception:
+                pass
+
+
+def _capture_from_kali_worker(
+    connector: Optional[Any] = None,
+    tool_name: Optional[str] = None,
+    timeout_s: float = 3.0,
+) -> Optional[Image.Image]:
+    """
+    Attempts to capture root window of an active X11 display inside the Kali worker
+    plane using scrot, xwd, or import.
+    """
+    conn = connector or _kali_connector
+    if not conn:
+        return None
+    try:
+        info = conn.get_info()
+        if not info.is_connected or info.plane_type == ExecutionPlaneType.SIMULATED_MOCK:
+            return None
+
+        probe_cmd = (
+            "for d in :0 :1 :2; do "
+            "if [ -e /tmp/.X11-unix/X${d#:} ] || xset -q -display $d >/dev/null 2>&1; then "
+            "if which scrot >/dev/null 2>&1; then "
+            "DISPLAY=$d scrot -z -o /tmp/_kairo_cap.png 2>/dev/null && base64 -w0 /tmp/_kairo_cap.png 2>/dev/null && rm -f /tmp/_kairo_cap.png && exit 0; "
+            "elif which xwd >/dev/null 2>&1 && which convert >/dev/null 2>&1; then "
+            "DISPLAY=$d xwd -root -silent -display $d 2>/dev/null | convert xwd:- png:- 2>/dev/null | base64 -w0 && exit 0; "
+            "elif which import >/dev/null 2>&1; then "
+            "DISPLAY=$d import -window root -display $d png:- 2>/dev/null | base64 -w0 && exit 0; "
+            "fi; "
+            "fi; "
+            "done; "
+            "exit 1"
+        )
+        res = conn.execute(
+            task_id=f"cap_{uuid.uuid4().hex[:6]}",
+            command="sh",
+            args=["-c", probe_cmd],
+            timeout_ms=int(timeout_s * 1000),
+        )
+        if res.get("status") == "success" and res.get("stdout"):
+            b64_data = res["stdout"].strip()
+            if b64_data:
+                img_bytes = base64.b64decode(b64_data)
+                img = Image.open(io.BytesIO(img_bytes))
+                img.load()
+                return img
+    except Exception as e:
+        logger.debug(f"[noVNC] _capture_from_kali_worker failed: {e}")
+    return None
+
+
 class VncStreamerServer:
     """
     WebSocket server speaking RFB 3.8 protocol to noVNC clients.
@@ -424,6 +586,7 @@ class VncStreamerServer:
         self.clients: Set[WebSocketServerProtocol] = set()
         self.server: Optional[websockets.server.WebSocketServer] = None
         self._running = False
+        self._custom_capture_provider: Optional[Callable[..., Optional[Image.Image]]] = None
 
     async def start(self):
         """Starts the WebSocket RFB server."""
@@ -449,15 +612,74 @@ class VncStreamerServer:
             logger.info("Kairo noVNC Streamer stopped.")
 
     def check_upstream_vnc(self) -> bool:
-        """Checks if a native VNC server (e.g., Win-KeX / x11vnc) is running on port 5900/5901."""
-        try:
-            s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-            s.settimeout(0.3)
-            result = s.connect_ex((self.upstream_vnc_host, self.upstream_vnc_port))
-            s.close()
-            return result == 0
-        except Exception:
-            return False
+        """Checks if a native VNC server (e.g., Win-KeX / x11vnc) is running on port 5900/5901/5902."""
+        candidate_ports = [self.upstream_vnc_port]
+        for p in (5900, 5901, 5902):
+            if p not in candidate_ports:
+                candidate_ports.append(p)
+
+        for port in candidate_ports:
+            try:
+                s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+                s.settimeout(0.2)
+                result = s.connect_ex((self.upstream_vnc_host, port))
+                s.close()
+                if result == 0:
+                    self.upstream_vnc_port = port
+                    return True
+            except Exception:
+                pass
+        return False
+
+    def capture_screen(
+        self,
+        tool_id: Optional[str] = None,
+        app_name: Optional[str] = None,
+        connector: Optional[Any] = None,
+    ) -> Optional[Image.Image]:
+        """
+        Takes an actual screenshot of a real running GUI session (Burp, Wireshark, ZAP, etc.)
+        inside the Kali worker or upstream VNC server.
+
+        Resolution order:
+        1. Custom capture provider hook (if configured for testing/plugins).
+        2. Upstream VNC server (ports 5900, 5901, 5902) via standard RFB 3.8 protocol.
+        3. In-guest Kali worker direct display capture (WSL2/Linux Native) via connector.
+
+        Returns:
+            PIL Image of the live session if reachable, or None if no live GUI session is active.
+        """
+        # 0. Hook for custom capture provider
+        if hasattr(self, "_custom_capture_provider") and callable(self._custom_capture_provider):
+            custom_img = self._custom_capture_provider(tool_id, app_name)
+            if custom_img is not None:
+                self.desktop.image = custom_img.convert("RGBA")
+                self.desktop._has_real_frame = True
+                return custom_img
+
+        # 1. Probe upstream VNC ports
+        candidate_ports = [self.upstream_vnc_port]
+        for p in (5900, 5901, 5902):
+            if p not in candidate_ports:
+                candidate_ports.append(p)
+
+        for port in candidate_ports:
+            img = _capture_from_vnc_socket(host=self.upstream_vnc_host, port=port, timeout=1.5)
+            if img is not None:
+                logger.info(f"[noVNC] Captured live RFB framebuffer from upstream VNC {self.upstream_vnc_host}:{port}")
+                self.desktop.image = img.convert("RGBA")
+                self.desktop._has_real_frame = True
+                return img
+
+        # 2. Probe Kali worker display
+        img = _capture_from_kali_worker(connector=connector or _kali_connector, tool_name=tool_id or app_name)
+        if img is not None:
+            logger.info(f"[noVNC] Captured live framebuffer from Kali worker display for {tool_id or app_name}")
+            self.desktop.image = img.convert("RGBA")
+            self.desktop._has_real_frame = True
+            return img
+
+        return None
 
     async def handle_client(self, websocket: WebSocketServerProtocol):
         """Handles an incoming noVNC connection."""
@@ -647,6 +869,15 @@ class VncStreamerServer:
 
 # Global singleton instance
 vnc_server = VncStreamerServer()
+
+
+def capture_live_session(
+    tool_id: Optional[str] = None,
+    app_name: Optional[str] = None,
+    connector: Optional[Any] = None,
+) -> Optional[Image.Image]:
+    """Convenience helper to capture a live GUI session from the singleton vnc_server."""
+    return vnc_server.capture_screen(tool_id=tool_id, app_name=app_name, connector=connector)
 
 
 async def main():

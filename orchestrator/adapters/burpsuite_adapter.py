@@ -225,9 +225,9 @@ class BurpSuiteGuiAdapter(BaseGuiAdapter):
             "vulnerabilities": [],
             "total_findings": 0,
             "screenshot_sha256": vis.sha256,
-            "is_simulated": True,
-            "simulation_notice": SIMULATION_NOTICE_TEXT,
-            "execution_plane": ExecutionPlaneType.SIMULATED_MOCK.value,
+            "is_simulated": vis.metadata.get("is_simulated", True),
+            "simulation_notice": vis.metadata.get("simulation_notice"),
+            "execution_plane": vis.metadata.get("execution_plane", ExecutionPlaneType.SIMULATED_MOCK.value),
         }
 
     def _workflow_toggle_proxy(self, task_id: str, params: Dict[str, Any]) -> Dict[str, Any]:
@@ -256,9 +256,9 @@ class BurpSuiteGuiAdapter(BaseGuiAdapter):
             "intercept_enabled": self.intercept_enabled,
             "status_message": f"Proxy Intercept is now {state_str}",
             "screenshot_sha256": vis.sha256,
-            "is_simulated": True,
-            "simulation_notice": SIMULATION_NOTICE_TEXT,
-            "execution_plane": ExecutionPlaneType.SIMULATED_MOCK.value,
+            "is_simulated": vis.metadata.get("is_simulated", True),
+            "simulation_notice": vis.metadata.get("simulation_notice"),
+            "execution_plane": vis.metadata.get("execution_plane", ExecutionPlaneType.SIMULATED_MOCK.value),
         }
 
     def _workflow_inspect_proxy_history(self, task_id: str, params: Dict[str, Any]) -> Dict[str, Any]:
@@ -290,9 +290,9 @@ class BurpSuiteGuiAdapter(BaseGuiAdapter):
             "vulnerabilities": [],
             "total_findings": 0,
             "screenshot_sha256": vis.sha256,
-            "is_simulated": True,
-            "simulation_notice": SIMULATION_NOTICE_TEXT,
-            "execution_plane": ExecutionPlaneType.SIMULATED_MOCK.value,
+            "is_simulated": vis.metadata.get("is_simulated", True),
+            "simulation_notice": vis.metadata.get("simulation_notice"),
+            "execution_plane": vis.metadata.get("execution_plane", ExecutionPlaneType.SIMULATED_MOCK.value),
         }
 
     def _workflow_send_to_repeater(self, task_id: str, params: Dict[str, Any]) -> Dict[str, Any]:
@@ -394,9 +394,9 @@ class BurpSuiteGuiAdapter(BaseGuiAdapter):
             "vulnerabilities": [],
             "total_findings": 0,
             "screenshot_sha256": vis.sha256,
-            "is_simulated": True,
-            "simulation_notice": SIMULATION_NOTICE_TEXT,
-            "execution_plane": ExecutionPlaneType.SIMULATED_MOCK.value,
+            "is_simulated": vis.metadata.get("is_simulated", True),
+            "simulation_notice": vis.metadata.get("simulation_notice"),
+            "execution_plane": vis.metadata.get("execution_plane", ExecutionPlaneType.SIMULATED_MOCK.value),
         }
 
     def _workflow_export_target_sitemap(self, task_id: str, params: Dict[str, Any]) -> Dict[str, Any]:
@@ -422,9 +422,9 @@ class BurpSuiteGuiAdapter(BaseGuiAdapter):
             "vulnerabilities": [],
             "total_findings": 0,
             "screenshot_sha256": vis.sha256,
-            "is_simulated": True,
-            "simulation_notice": SIMULATION_NOTICE_TEXT,
-            "execution_plane": ExecutionPlaneType.SIMULATED_MOCK.value,
+            "is_simulated": vis.metadata.get("is_simulated", True),
+            "simulation_notice": vis.metadata.get("simulation_notice"),
+            "execution_plane": vis.metadata.get("execution_plane", ExecutionPlaneType.SIMULATED_MOCK.value),
         }
 
     # ------------------------------------------------------------------

@@ -157,9 +157,9 @@ class ZapGuiAdapter(BaseGuiAdapter):
             "target_url": self.target_url,
             "status": "ready",
             "screenshot_sha256": vis.sha256,
-            "is_simulated": True,
-            "simulation_notice": SIMULATION_NOTICE_TEXT,
-            "execution_plane": ExecutionPlaneType.SIMULATED_MOCK.value,
+            "is_simulated": vis.metadata.get("is_simulated", True),
+            "simulation_notice": vis.metadata.get("simulation_notice"),
+            "execution_plane": vis.metadata.get("execution_plane", ExecutionPlaneType.SIMULATED_MOCK.value),
         }
 
     def _workflow_run_spider(self, task_id: str, params: Dict[str, Any]) -> Dict[str, Any]:
@@ -181,9 +181,9 @@ class ZapGuiAdapter(BaseGuiAdapter):
             "discovered_urls_count": len(self.spider_urls),
             "discovered_urls": self.spider_urls,
             "screenshot_sha256": vis.sha256,
-            "is_simulated": True,
-            "simulation_notice": SIMULATION_NOTICE_TEXT,
-            "execution_plane": ExecutionPlaneType.SIMULATED_MOCK.value,
+            "is_simulated": vis.metadata.get("is_simulated", True),
+            "simulation_notice": vis.metadata.get("simulation_notice"),
+            "execution_plane": vis.metadata.get("execution_plane", ExecutionPlaneType.SIMULATED_MOCK.value),
         }
 
     def _workflow_inspect_alerts(self, task_id: str, params: Dict[str, Any]) -> Dict[str, Any]:
@@ -209,9 +209,9 @@ class ZapGuiAdapter(BaseGuiAdapter):
             "risk_summary": risk_counts,
             "alerts": self.alerts,
             "screenshot_sha256": vis.sha256,
-            "is_simulated": True,
-            "simulation_notice": SIMULATION_NOTICE_TEXT,
-            "execution_plane": ExecutionPlaneType.SIMULATED_MOCK.value,
+            "is_simulated": vis.metadata.get("is_simulated", True),
+            "simulation_notice": vis.metadata.get("simulation_notice"),
+            "execution_plane": vis.metadata.get("execution_plane", ExecutionPlaneType.SIMULATED_MOCK.value),
         }
 
     def _workflow_export_report(self, task_id: str, params: Dict[str, Any]) -> Dict[str, Any]:
@@ -260,9 +260,9 @@ class ZapGuiAdapter(BaseGuiAdapter):
             "report_sha256": rep_sha256,
             "findings_count": len(self.alerts),
             "screenshot_sha256": vis.sha256,
-            "is_simulated": True,
-            "simulation_notice": SIMULATION_NOTICE_TEXT,
-            "execution_plane": ExecutionPlaneType.SIMULATED_MOCK.value,
+            "is_simulated": vis.metadata.get("is_simulated", True),
+            "simulation_notice": vis.metadata.get("simulation_notice"),
+            "execution_plane": vis.metadata.get("execution_plane", ExecutionPlaneType.SIMULATED_MOCK.value),
         }
 
     def _workflow_default(self, task_id: str, params: Dict[str, Any]) -> Dict[str, Any]:
@@ -279,9 +279,9 @@ class ZapGuiAdapter(BaseGuiAdapter):
             "report_filename": rep_res.get("report_filename"),
             "report_sha256": rep_res.get("report_sha256"),
             "screenshot_sha256": rep_res.get("screenshot_sha256") or alerts_res.get("screenshot_sha256"),
-            "is_simulated": True,
-            "simulation_notice": SIMULATION_NOTICE_TEXT,
-            "execution_plane": ExecutionPlaneType.SIMULATED_MOCK.value,
+            "is_simulated": rep_res.get("is_simulated", True) and alerts_res.get("is_simulated", True),
+            "simulation_notice": rep_res.get("simulation_notice") or alerts_res.get("simulation_notice"),
+            "execution_plane": rep_res.get("execution_plane") or alerts_res.get("execution_plane", ExecutionPlaneType.SIMULATED_MOCK.value),
         }
 
     # ------------------------------------------------------------------
