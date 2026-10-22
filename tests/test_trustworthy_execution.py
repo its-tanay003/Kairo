@@ -199,6 +199,7 @@ class TestHonestSynthesisReporting:
             exit_code=0,
             stdout="hp\n",
             duration_ms=10.0,
+            prefer_llm=False,
         )
         assert alias_res["process"]["status"] == "success"
         assert alias_res["process"]["status_label"] == "Exit 0"

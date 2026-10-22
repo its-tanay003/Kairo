@@ -13,6 +13,10 @@ from __future__ import annotations
 
 from orchestrator.reporter_templates import (
     synthesize_agent_response,
+    synthesize_with_llama,
+    REPORTER_CHAT_REPLY_JSON_SCHEMA,
+    REPORTER_SYSTEM_PROMPT,
+    get_llama_client,
     _synthesize_nmap_scan,
     _synthesize_web_audit,
     _synthesize_network_connection,
@@ -28,6 +32,10 @@ from orchestrator.conversational_synthesizer import (
 
 __all__ = [
     "synthesize_agent_response",
+    "synthesize_with_llama",
+    "REPORTER_CHAT_REPLY_JSON_SCHEMA",
+    "REPORTER_SYSTEM_PROMPT",
+    "get_llama_client",
     "_synthesize_nmap_scan",
     "_synthesize_web_audit",
     "_synthesize_network_connection",
@@ -38,3 +46,4 @@ __all__ = [
     "conversational_synthesizer",
     "NextStepRecommendation",
 ]
+

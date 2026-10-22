@@ -24,6 +24,152 @@ from typing import Any, Dict, List, Optional
 logger = logging.getLogger("orchestrator.reporter_templates")
 
 from orchestrator.kali_connector import FALLBACK_NOTICE_TEXT
+from orchestrator.llama_client import LlamaCppClient
+
+REPORTER_CHAT_REPLY_JSON_SCHEMA: Dict[str, Any] = {
+    "type": "object",
+    "properties": {
+        "reply": {
+            "type": "string",
+            "description": (
+                "The complete natural conversational markdown chat response answering the user's goal. "
+                "Must reason authentically over the technical evidence, explain the practical security meaning "
+                "of discovered services/ports/vulnerabilities, and provide actionable guidance. "
+                "Must NEVER invent or assume any findings not present in the evidence context."
+            ),
+        },
+        "headline": {
+            "type": "string",
+            "description": "Crisp one-sentence executive summary of the outcome.",
+        },
+        "security_posture": {
+            "type": "string",
+            "description": "Brief security posture verdict based strictly on verified findings.",
+        },
+        "key_takeaways": {
+            "type": "array",
+            "items": {"type": "string"},
+            "description": "2 to 4 key factual takeaways strictly derived from the evidence context.",
+        },
+        "verified_evidence_cited": {
+            "type": "array",
+            "items": {"type": "string"},
+            "description": "Specific finding items, ports, hosts, or codes from the evidence that were cited in this reply.",
+        },
+    },
+    "required": ["reply", "headline", "security_posture", "key_takeaways"],
+}
+
+REPORTER_SYSTEM_PROMPT = """You are Kairo's Lead Autonomous Security Analyst and Conversational Synthesizer.
+Your mission is to transform structured technical execution logs, exit codes, and verified findings into a natural, authoritative, conversational chat reply — exactly like high-end AI security agents (such as Claude or ChatGPT configured for cybersecurity).
+
+STRICT ANTI-HALLUCINATION & EVIDENCE INTEGRITY MANDATE:
+1. STRICT ZERO-INVENTION DISCIPLINE:
+   - You MUST NOT invent, guess, extrapolate, or hallucinate any port, service, vulnerability, CVE, host, user, or credential that is NOT explicitly present in the provided EVIDENCE CONTEXT.
+   - If the tool failed (non-zero exit code), report the error diagnostics truthfully. Never pretend a failed command succeeded.
+   - If the scan returned 0 open ports, 0 vulnerabilities, or target unreachable, report that clearly as a clean or unreachable target. Never fabricate findings to sound impressive.
+   - If marked as SIMULATED or MOCK, you MUST truthfully reflect that it was a demonstration run and no live scan occurred.
+2. AUTHENTIC AGENT REASONING:
+   - Do NOT output a cookie-cutter template. Write like an experienced penetration tester speaking directly to the user.
+   - Directly address what the user asked in their original goal.
+   - Explain the technical significance of confirmed findings (e.g., what having SSH or HTTP open means for the attack surface, or why an unreachable host is expected).
+   - Use clean, modern Markdown with appropriate formatting, bullet points, and code formatting for IPs and ports.
+3. Return ONLY a valid JSON object matching the requested schema.
+"""
+
+_DEFAULT_LLAMA_CLIENT: Optional[LlamaCppClient] = None
+
+
+def get_llama_client(base_url: Optional[str] = None) -> LlamaCppClient:
+    """Returns singleton LlamaCppClient instance."""
+    global _DEFAULT_LLAMA_CLIENT
+    if _DEFAULT_LLAMA_CLIENT is None or (base_url and _DEFAULT_LLAMA_CLIENT.base_url != base_url.rstrip("/")):
+        _DEFAULT_LLAMA_CLIENT = LlamaCppClient(base_url=base_url)
+    return _DEFAULT_LLAMA_CLIENT
+
+
+def synthesize_with_llama(
+    user_goal: str,
+    base_res: Dict[str, Any],
+    inputs: Dict[str, Any],
+    exit_code: int,
+    stdout: str,
+    stderr: str = "",
+    duration_s: float = 0.5,
+    execution_plane: Optional[str] = None,
+    is_simulated: bool = False,
+    is_scope_violation: bool = False,
+    client: Optional[LlamaCppClient] = None,
+) -> Optional[Dict[str, Any]]:
+    """
+    Refines the baseline template response into genuine conversational security reasoning
+    via llama.cpp with strict JSON-schema grammar constraints and evidence context.
+    Returns None if llama.cpp is unavailable, unhealthy, or fails.
+    """
+    client = client or get_llama_client()
+    if not client.is_healthy():
+        return None
+
+    proc = base_res.get("process", {})
+    outp = base_res.get("output", {})
+    res_block = base_res.get("result", {})
+
+    target = (
+        proc.get("target")
+        or inputs.get("target")
+        or inputs.get("url")
+        or inputs.get("domain")
+        or inputs.get("host")
+        or "target.local"
+    )
+
+    evidence_context = {
+        "user_goal": user_goal,
+        "tool_id": proc.get("tool_id"),
+        "tool_name": proc.get("tool_name"),
+        "command_line": proc.get("command_line"),
+        "target": str(target),
+        "exit_code": exit_code,
+        "status": proc.get("status"),
+        "duration_s": duration_s,
+        "execution_plane": execution_plane or proc.get("execution_plane", "kali_docker"),
+        "is_simulated": is_simulated or proc.get("is_simulated", False),
+        "is_scope_violation": is_scope_violation,
+        "summary_metrics": outp.get("summary_metrics", []),
+        "verified_findings": outp.get("findings_table", []),
+        "baseline_takeaways": res_block.get("key_takeaways", []),
+        "raw_stdout_sample": (stdout[:1500] + ("..." if len(stdout) > 1500 else "")) if stdout else "",
+        "raw_stderr": stderr[:500] if stderr else "",
+    }
+
+    user_msg = (
+        f"The security tool '{proc.get('tool_name') or proc.get('tool_id')}' has FINISHED executing against target '{target}'.\n"
+        f"Original User Goal: {user_goal}\n\n"
+        f"STRICT COMPLETED EXECUTION EVIDENCE:\n"
+        f"```json\n{json.dumps(evidence_context, indent=2)}\n```\n\n"
+        f"Instructions: Compose a professional, conversational chat reply to the user explaining these completed findings, their security implications, and recommended next steps based strictly on the evidence above."
+    )
+
+    messages = [
+        {"role": "system", "content": REPORTER_SYSTEM_PROMPT},
+        {"role": "user", "content": user_msg},
+    ]
+
+    try:
+        data = client.generate_json(
+            messages=messages,
+            schema=REPORTER_CHAT_REPLY_JSON_SCHEMA,
+            temperature=0.2,
+            timeout=30.0,
+        )
+        if isinstance(data, dict) and data.get("reply"):
+            return data
+    except Exception as e:
+        logger.warning(f"Llama.cpp synthesis error: {e}")
+        return None
+
+    return None
+
 
 
 def synthesize_agent_response(
@@ -42,6 +188,8 @@ def synthesize_agent_response(
     fallback_notice: Optional[str] = None,
     is_simulated: bool = False,
     simulation_notice: Optional[str] = None,
+    llama_client: Optional[LlamaCppClient] = None,
+    prefer_llm: bool = True,
 ) -> Dict[str, Any]:
     """
     Produces a 3-part Claude-style payload:
@@ -120,6 +268,43 @@ def synthesize_agent_response(
             stderr=stderr,
             duration_s=duration_s,
         )
+
+    # 7. Layer Dynamic LLM Conversational Synthesis via llama.cpp (Local Model Reasoning)
+    if prefer_llm and not is_scope_violation:
+        client_to_use = llama_client or get_llama_client()
+        try:
+            if client_to_use and client_to_use.is_healthy():
+                llm_synth = synthesize_with_llama(
+                    user_goal=user_goal,
+                    base_res=res,
+                    inputs=inputs,
+                    exit_code=exit_code,
+                    stdout=stdout,
+                    stderr=stderr,
+                    duration_s=duration_s,
+                    execution_plane=execution_plane,
+                    is_simulated=is_simulated,
+                    is_scope_violation=is_scope_violation,
+                    client=client_to_use,
+                )
+                if llm_synth and isinstance(llm_synth, dict) and llm_synth.get("reply"):
+                    res["reply"] = llm_synth["reply"]
+                    if "result" in res and isinstance(res["result"], dict):
+                        if llm_synth.get("headline"):
+                            res["result"]["headline"] = llm_synth["headline"]
+                        if llm_synth.get("security_posture"):
+                            res["result"]["security_posture"] = llm_synth["security_posture"]
+                        if llm_synth.get("key_takeaways"):
+                            res["result"]["key_takeaways"] = llm_synth["key_takeaways"]
+                    res["synthesis_source"] = "llama_local"
+                    if "process" in res and isinstance(res["process"], dict):
+                        res["process"]["synthesizer"] = "llama_client:json_schema"
+        except Exception as e:
+            logger.warning(f"Llama local chat synthesis failed: {e}. Preserving deterministic template response.")
+
+    res.setdefault("synthesis_source", "deterministic_template")
+    if "process" in res and isinstance(res["process"], dict):
+        res["process"].setdefault("synthesizer", "reporter_templates:deterministic")
 
     # Decorate with visible simulation notice when running on simulated mock plane
     eff_is_simulated = bool(

@@ -251,37 +251,22 @@ class Planner:
 
     def _generate_with_llama(self, goal: str, plan_id: str) -> Dict[str, Any]:
         """Calls llama.cpp server with structured JSON schema constraint."""
-        payload = {
-            "messages": [
-                {"role": "system", "content": PLANNER_SYSTEM_PROMPT},
-                {
-                    "role": "user",
-                    "content": f"Decompose the following security assessment goal into a DAG of abstract capabilities:\n\nGoal: {goal}\nPlan ID: {plan_id}",
-                },
-            ],
-            "temperature": 0.2,
-            "response_format": {
-                "type": "json_object",
-                "schema": PLANNER_JSON_SCHEMA,
+        messages = [
+            {"role": "system", "content": PLANNER_SYSTEM_PROMPT},
+            {
+                "role": "user",
+                "content": f"Decompose the following security assessment goal into a DAG of abstract capabilities:\n\nGoal: {goal}\nPlan ID: {plan_id}",
             },
-        }
-
-        url = f"{self.llama_client.base_url}/v1/chat/completions"
-        req = urllib.request.Request(
-            url,
-            data=json.dumps(payload).encode("utf-8"),
-            headers={"Content-Type": "application/json"},
-            method="POST",
+        ]
+        parsed = self.llama_client.generate_json(
+            messages=messages,
+            schema=PLANNER_JSON_SCHEMA,
+            temperature=0.2,
+            timeout=30.0,
         )
-
-        with urllib.request.urlopen(req, timeout=30.0) as resp:
-            raw = resp.read().decode("utf-8")
-            data = json.loads(raw)
-            content_str = data["choices"][0]["message"]["content"]
-            parsed = json.loads(content_str)
-            parsed["plan_id"] = plan_id
-            parsed["goal"] = goal
-            return parsed
+        parsed["plan_id"] = plan_id
+        parsed["goal"] = goal
+        return parsed
 
     def _generate_domain_dag(self, goal: str, plan_id: str) -> Dict[str, Any]:
         """

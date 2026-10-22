@@ -929,6 +929,7 @@ class AgentLoop:
                 fallback_notice=fallback_notice,
                 is_simulated=is_simulated,
                 simulation_notice=sim_notice,
+                llama_client=self.llama_client,
             )
             if synthesis.get("reply"):
                 reply_text = synthesis["reply"]

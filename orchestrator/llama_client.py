@@ -26,7 +26,7 @@ class LlamaCppClient:
         try:
             url = f"{self.base_url}/health"
             req = urllib.request.Request(url, method="GET")
-            with urllib.request.urlopen(req, timeout=3.0) as resp:
+            with urllib.request.urlopen(req, timeout=1.5) as resp:
                 return resp.status == 200
         except Exception:
             return False
@@ -100,3 +100,63 @@ class LlamaCppClient:
         except Exception as e:
             logger.error(f"Error parsing constrained LLM response: {e}")
             raise
+
+    def generate_json(
+        self,
+        messages: List[Dict[str, str]],
+        schema: Dict[str, Any],
+        temperature: float = 0.1,
+        max_tokens: int = 1000,
+        presence_penalty: float = 1.1,
+        timeout: float = 60.0,
+    ) -> Dict[str, Any]:
+        """
+        Sends chat completion messages to llama.cpp with strict JSON-schema grammar constraint.
+        Guarantees that the returned content conforms to the provided JSON schema.
+        Returns the parsed JSON dictionary.
+        """
+        payload = {
+            "messages": messages,
+            "temperature": temperature,
+            "max_tokens": max_tokens,
+            "presence_penalty": presence_penalty,
+            "response_format": {
+                "type": "json_object",
+                "schema": schema,
+            },
+        }
+
+        url = f"{self.base_url}/v1/chat/completions"
+        req = urllib.request.Request(
+            url,
+            data=json.dumps(payload).encode("utf-8"),
+            headers={"Content-Type": "application/json"},
+            method="POST",
+        )
+
+        try:
+            with urllib.request.urlopen(req, timeout=timeout) as resp:
+                raw_body = resp.read().decode("utf-8")
+                res = json.loads(raw_body)
+                content_str = res["choices"][0]["message"]["content"]
+                logger.debug(f"llama raw content: {content_str!r}")
+                
+                # Robust parse with strict=False to allow unescaped multiline markdown control characters
+                try:
+                    return json.loads(content_str, strict=False)
+                except Exception:
+                    cleaned = content_str.strip()
+                    if cleaned.startswith("```json"):
+                        cleaned = cleaned[7:]
+                    elif cleaned.startswith("```"):
+                        cleaned = cleaned[3:]
+                    if cleaned.endswith("```"):
+                        cleaned = cleaned[:-3]
+                    return json.loads(cleaned.strip(), strict=False)
+        except urllib.error.URLError as e:
+            logger.warning(f"Llama.cpp server communication error: {e}")
+            raise RuntimeError(f"Cannot reach llama.cpp server at {self.base_url}: {e}")
+        except Exception as e:
+            logger.warning(f"Error parsing constrained JSON response from llama.cpp: {e}")
+            raise
+
