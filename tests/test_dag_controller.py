@@ -38,6 +38,7 @@ from fastapi.testclient import TestClient
 
 from events.db import (
     create_scope_contract,
+    get_connection,
     get_plan,
     init_db,
     insert_plan,
@@ -631,6 +632,125 @@ class TestServerPlannerEndpoints(unittest.TestCase):
         self.assertIn("plan_id", data)
         self.assertTrue(data["success"])
         self.assertGreaterEqual(data["nodes_executed"], 1)
+
+    def test_post_planner_plans_execute_endpoint_delegates_to_dag_controller(self):
+        """POST /planner/plans/{plan_id}/execute should autonomously run through DAGController."""
+        plan_id = "plan_http_exec"
+        nodes = [
+            PlanNode(
+                node_id="scan_exec_1",
+                label="Port Scan",
+                capability="network_port_scan",
+                description="Scan target",
+                dependencies=[],
+                status="queued",
+            )
+        ]
+        dag = PlanDAG(
+            plan_id=plan_id,
+            goal="Test HTTP execute",
+            nodes=nodes,
+            session_id="sess_http_exec",
+        )
+        insert_plan(dag, db_path=self.temp_db_path)
+
+        class MockAdapter:
+            tool_id = "nmap.scan.v1"
+            tool_version = "1.0.0"
+
+            def execute(self, inputs, task_id, target="vm"):
+                return ToolObservation(
+                    tool_id="nmap.scan.v1",
+                    tool_version="1.0.0",
+                    task_id=task_id,
+                    status="success",
+                    exit_code=0,
+                    raw_stdout="PORT 80/tcp open http",
+                    raw_stderr="",
+                    duration_ms=100.0,
+                    observation={"open_ports": [80]},
+                )
+
+        with patch("orchestrator.adapters.registry.adapter_registry.get", return_value=MockAdapter):
+            resp = self.client.post(
+                f"/planner/plans/{plan_id}/execute",
+                json={"target": "10.10.10.50", "max_steps": 10},
+            )
+
+        self.assertEqual(resp.status_code, 200)
+        data = resp.json()
+        self.assertEqual(data["plan_id"], plan_id)
+        self.assertTrue(data["success"])
+        self.assertEqual(data["nodes_executed"], 1)
+        self.assertIn("executed_nodes", data)
+        self.assertIn("scope_contract_id", data)
+
+    def test_post_planner_plans_execute_rejects_expired_scope_contract(self):
+        """POST /planner/plans/{plan_id}/execute rejects when Scope Contract is expired."""
+        from events.db import create_scope_contract, generate_scope_signature
+        c = create_scope_contract(
+            targets=["10.10.10.50"],
+            network_scope="test_scope",
+            time_window="1s",
+            allowed_tool_tiers=[1, 2, 3],
+            authorized_by="lead@kairo.test",
+            db_path=self.temp_db_path,
+        )
+        # Update expires_at and re-sign with valid signature to specifically verify expiration gate
+        past_expired = "2020-01-01T00:00:00+00:00"
+        payload = {
+            "contract_id": c["contract_id"],
+            "targets": c["targets"],
+            "network_scope": c["network_scope"],
+            "time_window": c["time_window"],
+            "allowed_tool_tiers": c["allowed_tool_tiers"],
+            "authorized_by": c["authorized_by"],
+            "created_at": c["created_at"],
+            "expires_at": past_expired,
+        }
+        sig = generate_scope_signature(payload)
+        with get_connection(self.temp_db_path) as conn:
+            conn.execute(
+                "UPDATE scope_contracts SET expires_at = ?, signature = ? WHERE contract_id = ?",
+                (past_expired, sig, c["contract_id"]),
+            )
+            conn.commit()
+
+        resp = self.client.post(
+            "/planner/plans/plan_any/execute",
+            json={"target": "10.10.10.50"},
+        )
+        self.assertEqual(resp.status_code, 403)
+        self.assertIn("expired", resp.json()["detail"].lower())
+
+    def test_post_planner_plans_single_node_execute_delegates_to_dag_controller(self):
+        """POST /planner/plans/{plan_id}/nodes/{node_id}/execute runs single node via DAGController."""
+        plan_id = "plan_node_test"
+        nodes = [
+            PlanNode(
+                node_id="single_node_1",
+                label="Ping Diagnostic",
+                capability="host_live_detection",
+                description="Live check",
+                dependencies=[],
+                status="queued",
+            )
+        ]
+        dag = PlanDAG(
+            plan_id=plan_id,
+            goal="Test single node",
+            nodes=nodes,
+            session_id="sess_single_node",
+        )
+        insert_plan(dag, db_path=self.temp_db_path)
+
+        resp = self.client.post(f"/planner/plans/{plan_id}/nodes/single_node_1/execute")
+        self.assertEqual(resp.status_code, 200)
+        data = resp.json()
+        self.assertEqual(data["node_id"], "single_node_1")
+        self.assertEqual(data["execution_result"]["status"], "success")
+        self.assertIn("observation", data["execution_result"])
+        self.assertIn("critique", data["execution_result"])
 
 
 if __name__ == "__main__":
