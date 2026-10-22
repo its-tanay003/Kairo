@@ -1,441 +1,131 @@
 """
 Cognitive Engine for Kairo.
 
-Coordinates the autonomous cognitive loop:
-1. Tool Selection (Hybrid 7-Factor utility scoring)
-2. Scope Contract Authorization Gateway
-3. Execution (Host or Kali VM sandbox)
-4. Observer (reusing Task 1.3 parsers -> structured facts)
-5. Critic (progress validation & no-progress flagging)
-6. Recovery Agent (timeout / malformed args / missing tool / parser mismatch / 3-attempt capping)
+Unified to use `dag_controller.py` as the canonical source of truth for DAG node execution.
+Delegates tool selection, prerequisite evidence gating, dynamic argument resolution,
+and execution dispatch to DAGController, while attaching Observer, Critic, and
+Recovery narrative artifacts.
 """
 
 from __future__ import annotations
 
-import json
 import logging
-import time
+from dataclasses import asdict
 from typing import Any, Dict, List, Optional
 from pathlib import Path
 
-from events.db import (
-    Event,
-    insert_event,
-    update_node_status,
-    get_plan,
-    get_tool_tier,
-    validate_scope_request,
-    DEFAULT_DB_PATH,
-)
+from events.db import DEFAULT_DB_PATH
 from orchestrator.observer import observer, ObservationResult
 from orchestrator.critic import critic, CritiqueResult
 from orchestrator.recovery_agent import recovery_agent, RecoveryPlan
-from orchestrator.tool_selector import tool_selector
-from orchestrator.agent import AgentLoop
 from orchestrator.reporter import format_recovery_narrative
+from orchestrator.dag_controller import dag_controller, EvidenceContext, DAGNodeExecution
 
 logger = logging.getLogger("orchestrator.cognitive_engine")
 
 
 class CognitiveEngine:
-    def __init__(self, db_path: Optional[Path | str] = None, agent: Optional[AgentLoop] = None):
+    """
+    Cognitive evaluation facade that delegates node scheduling and execution to DAGController
+    while providing Observer and Critic evaluation results.
+    """
+
+    def __init__(self, db_path: Optional[Path | str] = None, agent: Optional[Any] = None):
         self.db_path = db_path or DEFAULT_DB_PATH
-        self.agent = agent or AgentLoop(db_path=self.db_path)
         self.observer = observer
         self.critic = critic
         self.recovery = recovery_agent
+        self.dag_controller = dag_controller
 
     def execute_node(
         self,
         plan_id: str,
         node: Dict[str, Any],
         plan: Dict[str, Any],
-        contract: Dict[str, Any],
+        contract: Optional[Dict[str, Any]] = None,
         max_attempts: int = 3,
     ) -> Dict[str, Any]:
         """
-        Executes a single DAG node through the full Observer -> Critic -> Recovery Agent cycle.
-        Strictly caps recovery attempts at max_attempts (default 3) before failing and surfacing to user.
-        Maintains an unbroken causal chain of events via parent_event.
+        Executes a single DAG node using dag_controller.py as the single source of truth.
+        Enforces prerequisite evidence gating, tool selection, argument resolution,
+        and execution through the ExecutionGateway, then attaches Observer and Critic evaluations.
         """
-        node_id = node["node_id"]
-        capability = node.get("capability", "general_execution")
-        plan_goal = plan.get("goal", "")
-        session_id = plan.get("session_id", "plan_session")
+        node_id = node.get("node_id", "node_0") if isinstance(node, dict) else getattr(node, "node_id", "node_0")
+        capability = node.get("capability", "general_execution") if isinstance(node, dict) else getattr(node, "capability", "general_execution")
+        plan_goal = plan.get("goal", "") if isinstance(plan, dict) else getattr(plan, "goal", "")
+        session_id = plan.get("session_id", "plan_session") if isinstance(plan, dict) else getattr(plan, "session_id", "plan_session")
+        target = plan.get("target") or (node.get("target") if isinstance(node, dict) else None) or "127.0.0.1"
 
-        logger.info(f"[CognitiveEngine] Starting execution for node #{node_id} ('{capability}') in plan {plan_id}")
+        logger.info(f"[CognitiveEngine] Delegating execution for node #{node_id} ('{capability}') to DAGController")
 
-        # Reset any prior attempts for this node execution session
-        self.recovery.reset_node(plan_id, node_id)
-        self.recovery.max_attempts = max_attempts
-
-        # Initial tool selection
-        sel = tool_selector.select(
-            goal=f"Execute capability '{capability}': {node.get('label', '')} - {node.get('description', '')}",
-            required_capability=capability,
+        context = EvidenceContext(
+            target=str(target),
             session_id=session_id,
-            top_k=3,
-            plan_step=node,
-        )
-        current_tool = sel.selected_tool.tool_id
-        current_args = dict(sel.selected_tool.inferred_args)
-        failed_tools: List[str] = []
-
-        execution_history: List[Dict[str, Any]] = []
-        previous_observations: List[Dict[str, Any]] = []
-        recovery_path: List[Dict[str, Any]] = []
-        current_parent_event: Optional[str] = None
-
-        update_node_status(
             plan_id=plan_id,
-            node_id=node_id,
-            status="running",
-            assigned_tool=current_tool,
+        )
+
+        # Delegate execution to DAGController as the single source of truth
+        node_exec: DAGNodeExecution = self.dag_controller.execute_node(
+            plan_id=plan_id,
+            node=node,
+            context=context,
+            session_id=session_id,
             db_path=self.db_path,
         )
 
-        for attempt in range(1, max_attempts + 1):
-            logger.info(
-                f"[CognitiveEngine] Attempt {attempt}/{max_attempts} for node #{node_id} "
-                f"using tool '{current_tool}' (parent_event={current_parent_event})"
-            )
+        # Observer converts raw telemetry into structured observation facts
+        meta_ctx = {
+            "inputs": node_exec.requested_args or {},
+            "capability": capability,
+            "timed_out": False,
+            "attempt": len(node_exec.recovery_path) if node_exec.recovery_path else 1,
+        }
+        obs: ObservationResult = self.observer.observe(
+            tool_id=node_exec.tool_id or "system_ping",
+            stdout=node_exec.stdout or "",
+            stderr=node_exec.stderr or "",
+            exit_code=node_exec.exit_code or 0,
+            meta=meta_ctx,
+            duration_ms=node_exec.duration_ms,
+        )
+        obs_dict = obs.to_dict()
 
-            # Step 1: Validate Tool Tier against Active Scope Contract
-            tool_tier = get_tool_tier(current_tool)
-            if tool_tier not in contract.get("allowed_tool_tiers", []):
-                reason_msg = (
-                    f"Blocked by Scope Contract: Tool '{current_tool}' is Tier {tool_tier}, "
-                    f"outside authorized tiers {contract.get('allowed_tool_tiers')}"
-                )
-                update_node_status(
-                    plan_id=plan_id,
-                    node_id=node_id,
-                    status="failed",
-                    result=reason_msg,
-                    assigned_tool=current_tool,
-                    db_path=self.db_path,
-                )
-                rejection_event = Event.create(
-                    session_id=session_id,
-                    task_id=f"{plan_id}_{node_id}",
-                    actor="gateway:scope_guard",
-                    tool_id=current_tool,
-                    exit_code=403,
-                    result_summary=f"SCOPE_REJECTION: Node #{node_id} blocked. Tool tier {tool_tier} not permitted.",
-                    confidence=0.0,
-                    parent_event=current_parent_event,
-                    network_context={"plan_id": plan_id, "node_id": node_id, "tool_tier": tool_tier, "authorized": False},
-                )
-                insert_event(rejection_event, self.db_path)
-                return {
-                    "node_id": node_id,
-                    "status": "failed",
-                    "tool": current_tool,
-                    "error": reason_msg,
-                    "attempts": attempt,
-                    "surfaced_to_user": True,
-                }
+        # Critic evaluates progress toward the plan goal
+        critique: CritiqueResult = self.critic.evaluate(
+            node=node,
+            plan_goal=plan_goal,
+            observation=obs,
+            attempt_number=len(node_exec.recovery_path) if node_exec.recovery_path else 1,
+        )
+        critique_dict = critique.to_dict()
 
-            # Step 2: Validate Tool Arguments & Apply Fast Self-Correction if needed
-            from orchestrator.failover_router import failover_router
-            is_valid, schema_err = failover_router.validate_tool_call(current_tool, current_args)
-            if not is_valid and schema_err:
-                logger.info(f"[CognitiveEngine] Tool '{current_tool}' args failed schema: {schema_err}. Attempting fast self-correction.")
-                corrected = self._self_correct_arguments(current_tool, current_args, schema_err, node, plan)
-                corr_valid, _ = failover_router.validate_tool_call(current_tool, corrected)
-                if corr_valid:
-                    logger.info(f"[CognitiveEngine] Self-correction succeeded for '{current_tool}'. Repaired args: {corrected}")
-                    current_args = corrected
+        # Build human-readable recovery / progress narrative
+        narrative = format_recovery_narrative(
+            recovery_path=node_exec.recovery_path,
+            node_label=node.get("label", capability) if isinstance(node, dict) else capability,
+            succeeded=(node_exec.status == "success"),
+            final_facts_count=obs.facts.total_facts_count(),
+        )
 
-            # Step 3: Execute Tool via Agent / Sandbox (chained via parent_event)
-            t0 = time.time()
-            exec_res = self.agent.execute_task(
-                session_id=session_id,
-                message=f"Execute capability '{capability}' with {current_tool}",
-                task_id=f"{plan_id}_{node_id}_try{attempt}",
-                explicit_tool=current_tool,
-                explicit_args=current_args,
-                parent_event=current_parent_event,
-            )
-            duration_ms = round((time.time() - t0) * 1000, 2)
-            exec_event_id = str(exec_res.get("event_id")) if exec_res.get("event_id") else None
+        attempts_count = len(node_exec.recovery_path) if node_exec.recovery_path else 1
+        exec_dict = node_exec.to_dict() if hasattr(node_exec, "to_dict") else asdict(node_exec)
 
-            raw_details = exec_res.get("execution") or {}
-            raw_stdout = raw_details.get("stdout", "") or exec_res.get("reply", "")
-            raw_stderr = raw_details.get("stderr", "")
-            exit_code = raw_details.get("exit_code", 0 if exec_res.get("status") != "rejected" else 1)
-            timed_out = bool(raw_details.get("timed_out"))
-
-            # Step 3: Observer Converts Raw Telemetry into Structured Observation Facts
-            meta_ctx = {
-                "inputs": current_args,
-                "capability": capability,
-                "timed_out": timed_out,
-                "attempt": attempt,
-            }
-            obs: ObservationResult = self.observer.observe(
-                tool_id=current_tool,
-                stdout=raw_stdout,
-                stderr=raw_stderr,
-                exit_code=exit_code,
-                meta=meta_ctx,
-                duration_ms=duration_ms,
-            )
-            obs_dict = obs.to_dict()
-            previous_observations.append(obs_dict)
-
-            # Step 4: Critic Evaluates Progress
-            critique: CritiqueResult = self.critic.evaluate(
-                node=node,
-                plan_goal=plan_goal,
-                observation=obs,
-                previous_observations=previous_observations[:-1],
-                attempt_number=attempt,
-            )
-            critique_dict = critique.to_dict()
-
-            attempt_record = {
-                "attempt": attempt,
-                "tool": current_tool,
-                "args": current_args,
-                "exit_code": exit_code,
-                "timed_out": timed_out,
-                "observation_summary": obs.summary,
-                "facts_count": obs.facts.total_facts_count(),
-                "critique": critique.critique,
-                "has_progress": critique.has_progress,
-                "critic_status": critique.status,
-                "event_id": exec_event_id,
-                "parent_event": current_parent_event,
-            }
-            execution_history.append(attempt_record)
-
-            # Step 5: Check if Progress Was Achieved
-            if critique.has_progress:
-                logger.info(f"[CognitiveEngine] Node #{node_id} succeeded on attempt {attempt}: {obs.summary}")
-
-                # Build final resolution step for recovery path if recovery occurred
-                if attempt > 1 or recovery_path:
-                    facts_desc = []
-                    if len(obs.facts.endpoints) > 0:
-                        facts_desc.append(f"found {len(obs.facts.endpoints)} endpoints")
-                    elif len(obs.facts.ports) > 0:
-                        facts_desc.append(f"found {len(obs.facts.ports)} open ports")
-                    elif len(obs.facts.vulnerabilities) > 0:
-                        facts_desc.append(f"found {len(obs.facts.vulnerabilities)} vulnerabilities")
-                    elif len(obs.facts.credentials) > 0:
-                        facts_desc.append(f"found {len(obs.facts.credentials)} credentials")
-                    else:
-                        facts_desc.append(f"found {obs.facts.total_facts_count()} facts")
-
-                    res_detail = f"succeeded, {', '.join(facts_desc)}"
-                    recovery_path.append({
-                        "attempt": attempt,
-                        "action": f"Executed {current_tool}",
-                        "tool": current_tool,
-                        "args": current_args,
-                        "status": "succeeded",
-                        "details": res_detail,
-                        "event_id": exec_event_id,
-                        "parent_event": current_parent_event,
-                    })
-
-                narrative = format_recovery_narrative(
-                    recovery_path=recovery_path,
-                    node_label=node.get("label", capability),
-                    succeeded=True,
-                    final_facts_count=obs.facts.total_facts_count(),
-                )
-
-                final_result = {
-                    "summary": obs.summary,
-                    "facts": obs.facts.to_dict(),
-                    "critique": critique_dict,
-                    "attempts": attempt,
-                    "tool": current_tool,
-                    "duration_ms": duration_ms,
-                    "recovery_narrative": narrative,
-                    "recovery_path": recovery_path,
-                    "history": execution_history,
-                }
-                update_node_status(
-                    plan_id=plan_id,
-                    node_id=node_id,
-                    status="success",
-                    result=final_result,
-                    assigned_tool=current_tool,
-                    db_path=self.db_path,
-                )
-
-                # Log success event linked to the execution event
-                success_event = Event.create(
-                    session_id=session_id,
-                    task_id=f"{plan_id}_{node_id}",
-                    actor="cognitive_engine:critic",
-                    tool_id=current_tool,
-                    exit_code=0,
-                    result_summary=f"SUCCESS: Node #{node_id} confirmed progress ({obs.facts.total_facts_count()} facts discovered).",
-                    confidence=critique.score,
-                    parent_event=exec_event_id or current_parent_event,
-                    network_context={
-                        "node_id": node_id,
-                        "facts": obs.facts.to_dict(),
-                        "critique": critique.critique,
-                        "recovery_narrative": narrative,
-                    },
-                )
-                insert_event(success_event, self.db_path)
-
-                return {
-                    "node_id": node_id,
-                    "status": "success",
-                    "tool": current_tool,
-                    "attempts": attempt,
-                    "observation": obs_dict,
-                    "critique": critique_dict,
-                    "recovery_narrative": narrative,
-                    "recovery_path": recovery_path,
-                    "history": execution_history,
-                }
-
-            # Step 6: No-Progress or Failure -> Recovery Agent Intervenes
-            logger.warning(
-                f"[CognitiveEngine] Node #{node_id} flagged '{critique.status}' on attempt {attempt}. "
-                f"Engaging Recovery Agent..."
-            )
-
-            rec_plan: RecoveryPlan = self.recovery.formulate_recovery(
-                plan_id=plan_id,
-                node=node,
-                current_tool=current_tool,
-                current_args=current_args,
-                stdout=raw_stdout,
-                stderr=raw_stderr,
-                exit_code=exit_code,
-                timed_out=timed_out,
-                parser_mismatch=obs.parser_mismatch,
-                critic_status=critique.status,
-                critique_msg=critique.critique,
-                session_id=session_id,
-            )
-
-            # Determine diagnostics & transition for human-readable narrative
-            if timed_out:
-                fail_detail = f"timed out after {int(duration_ms/1000) or 30}s"
-            elif obs.parser_mismatch:
-                fail_detail = "parser schema mismatch on output"
-            elif "malformed" in critique.status.lower() or "arg" in critique.critique.lower():
-                fail_detail = "malformed arguments rejected by schema"
-            elif exit_code != 0:
-                fail_detail = f"exited with error code {exit_code}"
-            else:
-                fail_detail = "no progress detected (zero facts found)"
-
-            if rec_plan.strategy == "switch_tool":
-                transition = f"switched to {rec_plan.tool_id}"
-                if rec_plan.repaired_args:
-                    if "threads" in rec_plan.repaired_args:
-                        transition += " with reduced thread count"
-                    elif "wordlist" in rec_plan.repaired_args:
-                        transition += " with common wordlist"
-            elif rec_plan.strategy == "retry_timeout":
-                transition = "retried with increased timeout & lighter flags"
-            elif rec_plan.strategy == "repair_args":
-                transition = "repaired arguments against tool schema"
-            else:
-                transition = f"strategy {rec_plan.strategy}"
-
-            step_entry = {
-                "attempt": attempt,
-                "action": f"Attempted {current_tool}",
-                "tool": current_tool,
-                "args": current_args,
-                "status": "failed",
-                "error_type": rec_plan.error_type,
-                "details": fail_detail,
-                "recovery_strategy": rec_plan.strategy,
-                "transition": transition,
-                "event_id": exec_event_id,
-                "parent_event": current_parent_event,
-            }
-            recovery_path.append(step_entry)
-
-            # Check if Recovery Cap Exceeded
-            if not rec_plan.can_recover or attempt >= max_attempts:
-                logger.error(
-                    f"[CognitiveEngine] RECOVERY EXHAUSTED for node #{node_id} after {attempt} attempts. "
-                    f"Surfacing failure to user."
-                )
-                narrative = format_recovery_narrative(
-                    recovery_path=recovery_path,
-                    node_label=node.get("label", capability),
-                    succeeded=False,
-                )
-                failure_payload = {
-                    "error": "RECOVERY_EXHAUSTED",
-                    "reason": rec_plan.reason,
-                    "attempts": attempt,
-                    "max_attempts": max_attempts,
-                    "last_tool": current_tool,
-                    "critique": critique_dict,
-                    "last_observation": obs_dict,
-                    "recovery_narrative": narrative,
-                    "recovery_path": recovery_path,
-                    "history": execution_history,
-                    "surfaced_to_user": True,
-                }
-                update_node_status(
-                    plan_id=plan_id,
-                    node_id=node_id,
-                    status="failed",
-                    result=failure_payload,
-                    assigned_tool=current_tool,
-                    db_path=self.db_path,
-                )
-                return {
-                    "node_id": node_id,
-                    "status": "failed",
-                    "error": "RECOVERY_EXHAUSTED",
-                    "attempts": attempt,
-                    "reason": rec_plan.reason,
-                    "recovery_narrative": narrative,
-                    "recovery_path": recovery_path,
-                    "history": execution_history,
-                    "surfaced_to_user": True,
-                }
-
-            # Apply Recovery Plan Strategy for Next Attempt
-            if rec_plan.strategy == "switch_tool":
-                failed_tools.append(current_tool)
-                current_tool = rec_plan.tool_id
-                current_args = rec_plan.repaired_args
-            elif rec_plan.strategy in ("repair_args", "retry_timeout"):
-                current_args = rec_plan.repaired_args
-
-            # Log recovery intervention event linked to the failed execution event
-            rec_event = Event.create(
-                session_id=session_id,
-                task_id=f"{plan_id}_{node_id}",
-                actor=f"recovery_agent:strategy:{rec_plan.strategy}",
-                tool_id=current_tool,
-                exit_code=0,
-                result_summary=f"RECOVERY_ATTEMPT {attempt+1}: {fail_detail} -> {transition}",
-                confidence=0.8,
-                parent_event=exec_event_id or current_parent_event,
-                network_context={"strategy": rec_plan.strategy, "repaired_args": current_args, "step": step_entry},
-            )
-            rec_event_id = str(insert_event(rec_event, self.db_path))
-
-            # The next attempt's causal parent is this recovery intervention!
-            current_parent_event = rec_event_id
-
-        # Fallthrough safety
         return {
             "node_id": node_id,
-            "status": "failed",
-            "error": "RECOVERY_EXHAUSTED",
-            "attempts": max_attempts,
-            "surfaced_to_user": True,
+            "status": node_exec.status,
+            "tool": node_exec.tool_id,
+            "attempts": attempts_count,
+            "observation": obs_dict,
+            "critique": critique_dict,
+            "recovery_narrative": narrative,
+            "recovery_path": node_exec.recovery_path,
+            "command_line": node_exec.command_line,
+            "typed_invocation": node_exec.typed_invocation,
+            "exit_code": node_exec.exit_code,
+            "stdout": node_exec.stdout,
+            "stderr": node_exec.stderr,
+            "findings_count": node_exec.findings_count,
+            "execution_result": exec_dict,
         }
 
     def _self_correct_arguments(
@@ -446,33 +136,8 @@ class CognitiveEngine:
         node: Dict[str, Any],
         plan: Dict[str, Any],
     ) -> Dict[str, Any]:
-        """
-        Fast self-correction for tool arguments failing schema validation.
-        Leverages plan context, node parameters, and target normalizations.
-        """
-        corrected = dict(arguments)
-        target = node.get("target") or plan.get("target") or ""
-
-        # Check for missing target
-        if "target" in schema_error.lower() and not corrected.get("target") and target:
-            clean_tgt = target.replace("http://", "").replace("https://", "").split("/")[0].split(":")[0]
-            corrected["target"] = clean_tgt
-
-        # Check for missing url
-        if "url" in schema_error.lower() and not corrected.get("url"):
-            if target:
-                if not target.startswith("http://") and not target.startswith("https://"):
-                    corrected["url"] = f"http://{target}"
-                else:
-                    corrected["url"] = target
-
-        # Check for type errors (e.g. integer instead of string)
-        if "target" in corrected and not isinstance(corrected["target"], str):
-            corrected["target"] = str(corrected["target"])
-        if "url" in corrected and not isinstance(corrected["url"], str):
-            corrected["url"] = str(corrected["url"])
-
-        return corrected
+        """Backward-compatibility helper for schema argument corrections."""
+        return dict(arguments)
 
 
 # Global singleton

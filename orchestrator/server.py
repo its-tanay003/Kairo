@@ -948,10 +948,52 @@ def get_planner_ready_nodes(plan_id: str):
 @app.post("/planner/plans/{plan_id}/run")
 @app.post("/planner/plans/{plan_id}/execute")
 def run_planner_plan(plan_id: str, req: Optional[PlanExecuteRequest] = None):
-    """Autonomously executes a multi-step task graph from beginning to end."""
+    """
+    Autonomously executes a multi-step task graph from beginning to end using DAGController.
+    MANDATORY GATE: Requires an unexpired, cryptographically signed Scope Contract before any task graph can execute.
+    """
     from orchestrator.dag_controller import dag_controller
     req = req or PlanExecuteRequest()
     sess_id = req.session_id or f"sess_dag_{uuid.uuid4().hex[:6]}"
+
+    contract = get_active_scope_contract(agent.db_path)
+    if not contract:
+        contract = seed_default_scope_contract(agent.db_path)
+
+    # 1. Signature Integrity Verification
+    if not contract.get("signature_valid", False):
+        rejection_event = Event.create(
+            session_id="plan_exec",
+            task_id=f"plan_exec_{plan_id}",
+            actor="gateway:scope_guard",
+            exit_code=403,
+            result_summary="SCOPE_REJECTION: Task graph execution blocked. Active Scope Contract signature is invalid or tampered.",
+            confidence=0.0,
+            network_context={"plan_id": plan_id, "authorized": False, "reason": "INVALID_SIGNATURE"},
+        )
+        insert_event(rejection_event, agent.db_path)
+        raise HTTPException(
+            status_code=403,
+            detail="Scope Contract signature is invalid or contract has been tampered with. Task graph execution blocked.",
+        )
+
+    # 2. Expiration Verification
+    if contract.get("is_expired", False) or contract.get("seconds_remaining", 0) <= 0:
+        rejection_event = Event.create(
+            session_id="plan_exec",
+            task_id=f"plan_exec_{plan_id}",
+            actor="gateway:scope_guard",
+            exit_code=403,
+            result_summary=f"SCOPE_REJECTION: Task graph execution blocked. Active Scope Contract expired at {contract.get('expires_at')}.",
+            confidence=0.0,
+            network_context={"plan_id": plan_id, "authorized": False, "reason": "EXPIRED_CONTRACT"},
+        )
+        insert_event(rejection_event, agent.db_path)
+        raise HTTPException(
+            status_code=403,
+            detail=f"Active Scope Contract expired at {contract.get('expires_at')}. Renew contract before executing task graph.",
+        )
+
     try:
         res = dag_controller.execute_plan(
             plan_id=plan_id,
@@ -962,7 +1004,13 @@ def run_planner_plan(plan_id: str, req: Optional[PlanExecuteRequest] = None):
             stop_on_critical_failure=req.stop_on_critical_failure if req.stop_on_critical_failure is not None else True,
             db_path=agent.db_path,
         )
-        return res.to_dict()
+        res_dict = res.to_dict()
+        res_dict.setdefault("scope_contract_id", contract.get("contract_id"))
+        res_dict.setdefault("authorized_by", contract.get("authorized_by"))
+        res_dict.setdefault("executed_count", res.completed_count + res.failed_count)
+        res_dict.setdefault("executed_nodes", [n.to_dict() for n in res.nodes_executed])
+        res_dict.setdefault("updated_plan", get_plan(plan_id, db_path=agent.db_path))
+        return res_dict
     except ValueError as e:
         raise HTTPException(status_code=404, detail=str(e))
     except Exception as e:
@@ -1085,77 +1133,6 @@ def validate_scope_endpoint(req: ScopeValidateRequest):
     )
     return res
 
-
-@app.post("/planner/plans/{plan_id}/execute")
-def execute_task_graph_endpoint(plan_id: str):
-    """
-    Executes a task graph DAG.
-    MANDATORY GATE: Requires an unexpired, cryptographically signed Scope Contract before any task graph can execute.
-    """
-    contract = get_active_scope_contract(agent.db_path)
-    if not contract:
-        contract = seed_default_scope_contract(agent.db_path)
-
-    # 1. Signature Integrity Verification
-    if not contract.get("signature_valid", False):
-        rejection_event = Event.create(
-            session_id="plan_exec",
-            task_id=f"plan_exec_{plan_id}",
-            actor="gateway:scope_guard",
-            exit_code=403,
-            result_summary="SCOPE_REJECTION: Task graph execution blocked. Active Scope Contract signature is invalid or tampered.",
-            confidence=0.0,
-            network_context={"plan_id": plan_id, "authorized": False, "reason": "INVALID_SIGNATURE"},
-        )
-        insert_event(rejection_event, agent.db_path)
-        raise HTTPException(
-            status_code=403,
-            detail="Scope Contract signature is invalid or contract has been tampered with. Task graph execution blocked.",
-        )
-
-    # 2. Expiration Verification
-    if contract.get("is_expired", False) or contract.get("seconds_remaining", 0) <= 0:
-        rejection_event = Event.create(
-            session_id="plan_exec",
-            task_id=f"plan_exec_{plan_id}",
-            actor="gateway:scope_guard",
-            exit_code=403,
-            result_summary=f"SCOPE_REJECTION: Task graph execution blocked. Active Scope Contract expired at {contract.get('expires_at')}.",
-            confidence=0.0,
-            network_context={"plan_id": plan_id, "authorized": False, "reason": "EXPIRED_CONTRACT"},
-        )
-        insert_event(rejection_event, agent.db_path)
-        raise HTTPException(
-            status_code=403,
-            detail=f"Active Scope Contract expired at {contract.get('expires_at')}. Renew contract before executing task graph.",
-        )
-
-    plan = get_plan(plan_id, db_path=agent.db_path)
-    if not plan:
-        raise HTTPException(status_code=404, detail=f"Plan '{plan_id}' not found")
-
-    ready_nodes = get_ready_nodes(plan_id, db_path=agent.db_path)
-    executed_nodes = []
-
-    for node in ready_nodes:
-        node_res = cognitive_engine.execute_node(
-            plan_id=plan_id,
-            node=node,
-            plan=plan,
-            contract=contract,
-            max_attempts=3,
-        )
-        executed_nodes.append(node_res)
-
-    return {
-        "status": "executed",
-        "plan_id": plan_id,
-        "authorized_by": contract.get("authorized_by"),
-        "scope_contract_id": contract.get("contract_id"),
-        "executed_count": len(executed_nodes),
-        "executed_nodes": executed_nodes,
-        "updated_plan": get_plan(plan_id, db_path=agent.db_path),
-    }
 
 
 @app.post("/planner/plans/{plan_id}/nodes/{node_id}/execute")
