@@ -56,6 +56,101 @@ class VMManager:
                 return subprocess.CompletedProcess(args=full_cmd, returncode=-1, stdout="", stderr=str(e))
             raise
 
+    def _is_vbox_available(self) -> bool:
+        """Checks if VBoxManage executable exists and VM is registered."""
+        if not shutil.which("VBoxManage") and not os.path.exists(self.vbox_cmd):
+            return False
+        res = self._run_vbox(["showvminfo", self.vm_name, "--machinereadable"], check=False)
+        return res.returncode == 0
+
+    def is_worker_online(self, timeout_sec: float = 1.5) -> bool:
+        """Fast check whether guest worker HTTP agent on port 9999 is responsive."""
+        try:
+            req = urllib.request.urlopen(f"{self.worker_url}/health", timeout=timeout_sec)
+            return req.status == 200
+        except Exception:
+            return False
+
+    def is_vm_running(self) -> bool:
+        """Returns True if VirtualBox VM state is running."""
+        res = self._run_vbox(["showvminfo", self.vm_name, "--machinereadable"], check=False)
+        if res.returncode == 0:
+            match = re.search(r'VMState="([^"]+)"', res.stdout)
+            if match and match.group(1) == "running":
+                return True
+        return False
+
+    def start_vm(self, headless: bool = True, wait_seconds: int = 40) -> bool:
+        """
+        Auto-starts the isolated Kali VM (or worker agent) and waits until worker is healthy.
+        Attempts VirtualBox VM first; if VirtualBox is unavailable, attempts WSL2 worker daemon.
+        """
+        if self.is_worker_online(timeout_sec=1.5):
+            return True
+
+        print(f"[VMManager] Auto-starting VM/worker for '{self.vm_name}' (headless={headless})...")
+
+        started_via_vbox = False
+        if shutil.which("VBoxManage") or os.path.exists(self.vbox_cmd):
+            vbox_info = self._run_vbox(["showvminfo", self.vm_name, "--machinereadable"], check=False)
+            if vbox_info.returncode == 0:
+                if 'VMState="running"' not in vbox_info.stdout:
+                    start_res = self._run_vbox(["startvm", self.vm_name, "--type", "headless" if headless else "gui"], check=False)
+                    if start_res.returncode == 0:
+                        started_via_vbox = True
+                        print(f"[VMManager] VirtualBox VM '{self.vm_name}' successfully launched headless.")
+                    else:
+                        print(f"[VMManager] VirtualBox startvm returned code {start_res.returncode}: {start_res.stderr.strip()}")
+                else:
+                    started_via_vbox = True
+                    print(f"[VMManager] VirtualBox VM '{self.vm_name}' is already running, awaiting worker agent...")
+
+        # If VirtualBox is not available or failed to start, try WSL2 worker agent auto-start
+        if not started_via_vbox and (shutil.which("wsl.exe") or os.path.exists(r"C:\Windows\System32\wsl.exe")):
+            wsl_path = shutil.which("wsl.exe") or r"C:\Windows\System32\wsl.exe"
+            try:
+                wsl_cmd = "nohup python3 /opt/kairo/worker_agent.py > /tmp/kairo_worker.log 2>&1 &"
+                subprocess.Popen(
+                    [wsl_path, "-d", "kali-linux", "--", "bash", "-c", wsl_cmd],
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.DEVNULL,
+                )
+                print("[VMManager] Spawned worker_agent.py inside WSL2 kali-linux in background.")
+            except Exception as wsl_err:
+                print(f"[VMManager] WSL2 worker launch attempt failed: {wsl_err}")
+
+        # Poll worker /health until online or timeout
+        deadline = time.time() + wait_seconds
+        attempts = 0
+        while time.time() < deadline:
+            attempts += 1
+            if self.is_worker_online(timeout_sec=1.5):
+                print(f"[VMManager] Worker agent is ONLINE on {self.worker_url} (ready in ~{attempts * 1.5:.1f}s)!")
+                self.connector.get_info(force_refresh=True)
+                return True
+            time.sleep(1.5)
+
+        print(f"[VMManager] Timed out waiting {wait_seconds}s for worker agent on {self.worker_url}")
+        return False
+
+    def ensure_worker_online(self, timeout_sec: int = 40, auto_start: bool = True) -> bool:
+        """
+        Ensures the guest worker agent is online on port 9999.
+        If offline and auto_start is True, auto-starts the VM/worker and waits.
+        """
+        if self.is_worker_online(timeout_sec=1.5):
+            return True
+        if not auto_start:
+            return False
+        return self.start_vm(headless=True, wait_seconds=timeout_sec)
+
+    def poweroff_vm(self) -> Dict[str, Any]:
+        """Powers off the VirtualBox VM."""
+        if shutil.which("VBoxManage") or os.path.exists(self.vbox_cmd):
+            res = self._run_vbox(["controlvm", self.vm_name, "poweroff"], check=False)
+            return {"success": res.returncode == 0, "output": res.stdout, "error": res.stderr}
+        return {"success": False, "error": "VBoxManage not available"}
+
     def get_status(self) -> Dict[str, Any]:
         """Returns comprehensive status of VM, execution plane, and in-guest worker agent."""
         res = self._run_vbox(["showvminfo", self.vm_name, "--machinereadable"], check=False)
@@ -136,10 +231,10 @@ class VMManager:
         if not name:
             name = f"snap_task_{int(time.time()*1000)}"
 
-        status_info = self.connector.get_status()
-        plane_type = status_info.get("plane_type") if isinstance(status_info, dict) else getattr(status_info, "plane_type", "windows_wsl2")
-        if plane_type != "virtualbox_sandbox" or (not shutil.which("VBoxManage") and not os.path.exists(self.vbox_cmd)):
+        if not self._is_vbox_available():
             duration_ms = int((time.perf_counter() - t0) * 1000)
+            status_info = self.connector.get_status()
+            plane_type = status_info.get("plane_type") if isinstance(status_info, dict) else getattr(status_info, "plane_type", "windows_wsl2")
             return {
                 "status": "success",
                 "snapshot_name": name,
@@ -179,9 +274,9 @@ class VMManager:
         Powers off, restores snapshot, starts headless, and waits for worker agent online.
         """
         t0 = time.perf_counter()
-        status_info = self.connector.get_status()
-        plane_type = status_info.get("plane_type") if isinstance(status_info, dict) else getattr(status_info, "plane_type", "windows_wsl2")
-        if plane_type != "virtualbox_sandbox" or (not shutil.which("VBoxManage") and not os.path.exists(self.vbox_cmd)):
+        if not self._is_vbox_available():
+            status_info = self.connector.get_status()
+            plane_type = status_info.get("plane_type") if isinstance(status_info, dict) else getattr(status_info, "plane_type", "windows_wsl2")
             return {
                 "status": "success",
                 "snapshot_name": snapshot_name,
@@ -197,12 +292,15 @@ class VMManager:
         self._run_vbox(["controlvm", self.vm_name, "poweroff"], check=False)
         time.sleep(1.0)
 
-        # 2. Restore snapshot
-        self._run_vbox(["snapshot", self.vm_name, "restore", snapshot_name], check=True)
+        # 2. Restore snapshot (with fallback to BASELINE_SNAPSHOT if named snapshot fails)
+        restore_res = self._run_vbox(["snapshot", self.vm_name, "restore", snapshot_name], check=False)
+        if restore_res.returncode != 0 and snapshot_name != BASELINE_SNAPSHOT:
+            print(f"[VMManager] Restore of '{snapshot_name}' returned error: {restore_res.stderr.strip()}. Falling back to baseline '{BASELINE_SNAPSHOT}'...")
+            self._run_vbox(["snapshot", self.vm_name, "restore", BASELINE_SNAPSHOT], check=False)
         time.sleep(0.5)
 
         # 3. Start VM headless
-        self._run_vbox(["startvm", self.vm_name, "--type", "headless"], check=True)
+        self._run_vbox(["startvm", self.vm_name, "--type", "headless"], check=False)
 
         # 4. Wait for worker agent /health
         agent_ready = False
@@ -210,13 +308,10 @@ class VMManager:
         attempts = 0
         while time.time() < deadline:
             attempts += 1
-            try:
-                req = urllib.request.urlopen(f"{self.worker_url}/health", timeout=2)
-                if req.status == 200:
-                    agent_ready = True
-                    break
-            except Exception:
-                time.sleep(1.5)
+            if self.is_worker_online(timeout_sec=2.0):
+                agent_ready = True
+                break
+            time.sleep(1.5)
 
         duration_ms = int((time.perf_counter() - t0) * 1000)
         return {
@@ -269,7 +364,12 @@ class VMManager:
 
         t0 = time.perf_counter()
         res_data = None
+
+        # Check worker health; if offline, attempt reliable auto-start so fallback is rare!
         info = self.connector.get_info()
+        if not info.worker_online:
+            if self.ensure_worker_online(timeout_sec=15, auto_start=True):
+                info = self.connector.get_info(force_refresh=True)
 
         if info.worker_online:
             try:
@@ -280,6 +380,12 @@ class VMManager:
                 )
                 with urllib.request.urlopen(req, timeout=(timeout_ms / 1000.0) + 2.0) as resp:
                     res_data = json.loads(resp.read().decode("utf-8"))
+                    if res_data.get("status") == "completed" and res_data.get("exit_code") == 0:
+                        res_data["status"] = "success"
+                    res_data["execution_plane"] = "virtualbox_sandbox" if self.is_vm_running() else info.plane_type.value
+                    res_data["backend"] = f"VirtualBox Kali Sandbox ({self.vm_name})" if self.is_vm_running() else "Kali Worker Sandbox"
+                    res_data["local_fallback"] = False
+                    res_data["fallback_notice"] = None
             except Exception:
                 res_data = None
 

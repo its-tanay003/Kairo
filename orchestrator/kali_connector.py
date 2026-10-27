@@ -145,8 +145,29 @@ class KaliWorkerConnector:
         if self.force_plane:
             return self._build_forced_plane_info(self.force_plane, host_system, host_arch, worker_online, worker_info, t0)
 
-        # 1. WINDOWS BRANCH: Detect WSL2 and Kali Linux distribution
+        # 1. WINDOWS BRANCH: Detect VirtualBox Sandbox or WSL2
         if host_system == "win32":
+            vbox_stat = self._check_virtualbox_status()
+            if vbox_stat.get("is_running") and worker_online:
+                latency_ms = round((time.perf_counter() - t0) * 1000, 2)
+                return ExecutionPlaneInfo(
+                    platform=host_system,
+                    plane_type=ExecutionPlaneType.VIRTUALBOX_SANDBOX,
+                    backend_name=f"VirtualBox Kali VM Sandbox ({vbox_stat.get('vm_name', 'kali-linux')})",
+                    is_connected=True,
+                    host_os=f"Windows ({platform.platform()})",
+                    host_arch=host_arch,
+                    distro_name="kali-linux",
+                    worker_url=self.worker_url,
+                    worker_online=True,
+                    worker_info=worker_info,
+                    latency_ms=latency_ms,
+                    details={
+                        "vbox_manage": vbox_stat.get("vbox_cmd"),
+                        "vm_name": vbox_stat.get("vm_name"),
+                        "virtualbox_running": True,
+                    },
+                )
             return self._detect_windows_wsl2(host_system, host_arch, worker_online, worker_info, t0)
 
         # 2. LINUX BRANCH: Direct native Kali execution or local container/socket
@@ -170,6 +191,38 @@ class KaliWorkerConnector:
             worker_info=worker_info,
             latency_ms=round((time.perf_counter() - t0) * 1000, 2),
         )
+
+    def _check_virtualbox_status(self) -> Dict[str, Any]:
+        """Checks if VirtualBox VM is configured and whether it is currently running."""
+        vbox_cmd = os.environ.get(
+            "VBOX_MANAGE",
+            r"C:\Program Files\Oracle\VirtualBox\VBoxManage.exe"
+            if os.path.exists(r"C:\Program Files\Oracle\VirtualBox\VBoxManage.exe")
+            else "VBoxManage",
+        )
+        vm_name = os.environ.get("KAIRO_VM_NAME", "kali-linux-2026.1-virtualbox-amd64")
+        if not shutil.which("VBoxManage") and not os.path.exists(vbox_cmd):
+            return {"available": False, "is_running": False}
+
+        try:
+            res = subprocess.run(
+                [vbox_cmd, "showvminfo", vm_name, "--machinereadable"],
+                capture_output=True,
+                text=True,
+                timeout=4.0,
+                check=False,
+            )
+            if res.returncode == 0:
+                is_running = 'VMState="running"' in res.stdout
+                return {
+                    "available": True,
+                    "vm_name": vm_name,
+                    "vbox_cmd": vbox_cmd,
+                    "is_running": is_running,
+                }
+        except Exception:
+            pass
+        return {"available": False, "is_running": False}
 
     def _check_worker_health(self) -> Tuple[bool, Dict[str, Any]]:
         """Tests the in-guest or local Kairo Worker Agent on port 9999."""
@@ -479,6 +532,8 @@ class KaliWorkerConnector:
                 with urllib.request.urlopen(req, timeout=(timeout_ms / 1000.0) + 5.0) as resp:
                     res_data = json.loads(resp.read().decode("utf-8"))
                     res_data["execution_plane"] = info.plane_type.value
+                    if res_data.get("status") == "completed" and res_data.get("exit_code") == 0:
+                        res_data["status"] = "success"
                     return res_data
             except Exception as e:
                 logger.warning(f"Worker HTTP execution failed ({e}), falling back to direct plane execution")
