@@ -87,6 +87,8 @@ from orchestrator.kali_connector import ExecutionPlaneType, SIMULATION_NOTICE_TE
 from orchestrator.training_manager import training_manager
 from orchestrator.benchmark_manager import benchmark_manager
 from orchestrator.model_evolution_controller import evolution_controller
+from orchestrator.tool_knowledge_center import tool_knowledge_center
+from orchestrator.update_manager import update_manager, UpdatePolicy
 
 
 
@@ -228,6 +230,20 @@ class PlanExecuteRequest(BaseModel):
     goal: Optional[str] = None
     max_steps: Optional[int] = 50
     stop_on_critical_failure: Optional[bool] = True
+    mode: Optional[str] = "autonomous"  # "autonomous", "plan_only", "step_by_step", "manual"
+
+
+class UpdateApplyRequest(BaseModel):
+    item_id: str
+    create_snapshot: Optional[bool] = True
+
+
+class UpdateRollbackRequest(BaseModel):
+    snapshot_name: str
+
+
+class UpdatePolicyRequest(BaseModel):
+    policy: str
 
 
 class ToolSelectRequest(BaseModel):
@@ -249,7 +265,7 @@ class ScopeContractCreateRequest(BaseModel):
     targets: List[str]
     network_scope: str = "authorized_lab"
     time_window: str = "8h"
-    allowed_tool_tiers: List[int] = [1, 2, 3]
+    allowed_tool_tiers: Optional[List[int]] = None
     authorized_by: Optional[str] = "secops_lead@kairo.internal"
     operator_token: Optional[str] = None
     metadata: Optional[Dict[str, Any]] = None
@@ -258,7 +274,7 @@ class ScopeContractCreateRequest(BaseModel):
 class ScopeValidateRequest(BaseModel):
     target: Optional[str] = None
     tool_id: Optional[str] = None
-    tool_tier: Optional[int] = None
+    tool_tier: Optional[int] = None  # Deprecated per ADR-004
 
 
 class ObserverRequest(BaseModel):
@@ -1036,6 +1052,7 @@ def run_planner_plan(plan_id: str, req: Optional[PlanExecuteRequest] = None):
             max_steps=req.max_steps or 50,
             stop_on_critical_failure=req.stop_on_critical_failure if req.stop_on_critical_failure is not None else True,
             db_path=agent.db_path,
+            mode=req.mode or "autonomous",
         )
         res_dict = res.to_dict()
         res_dict.setdefault("scope_contract_id", contract.get("contract_id"))
@@ -1126,8 +1143,6 @@ def create_scope_contract_endpoint(
     """Creates, cryptographically signs, and activates a new Scope Contract under operator authorization."""
     if not req.targets:
         raise HTTPException(status_code=400, detail="Scope Contract must specify at least one target or CIDR subnet")
-    if not req.allowed_tool_tiers:
-        raise HTTPException(status_code=400, detail="Scope Contract must allow at least one tool tier [1, 2, or 3]")
 
     token = req.operator_token
     if not token and authorization:
@@ -1171,9 +1186,10 @@ def validate_scope_endpoint(req: ScopeValidateRequest):
 @app.post("/planner/plans/{plan_id}/nodes/{node_id}/execute")
 def execute_single_node_endpoint(plan_id: str, node_id: str, req: NodeExecuteRequest = NodeExecuteRequest()):
     """
-    Executes a single DAG node through the cognitive loop:
-    Tool Selection -> Scope Verification -> Execution -> Observer -> Critic -> Recovery Agent (cap: 3).
+    Executes a single DAG node using dag_controller (single source of truth for execution):
+    Evidence Evaluation -> Tool Selection -> Scope Verification -> Execution -> Telemetry Recording.
     """
+    from orchestrator.dag_controller import dag_controller, EvidenceContext
     contract = get_active_scope_contract(agent.db_path)
     if not contract:
         contract = seed_default_scope_contract(agent.db_path)
@@ -1191,17 +1207,23 @@ def execute_single_node_endpoint(plan_id: str, node_id: str, req: NodeExecuteReq
     if not target_node:
         raise HTTPException(status_code=404, detail=f"Node '{node_id}' not found in plan '{plan_id}'")
 
-    res = cognitive_engine.execute_node(
+    sess_id = f"sess_node_{uuid.uuid4().hex[:6]}"
+    context = EvidenceContext(
+        target=plan.get("target") or "127.0.0.1",
+        session_id=sess_id,
         plan_id=plan_id,
+    )
+    exec_record = dag_controller.execute_node(
+        plan_id=plan_id,
+        session_id=sess_id,
         node=target_node,
-        plan=plan,
-        contract=contract,
-        max_attempts=req.max_attempts or 3,
+        context=context,
+        db_path=agent.db_path,
     )
     return {
         "plan_id": plan_id,
         "node_id": node_id,
-        "execution_result": res,
+        "execution_result": exec_record.to_dict(),
         "updated_plan": get_plan(plan_id, db_path=agent.db_path),
     }
 
@@ -1538,7 +1560,7 @@ def _get_or_create_gui_adapter(tool_id: str) -> BaseGuiAdapter:
 
 @app.get("/gui/adapters")
 def list_gui_adapters():
-    """Lists available Tier 3 GUI tool adapters and their supported scripted workflows."""
+    """Lists available GUI tool adapters and their supported scripted workflows."""
     adapters_info = []
     gui_tool_ids = ["burpsuite.gui.v1", "wireshark.gui.v1", "zap.gui.v1"]
     for tid in gui_tool_ids:
@@ -1548,7 +1570,6 @@ def list_gui_adapters():
                 "tool_id": inst.tool_id,
                 "tool_version": inst.tool_version,
                 "app_name": inst.app_name,
-                "tier": inst.tier,
                 "is_running": inst.is_running(),
                 "workflows": inst.list_workflows(),
             })
@@ -1558,18 +1579,18 @@ def list_gui_adapters():
 @app.post("/gui/execute")
 def execute_gui_tool(req: GuiExecuteRequest):
     """
-    Executes an action or bounded scripted workflow on a Tier 3 GUI Tool Adapter.
-    Enforces Scope Contract authorization for Tier 3 intrusive GUI tools.
+    Executes an action or bounded scripted workflow on a GUI Tool Adapter.
+    Enforces Scope Contract target authorization.
     """
     params = req.params or {}
     target = params.get("target") or params.get("host") or params.get("target_url")
     
-    # 1. Scope Contract Authorization Check for Tier 3
-    scope_val = validate_scope_request(target=target, tool_id=req.tool_id, tool_tier=3)
+    # 1. Scope Contract Authorization Check
+    scope_val = validate_scope_request(target=target, tool_id=req.tool_id)
     if not scope_val.get("authorized", True):
         raise HTTPException(
             status_code=403,
-            detail=f"Scope violation: Tool {req.tool_id} (Tier 3) is not authorized for target {target} under active contract.",
+            detail=f"Scope violation: Tool {req.tool_id} is not authorized for target {target} under active contract.",
         )
 
     # 2. Get or create adapter instance
@@ -1713,17 +1734,17 @@ def get_browser_history():
 def execute_browser_action(req: BrowserExecuteRequest):
     """
     Executes an action or scripted workflow on the Security Testing Browser.
-    Enforces Scope Contract authorization for Tier 2 active scanning / DAST testing.
+    Enforces Scope Contract authorization.
     """
     params = req.params or {}
     target = req.url or params.get("url") or params.get("target") or "http://target.local"
 
-    # 1. Scope Contract Authorization Check for Tier 2
-    scope_val = validate_scope_request(target=target, tool_id=browser_adapter.tool_id, tool_tier=2)
+    # 1. Scope Contract Authorization Check
+    scope_val = validate_scope_request(target=target, tool_id=browser_adapter.tool_id)
     if not scope_val.get("authorized", True):
         raise HTTPException(
             status_code=403,
-            detail=f"Scope violation: Tool {browser_adapter.tool_id} (Tier 2) is not authorized for target {target} under active contract.",
+            detail=f"Scope violation: Tool {browser_adapter.tool_id} is not authorized for target {target} under active contract.",
         )
 
     # 2. Build input envelope
@@ -2417,6 +2438,96 @@ def verify_single_finding_endpoint(finding_id: str, req: Optional[VerifyFindingR
     if "error" in result and result.get("status") == "not_found":
         raise HTTPException(status_code=404, detail=result["error"])
     return result
+
+
+# ==============================================================================
+# TOOL KNOWLEDGE CENTER ENDPOINTS
+# ==============================================================================
+
+@app.get("/knowledge/tools")
+def list_knowledge_tools(
+    category: Optional[str] = None,
+    installed_only: bool = False,
+    execution_type: Optional[str] = None,
+    query: Optional[str] = None,
+):
+    """Lists registered tools with live/cached installation status, categories, and summary metadata."""
+    tools = tool_knowledge_center.list_tools(
+        category=category,
+        installed_only=installed_only,
+        execution_type=execution_type,
+        query=query,
+    )
+    return {"tools": tools, "total_count": len(tools)}
+
+
+@app.get("/knowledge/tools/{tool_id}")
+def get_knowledge_tool_details(tool_id: str):
+    """Retrieves full 13-section technical specifications, guidance, and examples for a tool."""
+    detail = tool_knowledge_center.get_tool_details(tool_id)
+    if not detail:
+        raise HTTPException(status_code=404, detail=f"Tool '{tool_id}' not found in Tool Knowledge Center")
+    return detail
+
+
+@app.post("/knowledge/tools/{tool_id}/verify")
+def verify_knowledge_tool(tool_id: str):
+    """Runs a live verification health check on a tool in the execution environment."""
+    res = tool_knowledge_center.verify_tool(tool_id)
+    if not res.get("success") and "not found" in res.get("error", "").lower():
+        raise HTTPException(status_code=404, detail=res["error"])
+    return res
+
+
+# ==============================================================================
+# AUTOMATIC KALI & TOOL UPDATE ENDPOINTS
+# ==============================================================================
+
+@app.get("/updates/status")
+def get_updates_status():
+    """Returns the current state of the Kali and tool update subsystem."""
+    return update_manager.get_status()
+
+
+@app.post("/updates/check")
+def check_updates():
+    """Discovers available updates across system, tools, and vulnerability databases."""
+    updates = update_manager.check_updates()
+    return {"updates": [u.to_dict() for u in updates], "count": len(updates)}
+
+
+@app.post("/updates/apply")
+def apply_update(req: UpdateApplyRequest):
+    """Applies a package/database update with pre-update snapshot and post-update health check."""
+    rec = update_manager.apply_update(
+        item_id=req.item_id,
+        create_snapshot=req.create_snapshot if req.create_snapshot is not None else True,
+    )
+    return rec
+
+
+@app.post("/updates/rollback")
+def rollback_update_snapshot(req: UpdateRollbackRequest):
+    """Restores a previous system recovery point snapshot."""
+    res = update_manager.rollback_to_snapshot(req.snapshot_name)
+    if not res.get("success"):
+        raise HTTPException(status_code=500, detail=res.get("error", "Rollback failed"))
+    return res
+
+
+@app.post("/updates/policy")
+def set_update_policy(req: UpdatePolicyRequest):
+    """Configures the operational update policy (standard_managed, managed_rolling, manual_control)."""
+    ok = update_manager.set_policy(req.policy)
+    if not ok:
+        raise HTTPException(status_code=400, detail=f"Invalid update policy: '{req.policy}'")
+    return {"policy": update_manager.policy.value, "success": True}
+
+
+@app.get("/updates/history")
+def get_update_history(limit: int = 50):
+    """Retrieves immutable audit history of applied updates and rollbacks."""
+    return {"history": update_manager.list_update_history(limit=limit)}
 
 
 if __name__ == "__main__":

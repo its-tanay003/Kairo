@@ -226,6 +226,10 @@ class ToolRegistry:
         """Returns the ToolSpec by id if loaded, else None."""
         return self._tools.get(tool_id)
 
+    def get_tool(self, tool_id: str) -> Optional[ToolSpec]:
+        """Alias for get(tool_id)."""
+        return self._tools.get(tool_id)
+
     def list_tools(self) -> List[ToolSpec]:
         """Returns all loaded, schema-validated ToolSpecs."""
         return list(self._tools.values())

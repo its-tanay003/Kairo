@@ -90,12 +90,11 @@ class BrowserActionStep:
 class SecurityBrowserAdapter(ToolAdapter):
     """
     Playwright-driven Security Testing Browser Adapter.
-    Classified as Tier 2 (Active security testing / DAST).
+    Unified tool access per ADR-004.
     """
     tool_id: str = "browser.security.v1"
     tool_version: str = "1.0.0"
     app_name: str = "Playwright Security Browser"
-    tier: int = 2
 
     def __init__(
         self,

@@ -70,11 +70,11 @@ class TestBrowserAdapterConformance:
         adapter_cls = adapter_registry.get("browser.security.v1")
         assert adapter_cls is SecurityBrowserAdapter
 
-    def test_tier2_classification_in_db_mapping(self):
-        """Verifies that browser tools are classified as Tier 2 active testing tools in db.py."""
-        assert get_tool_tier("browser.security.v1") == 2
-        assert get_tool_tier("playwright.browser.v1") == 2
-        assert get_tool_tier("browser.test.v1") == 2
+    def test_tier2_classification_retired_in_db_mapping(self):
+        """Verifies that tool tiers are retired and get_tool_tier returns None per ADR-004."""
+        assert get_tool_tier("browser.security.v1") is None
+        assert get_tool_tier("playwright.browser.v1") is None
+        assert get_tool_tier("browser.test.v1") is None
 
     def test_toolspec_yaml_schema_conformance(self):
         """Validates that browser_security_v1.yaml conforms to the 16-field ToolSpec schema."""
@@ -278,37 +278,34 @@ class TestBrowserScriptedWorkflows:
 # ─────────────────────────────────────────────────────────────────────────────
 
 class TestBrowserScopeContractEnforcement:
-    def test_browser_blocked_when_tier2_unauthorized(self, temp_browser_env):
-        """Verifies that browser active testing is denied if ScopeContract only permits Tier 1 (passive)."""
+    def test_browser_blocked_when_target_out_of_scope(self, temp_browser_env):
+        """Verifies that browser active testing is denied if target is outside ScopeContract boundaries."""
         db_path = temp_browser_env["db_path"]
 
         create_scope_contract(
             targets=["http://target.local", "target.local"],
             network_scope="10.0.0.0/24",
             time_window="8h",
-            allowed_tool_tiers=[1],  # Only Tier 1 passive permitted
             authorized_by="Lead Auditor",
             db_path=db_path,
         )
 
         val = validate_scope_request(
-            target="http://target.local",
+            target="http://unauthorized.external.com",
             tool_id="browser.security.v1",
-            tool_tier=2,
             db_path=db_path,
         )
         assert val["authorized"] is False
-        assert "TOOL_TIER_EXCEEDED" in val["reason"]
+        assert "OUT_OF_SCOPE_TARGET" in val["reason"]
 
-    def test_browser_permitted_when_tier2_authorized(self, temp_browser_env):
-        """Verifies that browser active testing is permitted when Tier 2 is authorized."""
+    def test_browser_permitted_when_in_scope(self, temp_browser_env):
+        """Verifies that browser active testing is permitted when target is within scope boundaries without tier restrictions."""
         db_path = temp_browser_env["db_path"]
 
         create_scope_contract(
             targets=["http://target.local", "target.local"],
             network_scope="10.0.0.0/24",
             time_window="8h",
-            allowed_tool_tiers=[1, 2],  # Tier 2 authorized
             authorized_by="Lead Auditor",
             db_path=db_path,
         )
@@ -316,7 +313,6 @@ class TestBrowserScopeContractEnforcement:
         val = validate_scope_request(
             target="http://target.local",
             tool_id="browser.security.v1",
-            tool_tier=2,
             db_path=db_path,
         )
         assert val["authorized"] is True

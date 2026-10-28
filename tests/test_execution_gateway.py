@@ -123,18 +123,17 @@ def test_expired_scope_rejected(temp_db):
     assert "SCOPE_EXPIRED" in res.stderr
 
 
-def test_tool_above_permitted_tier_rejected(temp_db):
-    """Test that tools above permitted tiers (tier 3 when only tier 1 allowed) are rejected."""
+def test_unified_tool_authorization_permits_execution(temp_db):
+    """Test that all enabled tools targeting in-scope assets are permitted without tier restrictions (ADR-004)."""
     create_scope_contract(
         targets=["127.0.0.1"],
         network_scope="authorized_lab",
         time_window="1h",
-        allowed_tool_tiers=[1],  # Only tier 1 allowed
         authorized_by="admin@kairo.test",
         db_path=temp_db,
     )
     gw = ExecutionGateway(db_path=temp_db)
-    # nmap.scan.v1 is Tier 2
+    # nmap.scan.v1 targeting 127.0.0.1 is authorized
     res = gw.execute(
         tool_id="nmap.scan.v1",
         arguments={"target": "127.0.0.1", "scan_type": "sS"},
@@ -142,9 +141,8 @@ def test_tool_above_permitted_tier_rejected(temp_db):
         task_id="task_04",
         db_path=temp_db,
     )
-    assert res.authorized is False
-    assert res.exit_code == 403
-    assert "TOOL_TIER_EXCEEDED" in res.stderr
+    assert res.authorized is True
+    assert res.status in ("success", "executed")
 
 
 def test_command_injection_rejected(temp_db, authorized_contract):

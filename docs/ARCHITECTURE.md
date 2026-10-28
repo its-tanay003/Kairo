@@ -170,13 +170,25 @@ The Orchestrator implements an autonomous **Observer-Critic-Recovery** loop augm
 
 ---
 
-## 6. ToolSpec Registry & 7-Gate Conformance Engine (`/registry`, `/sdk`)
+## 6. ToolSpec Registry, Unified Access (ADR-004) & 13-Section Knowledge Center
 
-All platform capabilities are codified in strict **16-field YAML ToolSpecs**:
+All platform capabilities are codified in strict **16-field YAML ToolSpecs** with unified authorization:
 
-- **Metadata**: Name, version, description, category, author, license.
-- **Safety**: Privilege tier (`Tier 1`: Safe Read-Only, `Tier 2`: Active CLI, `Tier 3`: Interactive GUI), timeout seconds, memory cap.
-- **Schema**: JSON Schema definition of inputs and typed outputs.
+- **Unified Tool Access (ADR-004)**: Tool authorization tiers (Tier 1/2/3) have been retired in favor of Unified Scope Authorization. All installed and enabled tools are authorized to operate against targets explicitly defined within the active Scope Contract without arbitrary tier prompts.
+- **13-Section Integrated Tool Knowledge Center**: Accessible via `/knowledge/tools` and the interactive UI explorer, providing deep technical metadata:
+  1. Base Identity (Canonical ID, Name, Description, Author, License, Official Docs)
+  2. Installation & Health Status (Binary Path, Detected Version, Health Status)
+  3. Execution Type & Privilege (CLI/GUI/Scripted Browser, User/Root)
+  4. Argument Specification (Required/Optional Parameters, Types, Defaults, Constraints)
+  5. Natural Language Prompt Examples (Direct copy and "Insert into Chat" buttons)
+  6. Ready-to-Run CLI Examples (Copyable syntax with technical rationales)
+  7. Operational Guidance & Safety (Noisy flags warnings, safety notes, timeout advice)
+  8. Prerequisites & Evidence Gates (Required open ports, web URLs, authentication services)
+  9. Parser & Output Schemas (Structured JSON keys, extraction regex)
+  10. Maintenance & Package Upgrade (Upgrade commands, repository sources)
+  11. Execution History & Reliability (Total runs, success rate %, recent event records)
+  12. Related & Complementary Tools (Cross-referenced tool ecosystem)
+  13. Pre-formatted Chat Workflow (Direct template for autonomous multi-step execution)
 - **7-Gate Conformance Engine** ([`sdk/conformance.py`](file:///c:/New%20Volume%20(D)/dev/sdk)):
   1. *Gate 1: YAML Schema Integrity* (Strict 16-field verification)
   2. *Gate 2: Argument Validation* (Pydantic / JSON schema types)
@@ -188,23 +200,29 @@ All platform capabilities are codified in strict **16-field YAML ToolSpecs**:
 
 ---
 
-## 7. Cryptographic Scope Boundary & Security Gate
+## 7. Cryptographic Scope Boundary & Single Execution Perimeter
 
-To guarantee safety during autonomous red-teaming:
+To guarantee safety during autonomous operations:
 
-- Operators define an authorized **Scope Contract** specifying allowed CIDR blocks (e.g. `192.168.1.0/24`), excluded critical hosts (e.g. default gateways), and max permitted tool tier.
+- Operators define an authorized **Scope Contract** specifying allowed CIDR blocks (e.g. `192.168.1.0/24`), excluded critical hosts (e.g. default gateways), and authorized operator identity. Under ADR-004, authorization is binary (in-scope vs. out-of-scope) rather than tiered.
 - Every tool parameter targeting an IP or domain is parsed and verified by the HMAC-SHA256 signature gate prior to process creation.
-- Any attempt to interact with an out-of-scope host immediately aborts the task with a security violation event.
+- Any attempt to interact with an out-of-scope host immediately aborts the task with a `403 SCOPE_VIOLATION` event without touching the target.
+- **Single Source of Truth Execution Perimeter**: Every tool invocation across conversational chat, autonomous DAG execution, and GUI adapters routes strictly through `ExecutionGateway.execute()` to prevent bypasses.
 
 ---
 
-## 8. Disposable Kali Linux Virtualization Sandbox (`/vm`)
+## 8. Disposable Kali Linux Virtualization Sandbox & Automated Updates Subsystem
 
 All active security tools run inside an isolated virtual machine:
 
-- Headless Kali Linux VM running under VirtualBox or QEMU.
-- Configured with a dedicated worker REST API listening on host-only interface `192.168.56.x:9999`.
-- **Snapshot Rollback**: Prior to running risky operations, an automatic snapshot is committed. If a task compromises stability or leaves residual state, the VM worker reverts to the pristine snapshot automatically.
+- Headless Kali Linux VM running under VirtualBox or QEMU with host-only interface `192.168.56.x:9999`.
+- **Automatic Kali Linux & Tool Updates Subsystem**:
+  - Automated discovery of available updates across Kali base system packages, security tools, and vulnerability feeds (Searchsploit, Nmap NSE scripts, Nikto, wordlists).
+  - Three configurable operational policies: `Standard Managed` (scheduled discovery, notify & wait for approval), `Managed Rolling` (autonomous rolling updates with snapshots & auto-rollback), and `Manual Control` (on-demand operator execution only).
+  - Pre-update VM snapshots created before any package or feed update is applied.
+  - Non-destructive post-update verification health checks (`--version`, benign syntax queries).
+  - Automated hypervisor snapshot rollback if a tool fails post-update health checks.
+  - Complete immutable audit logging in SQLite `update_history` table.
 
 ---
 

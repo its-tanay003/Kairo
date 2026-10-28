@@ -34,7 +34,6 @@ logger = logging.getLogger("orchestrator.adapters.wireshark")
 class WiresharkGuiAdapter(BaseGuiAdapter):
     tool_id = "wireshark.gui.v1"
     tool_version = "1.0.0"
-    tier = 3
     app_name = "Wireshark"
 
     def __init__(

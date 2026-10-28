@@ -251,19 +251,19 @@ def test_scope_contract_history_correlation_and_verification(test_db_path):
     )
     insert_event(ev_b, db_path=test_db_path)
 
-    # 4. Event C at t3: Agent attempts Tier 3 intrusive exploit when contract only permits Tiers 1-2 (Tier Violation)
+    # 4. Event C at t3: Agent attempts exploit on out-of-scope target 172.16.0.50
     # -> Should be tagged SCOPE VIOLATION
     ev_c = Event.create(
         session_id="sess_alpha",
-        task_id="task_exploit_tier_violation",
+        task_id="task_exploit_out_of_bounds",
         actor="agent",
         tool_id="metasploit.exploit.v1",
         tool_version="1.0.0",
-        requested_args={"target": "target.local", "payload": "reverse_tcp"},
-        normalized_args={"target": "target.local", "payload": "reverse_tcp"},
+        requested_args={"target": "172.16.0.50", "payload": "reverse_tcp"},
+        normalized_args={"target": "172.16.0.50", "payload": "reverse_tcp"},
         process_id=103,
         exit_code=1,
-        result_summary="Attempted Tier 3 exploit execution",
+        result_summary="Attempted exploit execution on unauthorized host 172.16.0.50",
         timestamp=t3,
     )
     insert_event(ev_c, db_path=test_db_path)
@@ -291,10 +291,10 @@ def test_scope_contract_history_correlation_and_verification(test_db_path):
     assert event_b_item["target_in_scope"] is False
     assert "Target '10.0.0.99' outside authorized boundaries" in event_b_item["scope_violation_reason"]
 
-    # Verify Event C (Tier Violation)
-    event_c_item = next(item for item in timeline if item.get("task_id") == "task_exploit_tier_violation")
+    # Verify Event C (Out of Scope Violation)
+    event_c_item = next(item for item in timeline if item.get("task_id") == "task_exploit_out_of_bounds")
     assert event_c_item["scope_status"] == "scope_violation"
-    assert "Tool tier 3 exceeds authorized contract tiers" in event_c_item["scope_violation_reason"]
+    assert "Target '172.16.0.50' outside authorized boundaries" in event_c_item["scope_violation_reason"]
 
     # Verify overall stats
     stats = timeline_res["stats"]

@@ -864,46 +864,10 @@ def record_tool_execution(
 
 KAIRO_SCOPE_SECRET = os.environ.get("KAIRO_SCOPE_SECRET", "kairo_scope_auth_secret_v1")
 
-# Standardized tool tier classifications:
-# Tier 1: Passive Reconnaissance / OSINT / Local metadata / Non-intrusive lookup
-# Tier 2: Active Scanning / Probing / Fuzzing / Port enumeration / Network capture
-# Tier 3: Intrusive Testing / Exploitation / Brute-forcing / Arbitrary remote execution
-TOOL_TIER_MAPPING: Dict[str, int] = {
-    # Tier 1
-    "whois.lookup.v1": 1,
-    "dig.lookup.v1": 1,
-    "dnsenum.enum.v1": 1,
-    "exiftool.extract.v1": 1,
-    "hashid.identify.v1": 1,
-    "searchsploit.search.v1": 1,
-    "dns_lookup": 1,
-    "system_ping": 1,
-    "hello_world": 1,
-
-    # Tier 2
-    "nmap.scan.v1": 2,
-    "gobuster.dir.v1": 2,
-    "ffuf.fuzz.v1": 2,
-    "whatweb.scan.v1": 2,
-    "nikto.scan.v1": 2,
-    "tcpdump.capture.v1": 2,
-    "browser.security.v1": 2,
-    "playwright.browser.v1": 2,
-    "browser.test.v1": 2,
-
-    # Tier 3
-    "sqlmap.scan.v1": 3,
-    "hydra.brute.v1": 3,
-    "metasploit.rpc.v1": 3,
-    "kali.exec.v1": 3,
-    "shell.run.v1": 3,
-    "vm_execute": 3,
-    "raw_command": 3,
-    "burpsuite.gui.v1": 3,
-    "burp.gui.v1": 3,
-    "wireshark.gui.v1": 3,
-    "zap.gui.v1": 3,
-}
+# TOOL AUTHORIZATION TIERS PERMANENTLY RETIRED (ADR-004)
+# Tool authorization is unified: all registered and enabled tools are authorized
+# against target and CIDR boundaries under active cryptographically signed Scope Contracts.
+TOOL_TIER_MAPPING: Dict[str, int] = {}
 
 
 @dataclass
@@ -912,21 +876,20 @@ class ScopeContract:
     targets: List[str]
     network_scope: str
     time_window: str
-    allowed_tool_tiers: List[int]
     authorized_by: str
     created_at: str
     expires_at: str
     signature: str
+    allowed_tool_tiers: Optional[List[int]] = None
     is_active: bool = True
     metadata: Optional[Dict[str, Any]] = None
 
     def to_dict(self) -> Dict[str, Any]:
-        return {
+        d = {
             "contract_id": self.contract_id,
             "targets": self.targets,
             "network_scope": self.network_scope,
             "time_window": self.time_window,
-            "allowed_tool_tiers": self.allowed_tool_tiers,
             "authorized_by": self.authorized_by,
             "created_at": self.created_at,
             "expires_at": self.expires_at,
@@ -934,21 +897,18 @@ class ScopeContract:
             "is_active": self.is_active,
             "metadata": self.metadata or {},
         }
+        if self.allowed_tool_tiers is not None:
+            d["allowed_tool_tiers"] = self.allowed_tool_tiers
+        return d
 
 
-def get_tool_tier(tool_id: str) -> int:
-    """Returns the authorization tier (1, 2, or 3) for a given tool identifier."""
-    if not tool_id:
-        return 1
-    t_lower = tool_id.lower().strip()
-    if t_lower in TOOL_TIER_MAPPING:
-        return TOOL_TIER_MAPPING[t_lower]
-    # Keyword inference fallback
-    if any(k in t_lower for k in ["exploit", "brute", "sqlmap", "hydra", "metasploit", "shell", "exec", "payload"]):
-        return 3
-    if any(k in t_lower for k in ["scan", "fuzz", "probe", "nmap", "gobuster", "nikto", "enum", "tcpdump"]):
-        return 2
-    return 1
+def get_tool_tier(tool_id: str) -> Optional[int]:
+    """
+    Deprecated: Tool authorization tiers have been permanently retired (ADR-004).
+    Always returns None. Authorization is based strictly on Scope Contract target boundaries,
+    operator identity, and tool enablement.
+    """
+    return None
 
 
 def canonical_scope_payload(data: Dict[str, Any]) -> str:
@@ -959,15 +919,8 @@ def canonical_scope_payload(data: Dict[str, Any]) -> str:
             targets = json.loads(targets)
         except Exception:
             targets = [targets]
-    tiers = data.get("allowed_tool_tiers") or []
-    if isinstance(tiers, str):
-        try:
-            tiers = json.loads(tiers)
-        except Exception:
-            tiers = [int(tiers)]
 
-    core = {
-        "allowed_tool_tiers": sorted([int(t) for t in tiers]),
+    core: Dict[str, Any] = {
         "authorized_by": str(data.get("authorized_by") or "").strip(),
         "created_at": str(data.get("created_at") or "").strip(),
         "expires_at": str(data.get("expires_at") or "").strip(),
@@ -975,6 +928,18 @@ def canonical_scope_payload(data: Dict[str, Any]) -> str:
         "targets": sorted([str(t).strip().lower() for t in targets]),
         "time_window": str(data.get("time_window") or "").strip(),
     }
+    # For legacy contracts stored before ADR-004, preserve allowed_tool_tiers in payload
+    # so historical HMAC-SHA256 signatures remain verifiable:
+    raw_tiers = data.get("allowed_tool_tiers")
+    if raw_tiers:
+        if isinstance(raw_tiers, str):
+            try:
+                raw_tiers = json.loads(raw_tiers)
+            except Exception:
+                raw_tiers = [int(raw_tiers)]
+        if raw_tiers:
+            core["allowed_tool_tiers"] = sorted([int(t) for t in raw_tiers])
+
     return json.dumps(core, sort_keys=True, separators=(",", ":"))
 
 
@@ -1083,18 +1048,25 @@ def is_target_in_scope(target: str, allowed_targets: List[str]) -> bool:
 
 def create_scope_contract(
     targets: List[str],
-    network_scope: str,
-    time_window: str,
-    allowed_tool_tiers: List[int],
-    authorized_by: str,
+    network_scope: str = "authorized_lab",
+    time_window: str = "8h",
+    allowed_tool_tiers: Any = None,
+    authorized_by: str = "secops_lead@kairo.internal",
     metadata: Optional[Dict[str, Any]] = None,
     secret_key: str = KAIRO_SCOPE_SECRET,
     db_path: Path | str = DEFAULT_DB_PATH,
 ) -> Dict[str, Any]:
     """
     Creates and cryptographically signs a new Scope Contract, activating it in the event store.
+    Tool authorization is unified per ADR-004: all registered/enabled tools are authorized
+    for in-scope targets under this contract without arbitrary tier classifications.
     Any previously active contracts are automatically deactivated.
     """
+    # Backward compatibility: if authorized_by was passed as 4th positional argument
+    if isinstance(allowed_tool_tiers, str) and "@" in allowed_tool_tiers:
+        authorized_by = allowed_tool_tiers
+        allowed_tool_tiers = None
+
     init_db(db_path)
     now = datetime.now(timezone.utc)
     seconds = parse_time_window_seconds(time_window)
@@ -1104,18 +1076,25 @@ def create_scope_contract(
     contract_id = f"scope_{uuid.uuid4().hex[:12]}"
 
     clean_targets = [str(t).strip().lower() for t in targets]
-    clean_tiers = sorted(list({int(t) for t in allowed_tool_tiers}))
 
-    payload_data = {
+    payload_data: Dict[str, Any] = {
         "contract_id": contract_id,
         "targets": clean_targets,
         "network_scope": network_scope.strip(),
         "time_window": time_window.strip(),
-        "allowed_tool_tiers": clean_tiers,
         "authorized_by": authorized_by.strip(),
         "created_at": created_at_iso,
         "expires_at": expires_at_iso,
     }
+    if allowed_tool_tiers is not None:
+        if isinstance(allowed_tool_tiers, str):
+            try:
+                allowed_tool_tiers = json.loads(allowed_tool_tiers)
+            except Exception:
+                allowed_tool_tiers = [int(allowed_tool_tiers)]
+        if allowed_tool_tiers:
+            payload_data["allowed_tool_tiers"] = sorted(list({int(t) for t in allowed_tool_tiers}))
+
     signature = generate_scope_signature(payload_data, secret_key)
 
     conn = get_connection(db_path)
@@ -1135,7 +1114,7 @@ def create_scope_contract(
                 json.dumps(clean_targets),
                 network_scope.strip(),
                 time_window.strip(),
-                json.dumps(clean_tiers),
+                json.dumps(payload_data["allowed_tool_tiers"]) if "allowed_tool_tiers" in payload_data else None,
                 authorized_by.strip(),
                 created_at_iso,
                 expires_at_iso,
@@ -1176,7 +1155,14 @@ def get_active_scope_contract(db_path: Path | str = DEFAULT_DB_PATH) -> Optional
         return None
     d = dict(row)
     d["targets"] = json.loads(d["targets"]) if isinstance(d["targets"], str) else d["targets"]
-    d["allowed_tool_tiers"] = json.loads(d["allowed_tool_tiers"]) if isinstance(d["allowed_tool_tiers"], str) else d["allowed_tool_tiers"]
+    raw_tiers_val = d.get("allowed_tool_tiers")
+    if raw_tiers_val and str(raw_tiers_val).strip() not in ("null", "[]", "None"):
+        try:
+            d["allowed_tool_tiers"] = json.loads(raw_tiers_val) if isinstance(raw_tiers_val, str) else raw_tiers_val
+        except Exception:
+            d["allowed_tool_tiers"] = None
+    else:
+        d["allowed_tool_tiers"] = None
     d["metadata"] = json.loads(d["metadata"]) if d.get("metadata") else {}
     d["is_active"] = bool(d.get("is_active", 0))
 
@@ -1215,7 +1201,6 @@ def seed_default_scope_contract(db_path: Path | str = DEFAULT_DB_PATH) -> Dict[s
         ],
         network_scope="authorized_lab",
         time_window="8h",
-        allowed_tool_tiers=[1, 2, 3],
         authorized_by="secops_lead@kairo.internal",
         metadata={
             "purpose": "Authorized sandbox and pentest lab operations",
@@ -1246,7 +1231,14 @@ def list_scope_contracts(limit: int = 10, db_path: Path | str = DEFAULT_DB_PATH)
     for r in rows:
         d = dict(r)
         d["targets"] = json.loads(d["targets"]) if isinstance(d["targets"], str) else d["targets"]
-        d["allowed_tool_tiers"] = json.loads(d["allowed_tool_tiers"]) if isinstance(d["allowed_tool_tiers"], str) else d["allowed_tool_tiers"]
+        raw_tiers_val = d.get("allowed_tool_tiers")
+        if raw_tiers_val and str(raw_tiers_val).strip() not in ("null", "[]", "None"):
+            try:
+                d["allowed_tool_tiers"] = json.loads(raw_tiers_val) if isinstance(raw_tiers_val, str) else raw_tiers_val
+            except Exception:
+                d["allowed_tool_tiers"] = None
+        else:
+            d["allowed_tool_tiers"] = None
         d["metadata"] = json.loads(d["metadata"]) if d.get("metadata") else {}
         d["is_active"] = bool(d.get("is_active", 0))
         d["signature_valid"] = verify_scope_signature(d)
@@ -1271,6 +1263,10 @@ def validate_scope_request(
 ) -> Dict[str, Any]:
     """
     Validates a tool invocation request against the currently active Scope Contract.
+    Enforces target and CIDR boundaries, contract expiration, and HMAC-SHA256 signature integrity.
+    Tool authorization tiers have been permanently retired (ADR-004); all registered/enabled tools
+    are authorized within the active workspace and target boundary.
+
     Returns:
     {
         "authorized": bool,
@@ -1279,11 +1275,9 @@ def validate_scope_request(
         "active_contract": Optional[Dict],
         "target": str,
         "tool_id": str,
-        "tool_tier": int
     }
     """
     contract = get_active_scope_contract(db_path)
-    tier = tool_tier if tool_tier is not None else (get_tool_tier(tool_id) if tool_id else 1)
 
     if not contract:
         return {
@@ -1293,7 +1287,6 @@ def validate_scope_request(
             "active_contract": None,
             "target": target,
             "tool_id": tool_id,
-            "tool_tier": tier,
         }
 
     # Verify signature
@@ -1305,7 +1298,6 @@ def validate_scope_request(
             "active_contract": contract,
             "target": target,
             "tool_id": tool_id,
-            "tool_tier": tier,
         }
 
     # Verify expiration
@@ -1317,7 +1309,6 @@ def validate_scope_request(
             "active_contract": contract,
             "target": target,
             "tool_id": tool_id,
-            "tool_tier": tier,
         }
 
     # Verify target boundary
@@ -1330,22 +1321,9 @@ def validate_scope_request(
                 "active_contract": contract,
                 "target": target,
                 "tool_id": tool_id,
-                "tool_tier": tier,
             }
 
-    # Verify tool tier
-    allowed_tiers = contract.get("allowed_tool_tiers") or [1]
-    if tier not in allowed_tiers:
-        return {
-            "authorized": False,
-            "reason": f"TOOL_TIER_EXCEEDED: Tool tier {tier} exceeds permitted tiers {allowed_tiers} in active Scope Contract {contract.get('contract_id')}.",
-            "scope_contract_id": contract.get("contract_id"),
-            "active_contract": contract,
-            "target": target,
-            "tool_id": tool_id,
-            "tool_tier": tier,
-        }
-
+    # Unified tool authorization: In-scope target permits execution of enabled tools without tier friction
     return {
         "authorized": True,
         "reason": f"Authorized under Scope Contract {contract.get('contract_id')}.",
@@ -1353,7 +1331,6 @@ def validate_scope_request(
         "active_contract": contract,
         "target": target,
         "tool_id": tool_id,
-        "tool_tier": tier,
     }
 
 
@@ -1940,42 +1917,30 @@ def query_audit_timeline(
                     pass
 
         tool = ev.get("tool_id") or ""
-        tool_tier = get_tool_tier(tool)
 
         scope_status = "unscoped"
         scope_reason = "No active Scope Contract recorded"
         gov_contract_id = None
         signature_valid = False
         target_ok = True
-        tier_ok = True
 
         if gov_contract:
             gov_contract_id = gov_contract.get("contract_id")
             signature_valid = gov_contract.get("signature_valid", False)
             allowed_targets = gov_contract.get("targets", [])
-            allowed_tiers = gov_contract.get("allowed_tool_tiers", [])
 
             if target_extracted and allowed_targets:
                 target_ok = is_target_in_scope(target_extracted, allowed_targets)
             else:
                 target_ok = True
 
-            if allowed_tiers and tool_tier:
-                tier_ok = tool_tier in allowed_tiers
-            else:
-                tier_ok = True
-
             if not target_ok:
                 scope_status = "scope_violation"
                 scope_reason = f"Target '{target_extracted}' outside authorized boundaries ({', '.join(allowed_targets)})"
                 scope_violation_count += 1
-            elif not tier_ok:
-                scope_status = "scope_violation"
-                scope_reason = f"Tool tier {tool_tier} exceeds authorized contract tiers ({', '.join(map(str, allowed_tiers))})"
-                scope_violation_count += 1
             else:
                 scope_status = "in_scope"
-                scope_reason = f"Authorized target & tool tier under Scope Contract {gov_contract_id}"
+                scope_reason = f"Authorized target under Scope Contract {gov_contract_id}"
                 in_scope_count += 1
         else:
             in_scope_count += 1
@@ -2000,7 +1965,7 @@ def query_audit_timeline(
             "actor": ev.get("actor"),
             "tool_id": ev.get("tool_id"),
             "tool_version": ev.get("tool_version"),
-            "tool_tier": tool_tier,
+            "tool_tier": None,
             "target": target_extracted,
             "target_in_scope": target_ok if gov_contract else True,
             "requested_args": ev.get("requested_args"),
@@ -2053,7 +2018,7 @@ def query_audit_timeline(
                 "signature_valid": sc["signature_valid"],
                 "is_active": sc["is_active"],
                 "is_expired": sc.get("is_expired", False),
-                "summary": f"Scope Contract Signed & Activated: {', '.join(sc['targets'])} (Tiers: {sc['allowed_tool_tiers']})",
+                "summary": f"Scope Contract Signed & Activated: {', '.join(sc['targets'])}",
             })
 
     combined_timeline = sorted(

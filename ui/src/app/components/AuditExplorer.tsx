@@ -851,7 +851,7 @@ export default function AuditExplorer() {
               <span className={`kpi-val ${(stats?.scope_violations ?? 0) > 0 ? "bad" : "good"}`}>
                 {stats?.scope_violations ?? 0}
               </span>
-              <span className="kpi-sub">Out-of-boundary / tier attempts</span>
+              <span className="kpi-sub">Out-of-boundary / unauthorized attempts</span>
             </div>
             <div className="kpi-card">
               <span className="kpi-label">ACTIVE SCOPE CONTRACTS</span>
@@ -1022,12 +1022,18 @@ export default function AuditExplorer() {
                           </div>
 
                           <div className="milestone-tiers-row">
-                            <span className="label">Allowed Tool Tiers:</span>
-                            {(item.allowed_tool_tiers || []).map((t) => (
-                              <span key={t} className="tier-tag">
-                                Tier {t} ({t === 1 ? "Passive" : t === 2 ? "Active Probing" : "Intrusive"})
+                            <span className="label">Tool Access Policy:</span>
+                            {item.allowed_tool_tiers && item.allowed_tool_tiers.length > 0 ? (
+                              item.allowed_tool_tiers.map((t) => (
+                                <span key={t} className="tier-tag">
+                                  Tier {t}
+                                </span>
+                              ))
+                            ) : (
+                              <span className="tier-tag" style={{ background: "rgba(16, 185, 129, 0.15)", color: "#10b981", borderColor: "rgba(16, 185, 129, 0.3)" }}>
+                                Unified Access (ADR-004)
                               </span>
-                            ))}
+                            )}
                             {item.is_active && <span className="status-pill active">ACTIVE</span>}
                             {item.is_expired && <span className="status-pill expired">EXPIRED</span>}
                           </div>
@@ -1182,7 +1188,10 @@ export default function AuditExplorer() {
                         <strong>Targets:</strong> {(selectedItem.targets || []).join(", ")}
                       </li>
                       <li>
-                        <strong>Allowed Tool Tiers:</strong> {(selectedItem.allowed_tool_tiers || []).join(", ")}
+                        <strong>Tool Policy:</strong>{" "}
+                        {selectedItem.allowed_tool_tiers && selectedItem.allowed_tool_tiers.length > 0
+                          ? `Legacy Tiers: ${selectedItem.allowed_tool_tiers.join(", ")}`
+                          : "Unified Access (ADR-004)"}
                       </li>
                     </ul>
                   </div>
@@ -1207,8 +1216,8 @@ export default function AuditExplorer() {
                         <strong>{selectedItem.target_evaluated || "N/A"}</strong>
                       </div>
                       <div>
-                        <span>Tool Tier:</span>
-                        <strong>Tier {selectedItem.tool_tier || 1}</strong>
+                        <span>Tool Authorization:</span>
+                        <strong>{selectedItem.scope_status === "in_scope" ? "Authorized (In-Scope)" : "Evaluated"}</strong>
                       </div>
                     </div>
                     {selectedItem.scope_violation_reason && (

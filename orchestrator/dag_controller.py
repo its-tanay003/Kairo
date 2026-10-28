@@ -1085,16 +1085,15 @@ class DAGController:
         stop_on_critical_failure: bool = True,
         db_path: Optional[Path | str] = None,
         adaptive: bool = False,
+        mode: str = "autonomous",
         **kwargs,
     ) -> DAGExecutionResult:
         """
-        Executes a multi-step task graph from beginning to end without user manual intervention:
-        1. Loads plan graph and nodes from SQLite.
-        2. Resolves topological readiness (`get_ready_nodes`).
-        3. Enforces prerequisite evidence gates on each step.
-        4. Propagates upstream evidence to downstream tools.
-        5. Handles blocked/failed dependency cascades.
-        6. Generates full execution synthesis upon completion.
+        Executes a multi-step task graph supporting 4 execution modes:
+        - autonomous: Full topological execution with dynamic adaptation.
+        - plan_only: Dry-run tool and argument resolution without gateway execution.
+        - step_by_step: Single ready node execution with operator checkpoint.
+        - manual: Direct targeted execution of specified step.
         """
         effective_db = db_path or self.db_path
         t0 = time.time()
@@ -1124,10 +1123,64 @@ class DAGController:
 
         nodes_executed: List[DAGNodeExecution] = []
         step_provenance: List[Dict[str, Any]] = []
+
+        # Mode: plan_only (Dry-run tool selection and argument generation without execution)
+        if mode == "plan_only":
+            all_nodes = plan_dict.get("nodes", [])
+            for node in all_nodes:
+                selected_tool, args, fallback = self.select_tool_for_node(node, context)
+                cmd_line = f"{selected_tool} " + " ".join(f"--{k}={v}" for k, v in args.items()) if args else f"{selected_tool} {effective_target}"
+                exec_record = DAGNodeExecution(
+                    node_id=node["node_id"],
+                    capability=node["capability"],
+                    label=node.get("label", node["node_id"]),
+                    tool_id=selected_tool,
+                    status="planned",
+                    duration_ms=0.0,
+                    command_line=cmd_line,
+                    typed_invocation={"args": args, "fallback_tool": fallback, "mode": "plan_only"},
+                    skipped_reason="Dry-run plan validation only; execution deferred to operator approval.",
+                )
+                nodes_executed.append(exec_record)
+                step_provenance.append(StepProvenance(
+                    stage="planning",
+                    handled_by="dag_controller:plan_only",
+                    runtime="dry_run",
+                    is_custom_model=False,
+                    is_fallback=False,
+                    executed=False,
+                    details={"node_id": node["node_id"], "tool_id": selected_tool, "command_line": cmd_line},
+                ).to_dict())
+
+            total_duration_ms = round((time.time() - t0) * 1000, 2)
+            synth_dict = {
+                "reply": f"Plan '{plan_id}' dry-run validated in plan-only mode across {len(nodes_executed)} planned nodes. Target: {effective_target}. Ready for operator confirmation.",
+                "status": "planned",
+                "next_step_recommendations": [{"action": "execute_plan", "mode": "autonomous", "label": "Execute full plan autonomously"}],
+            }
+            return DAGExecutionResult(
+                plan_id=plan_id,
+                session_id=session_id,
+                goal=effective_goal,
+                target=effective_target,
+                status="planned",
+                total_nodes=len(plan_dict.get("nodes", [])),
+                completed_count=0,
+                failed_count=0,
+                skipped_count=len(nodes_executed),
+                nodes_executed=DAGNodeExecutionList(nodes_executed),
+                evidence=context,
+                duration_ms=total_duration_ms,
+                step_provenance=step_provenance,
+                reply=synth_dict["reply"],
+                synthesis=synth_dict,
+                next_step_recommendations=synth_dict["next_step_recommendations"],
+            )
+
         step_count = 0
         consecutive_failures = 0
 
-        logger.info(f"[DAGController] Starting autonomous execution of Plan '{plan_id}' ({effective_goal}) against target '{effective_target}'")
+        logger.info(f"[DAGController] Starting execution (mode={mode}) of Plan '{plan_id}' ({effective_goal}) against target '{effective_target}'")
 
         while step_count < max_steps:
             # Refresh ready nodes from database
@@ -1161,10 +1214,13 @@ class DAGController:
                         ))
                 break
 
+            # In step_by_step or manual mode, only schedule the first ready node
+            nodes_to_run = ready_nodes[:1] if mode in ("step_by_step", "manual") else ready_nodes
+
             # Execute ready nodes in current layer
-            for node in ready_nodes:
+            for node in nodes_to_run:
                 step_count += 1
-                logger.info(f"[DAGController] Step {step_count}: Scheduling node '{node['node_id']}' ({node['capability']})")
+                logger.info(f"[DAGController] Step {step_count}: Scheduling node '{node['node_id']}' ({node['capability']}) [mode={mode}]")
 
                 exec_record = self.execute_node(
                     plan_id=plan_id,
@@ -1205,6 +1261,10 @@ class DAGController:
                 else:
                     consecutive_failures = 0
 
+            if mode in ("step_by_step", "manual"):
+                logger.info(f"[DAGController] Single step completed for '{nodes_to_run[0]['node_id']}'. Halting for operator confirmation.")
+                break
+
             if stop_on_critical_failure and consecutive_failures >= 3:
                 break
 
@@ -1214,7 +1274,17 @@ class DAGController:
         skipped_nodes = [n for n in nodes_executed if n.status in ("skipped", "blocked")]
 
         # Determine overall plan completion status
-        if failed_nodes and not completed_nodes:
+        if mode in ("step_by_step", "manual"):
+            current_plan = get_plan(plan_id, effective_db)
+            all_nodes = current_plan.get("nodes", []) if current_plan else []
+            queued_nodes = [n for n in all_nodes if n["status"] == "queued"]
+            if queued_nodes:
+                overall_status = "step_completed"
+            elif failed_nodes:
+                overall_status = "failed"
+            else:
+                overall_status = "completed"
+        elif failed_nodes and not completed_nodes:
             overall_status = "failed"
         elif completed_nodes and (failed_nodes or skipped_nodes):
             overall_status = "partial"

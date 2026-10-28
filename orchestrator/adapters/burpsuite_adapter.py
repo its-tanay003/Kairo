@@ -74,7 +74,6 @@ def check_target_reachable(host: str, port: int = 80, timeout: float = 0.5) -> b
 class BurpSuiteGuiAdapter(BaseGuiAdapter):
     tool_id = "burpsuite.gui.v1"
     tool_version = "1.0.0"
-    tier = 3
     app_name = "Burp Suite Community Edition"
 
     def __init__(

@@ -74,9 +74,9 @@ class GuiControl:
 
 class BaseGuiAdapter(ToolAdapter):
     """
-    Abstract base class for Tier 3 GUI Tool Adapters.
+    Abstract base class for GUI Tool Adapters.
+    Unified tool access per ADR-004.
     """
-    tier: int = 3
     tool_id: str = ""
     tool_version: str = "1.0.0"
     app_name: str = "Base GUI Application"
@@ -165,7 +165,6 @@ class BaseGuiAdapter(ToolAdapter):
             return {
                 "status": "launched",
                 "tool_id": self.tool_id,
-                "tier": self.tier,
                 "pid": self.pid,
                 "window_title": self.window_title,
                 "visible_panel": self.visible_panel,
@@ -335,7 +334,6 @@ class BaseGuiAdapter(ToolAdapter):
 
             meta = {
                 "tool_id": self.tool_id,
-                "tier": self.tier,
                 "window_title": self.window_title,
                 "visible_panel": self.visible_panel,
                 "visible_subpanel": self.visible_subpanel,
@@ -407,7 +405,6 @@ class BaseGuiAdapter(ToolAdapter):
             return {
                 "tool_id": self.tool_id,
                 "tool_version": self.tool_version,
-                "tier": self.tier,
                 "running": self._running,
                 "pid": self.pid,
                 "window_title": self.window_title,
@@ -614,7 +611,6 @@ class BaseGuiAdapter(ToolAdapter):
         return {
             "app_name": self.app_name,
             "tool_id": self.tool_id,
-            "tier": self.tier,
             "running": self.is_running(),
             "ui_state": self.extract_ui_state(),
             "screenshots_captured": len(self.screenshots),

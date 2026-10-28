@@ -24,6 +24,8 @@
    - [2.13 GUI Tool Adapters & Playwright Browser Security](#213-gui-tool-adapters--playwright-browser-security)
    - [2.14 Multi-User Projects, Presence & Workspaces](#214-multi-user-projects-presence--workspaces)
    - [2.15 Audit Explorer & Forensic Timeline](#215-audit-explorer--forensic-timeline)
+   - [2.16 Tool Knowledge Center](#216-tool-knowledge-center)
+   - [2.17 Automatic Kali Linux & Tool Updates Subsystem](#217-automatic-kali-linux--tool-updates-subsystem)
 3. [Kali Worker VM REST API (`http://192.168.56.x:9999`)](#3-kali-worker-vm-rest-api-http19216856x9999)
 4. [noVNC RFB Desktop Streaming (`ws://localhost:6080`)](#4-novnc-rfb-desktop-streaming-wslocalhost6080)
 5. [SQLite Audit Event & Trajectory Schemas](#5-sqlite-audit-event--trajectory-schemas)
@@ -288,14 +290,18 @@ The FastAPI Orchestrator coordinates agent planning, process execution, model ma
 - `GET /planner/plans/{plan_id}`: Retrieve graph nodes, dependencies, and execution states for a specific plan.
 - `GET /planner/plans/{plan_id}/ready`: Return all unblocked nodes ready for immediate parallel or serial execution.
 - `POST /planner/plans/{plan_id}/nodes/{node_id}/status`: Update node status (`PENDING`, `READY`, `RUNNING`, `SUCCESS`, `FAILED`, `SKIPPED`, `BLOCKED`).
-- `POST /planner/plans/{plan_id}/execute` or `POST /planner/plans/{plan_id}/run`: Execute all nodes in the DAG in strict topological order using the `DAGController`. All node executions route through `ExecutionGateway.execute()`. Enforces:
+- `POST /planner/plans/{plan_id}/execute` or `POST /planner/plans/{plan_id}/run`: Execute nodes in the DAG using `DAGController`. Supports 4 operational execution modes via `{"mode": "autonomous" | "plan_only" | "step_by_step" | "manual"}`:
+  - **`autonomous` (Default)**: Full topological execution with Kahn topological scheduling, prerequisite evidence gating, dynamic argument resolution, and dynamic mid-execution attack surface adaptation (`_adapt_plan_if_new_attack_surface`).
+  - **`plan_only`**: Resolves prospective tools and arguments for ready nodes and constructs dry-run commands and technical rationales without executing commands on the execution gateway.
+  - **`step_by_step`**: Executes only the first ready node in topological order and halts execution, returning the step result and queuing subsequent nodes for operator review and confirmation.
+  - **`manual`**: Direct execution of a single targeted node or custom operator invocation.
   - **Prerequisite Evidence Gating**: Subsequent dependent nodes (e.g. web scanners, brute-force tools) are executed only if prerequisite observations were confirmed (e.g. verified open HTTP ports).
   - **Dynamic DAG Output Chaining (`_resolve_arguments_from_evidence`)**: Resolves runtime arguments (discovered IPs, open ports, web base URLs) dynamically from verified facts emitted by upstream dependency nodes.
   - **Mid-Execution Attack Surface Adaptation (`_adapt_plan_if_new_attack_surface`)**: Inspects live verified findings and injects specialized downstream evaluation nodes dynamically (e.g. injecting `nikto.scan.v1` upon port 80/443 discovery or `hydra.ssh.v1` upon port 22 discovery).
   - **Failure Containment**: If a node fails (`exit_code != 0`), observation ingestion skips the failed run to prevent polluting downstream context.
   - **Recovery Lineage**: Failed nodes record compensatory `recovery_path` traces.
   - **Truthful Terminal States**: Plans terminate at strictly defined, evidence-based states: `COMPLETED` (all required nodes succeeded), `PARTIAL` (some succeeded), `FAILED` (critical path failed), `BLOCKED` (stopped by policy or scope), or `INCONCLUSIVE` (insufficient evidence gathered).
-- `POST /planner/plans/{plan_id}/nodes/{node_id}/execute`: Execute a single discrete node.
+- `POST /planner/plans/{plan_id}/nodes/{node_id}/execute`: Execute a single discrete node, delegating directly to `dag_controller.execute_node()` as the single execution source of truth.
 - `POST /planner/run`: Decompose and immediately execute a multi-step DAG in a single API call (defaults to autonomous multi-step execution).
 - `GET /planner/plans/{plan_id}/report`: Generate a structured report summarizing execution of the plan, clearly distinguishing confirmed findings, refuted findings, and unresolved checks.
 
@@ -309,19 +315,19 @@ The FastAPI Orchestrator coordinates agent planning, process execution, model ma
 
 ---
 
-### 2.4 Scope Contract & Authoritative Execution Gateway
+### 2.4 Scope Contract & Authoritative Execution Gateway (ADR-004 Unified Tool Access)
 
 - `GET /scope/active`: Retrieve current active cryptographic Scope Contract.
-- `POST /scope/contract`: Authorize and register a new Scope Contract signed with HMAC-SHA256 or Ed25519.
+- `POST /scope/contract`: Authorize and register a new Scope Contract signed with HMAC-SHA256 or Ed25519. Unified access model per ADR-004: all enabled tools are authorized against in-scope targets without tier classifications.
 - `GET /scope/contracts`: List historical and active scope contracts.
-- `POST /scope/validate`: Cryptographically validate an execution request against active CIDR targets, tool tiers, and time windows.
-- `POST /gateway/execute`: Direct REST entry point to `ExecutionGateway.execute()`. Enforces the 7 authoritative security gates:
+- `POST /scope/validate`: Cryptographically validate an execution request against active CIDR targets, IP boundaries, and time windows.
+- `POST /gateway/execute`: Authoritative single execution perimeter to `ExecutionGateway.execute()`. Enforces:
   1. **Registry Verification**: Rejects unregistered tools (`127 TOOL_NOT_FOUND`).
-  2. **Schema & Injection Defense**: Rejects command injection characters and populates default parameters (`400 VALIDATION_ERROR`).
-  3. **Scope Contract Perimeter**: Validates allowed CIDRs and tool privilege tier (`403 SCOPE_VIOLATION`). Evaluated before any workflow checks.
-  4. **Cryptographic Operator Token**: Validates HMAC token `KAIRO-OP-<timestamp>-<role>-<hex>` (`401 OPERATOR_UNAUTHORIZED`).
-  5. **Broad Command Workflow Policy**: Verifies cryptographic workflow token for Tier 3 tools (`403 UNAPPROVED_COMMAND_EXECUTION`).
-  6. **Sandbox Process Execution**: Subprocess or VM worker execution with process supervision and timeout enforcement.
+  2. **Schema & Injection Defense**: Rejects command injection characters and validates argument schema (`400 VALIDATION_ERROR`).
+  3. **Scope Contract Perimeter**: Validates authorized target CIDRs/IPs (`403 SCOPE_VIOLATION`). Evaluated before any execution attempt.
+  4. **Cryptographic Operator Identity**: Validates active session token or HMAC token for authorized operator role.
+  5. **Fail-Closed Boundary**: Prevents unapproved command execution on host operating system.
+  6. **Sandbox Process Execution**: Isolated Kali worker execution with process supervision and timeout enforcement.
   7. **Forensic Audit Logging**: 20-field SQLite event log written to `events.db`.
 
 ---
@@ -506,6 +512,38 @@ To guarantee deterministic autonomy while remaining strictly local and air-gappe
 - `GET /audit/stats`: Retrieve high-level operational statistics (total runs, error rates, average latency, top tools).
 - `GET /audit/model-evolution-timeline`: Query chronological timeline of model evolution decisions and training triggers.
 - `GET /audit/model-evolution-stats`: Summary statistics of autonomous model training frequency and accuracy gains.
+
+---
+
+### 2.16 Tool Knowledge Center
+
+- `GET /knowledge/tools`: List all registered Kali tools with installation status, categories, execution types, and capabilities. Query parameters: `category` (str), `installed_only` (bool), `execution_type` (str), `query` (str).
+- `GET /knowledge/tools/{tool_id}`: Retrieve comprehensive 13-section technical metadata for a specified tool:
+  1. Base Metadata & Overview (ID, Name, Description, Author, License, Official Docs)
+  2. Installation & Health Probe (Path, Detected Version, Health Status)
+  3. Execution Type & Privilege (CLI/GUI/Scripted Browser, User/Root)
+  4. Arguments Schema (Required/Optional, Parameter types, Default values, Constraints)
+  5. Natural Language Examples (Clickable prompts that prefill chat composer)
+  6. Ready-to-Run CLI Examples (Copyable command snippets with descriptions)
+  7. Operational Guidance & Safety (Noisy flags warnings, safety notes, timeout advice)
+  8. Prerequisites & Evidence Gates (Required open ports, web URLs, authentication services)
+  9. Parser & Output Schemas (Structured JSON keys, extraction regex)
+  10. Update & Maintenance (Current version, latest version, update command)
+  11. Execution Reliability & History (Total runs, success rate %, recent event records)
+  12. Related & Complementary Tools (Cross-referenced tool IDs)
+  13. Pre-formatted Chat Workflow (Direct template for autonomous multi-step execution)
+- `POST /knowledge/tools/{tool_id}/verify`: Execute a live non-destructive health check probe on the tool inside the execution environment, returning binary path, detected version, health status, and latency.
+
+---
+
+### 2.17 Automatic Kali Linux & Tool Updates Subsystem
+
+- `GET /updates/status`: Query current state of update subsystem: active policy (`standard_managed`, `managed_rolling`, `manual_control`), pending updates count, available items, and recent update history.
+- `POST /updates/check`: Scan Kali repositories, tool packages, and vulnerability feeds (Searchsploit, Nmap NSE scripts, Nikto, wordlists) for available updates.
+- `POST /updates/apply`: Apply an update for a specific component (`item_id`). Automatically creates a pre-update VM snapshot, runs official package upgrade command, verifies functionality via a post-update health check, triggers automated snapshot rollback if the health check fails, and logs an immutable audit record to SQLite. Request body: `{"item_id": str, "create_snapshot": bool}`.
+- `POST /updates/rollback`: Restore a previous system recovery point snapshot in the hypervisor. Request body: `{"snapshot_name": str}`.
+- `POST /updates/policy`: Configure the operational update policy (`standard_managed`, `managed_rolling`, `manual_control`). Request body: `{"policy": str}`.
+- `GET /updates/history`: Retrieve full immutable audit history of applied updates and rollbacks.
 
 ---
 

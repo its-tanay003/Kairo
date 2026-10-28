@@ -32,7 +32,6 @@ logger = logging.getLogger("orchestrator.adapters.zap")
 class ZapGuiAdapter(BaseGuiAdapter):
     tool_id = "zap.gui.v1"
     tool_version = "1.0.0"
-    tier = 3
     app_name = "OWASP ZAP"
 
     def __init__(

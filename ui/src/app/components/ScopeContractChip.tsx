@@ -7,7 +7,7 @@ export interface ScopeContractData {
   targets: string[];
   network_scope: string;
   time_window: string;
-  allowed_tool_tiers: number[];
+  allowed_tool_tiers?: number[];
   authorized_by: string;
   created_at: string;
   expires_at: string;
@@ -33,7 +33,6 @@ export default function ScopeContractChip({ onScopeChange }: ScopeContractChipPr
   const [editTargets, setEditTargets] = useState<string>("");
   const [editNetworkScope, setEditNetworkScope] = useState<string>("authorized_lab");
   const [editTimeWindow, setEditTimeWindow] = useState<string>("8h");
-  const [editTiers, setEditTiers] = useState<number[]>([1, 2, 3]);
   const [editAuthorizedBy, setEditAuthorizedBy] = useState<string>("secops_lead@kairo.internal");
 
   const openModal = () => {
@@ -41,7 +40,6 @@ export default function ScopeContractChip({ onScopeChange }: ScopeContractChipPr
       setEditTargets((contract.targets || []).join(", "));
       setEditNetworkScope(contract.network_scope || "authorized_lab");
       setEditTimeWindow(contract.time_window || "8h");
-      setEditTiers(contract.allowed_tool_tiers || [1, 2, 3]);
       setEditAuthorizedBy(contract.authorized_by || "secops_lead@kairo.internal");
     }
     setIsModalOpen(true);
@@ -111,7 +109,6 @@ export default function ScopeContractChip({ onScopeChange }: ScopeContractChipPr
           targets: parsedTargets.length > 0 ? parsedTargets : ["127.0.0.1", "localhost"],
           network_scope: editNetworkScope,
           time_window: editTimeWindow,
-          allowed_tool_tiers: editTiers,
           authorized_by: editAuthorizedBy,
           metadata: {
             updated_via: "ui_header_modal",
@@ -143,7 +140,6 @@ export default function ScopeContractChip({ onScopeChange }: ScopeContractChipPr
           targets: contract?.targets || ["127.0.0.1", "192.168.1.0/24"],
           network_scope: contract?.network_scope || "authorized_lab",
           time_window: "8h",
-          allowed_tool_tiers: contract?.allowed_tool_tiers || [1, 2, 3],
           authorized_by: contract?.authorized_by || "secops_lead@kairo.internal",
           metadata: { renewed_at: new Date().toISOString() },
         }),
@@ -158,12 +154,6 @@ export default function ScopeContractChip({ onScopeChange }: ScopeContractChipPr
     } finally {
       setIsSubmitting(false);
     }
-  };
-
-  const toggleTier = (tier: number) => {
-    setEditTiers((prev) =>
-      prev.includes(tier) ? prev.filter((t) => t !== tier) : [...prev, tier].sort()
-    );
   };
 
   const isExpired = secondsRemaining <= 0;
@@ -195,8 +185,8 @@ export default function ScopeContractChip({ onScopeChange }: ScopeContractChipPr
             <span className="scope-targets" title={(contract?.targets || []).join(", ")}>
               {targetSummary}
             </span>
-            <span className="scope-tier-tag">
-              Tiers [{(contract?.allowed_tool_tiers || []).join(",")}]
+            <span className="scope-tier-tag" title="Unified Tool Access: All enabled tools authorized within boundary (ADR-004)">
+              Unified Access ✓
             </span>
           </div>
           <div className="scope-chip-bottom">
@@ -329,60 +319,34 @@ export default function ScopeContractChip({ onScopeChange }: ScopeContractChipPr
                   </div>
                 </div>
 
-                {/* Tool Tier Authorization Matrix */}
+                {/* Unified Tool Policy per ADR-004 */}
                 <div className="form-group">
-                  <label>Permitted Tool Authorization Tiers:</label>
-                  <div className="tiers-matrix">
-                    <div
-                      className={`tier-card ${editTiers.includes(1) ? "selected" : ""}`}
-                      onClick={() => toggleTier(1)}
-                    >
-                      <div className="tier-header">
-                        <input
-                          type="checkbox"
-                          checked={editTiers.includes(1)}
-                          onChange={() => {}}
-                        />
-                        <span className="tier-badge tier-1">Tier 1: Passive Recon</span>
-                      </div>
-                      <p className="tier-desc">
-                        OSINT, DNS lookup, whois, searchsploit, metadata extraction. Zero active traffic.
-                      </p>
+                  <label>Tool Authorization Policy:</label>
+                  <div style={{
+                    padding: "12px 16px",
+                    background: "rgba(16, 185, 129, 0.08)",
+                    border: "1px solid rgba(16, 185, 129, 0.3)",
+                    borderRadius: "8px",
+                    display: "flex",
+                    flexDirection: "column",
+                    gap: "6px"
+                  }}>
+                    <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                      <span style={{ fontSize: "16px" }}>🛡️</span>
+                      <strong style={{ color: "var(--text-primary)", fontSize: "13px" }}>Unified Tool Access (No Authorization Tiers)</strong>
+                      <span style={{
+                        marginLeft: "auto",
+                        fontSize: "11px",
+                        background: "rgba(16, 185, 129, 0.2)",
+                        color: "#10b981",
+                        padding: "2px 8px",
+                        borderRadius: "12px",
+                        fontWeight: 600
+                      }}>ADR-004 Enforced</span>
                     </div>
-
-                    <div
-                      className={`tier-card ${editTiers.includes(2) ? "selected" : ""}`}
-                      onClick={() => toggleTier(2)}
-                    >
-                      <div className="tier-header">
-                        <input
-                          type="checkbox"
-                          checked={editTiers.includes(2)}
-                          onChange={() => {}}
-                        />
-                        <span className="tier-badge tier-2">Tier 2: Active Scanning</span>
-                      </div>
-                      <p className="tier-desc">
-                        Port scanning (nmap), web enumeration (gobuster, ffuf, nikto), packet capture.
-                      </p>
-                    </div>
-
-                    <div
-                      className={`tier-card ${editTiers.includes(3) ? "selected" : ""}`}
-                      onClick={() => toggleTier(3)}
-                    >
-                      <div className="tier-header">
-                        <input
-                          type="checkbox"
-                          checked={editTiers.includes(3)}
-                          onChange={() => {}}
-                        />
-                        <span className="tier-badge tier-3">Tier 3: Intrusive &amp; Remote Exec</span>
-                      </div>
-                      <p className="tier-desc">
-                        SQL injection (sqlmap), brute-forcing (hydra), metasploit, arbitrary Kali VM shell exec.
-                      </p>
-                    </div>
+                    <p style={{ margin: 0, fontSize: "12px", color: "var(--text-secondary)", lineHeight: 1.5 }}>
+                      All registered and enabled Kali Linux tools are authorized to operate autonomously against targets and subnets defined in this contract without tier-based friction.
+                    </p>
                   </div>
                 </div>
 
@@ -430,7 +394,7 @@ export default function ScopeContractChip({ onScopeChange }: ScopeContractChipPr
                   <button
                     type="submit"
                     className="modal-primary-btn"
-                    disabled={isSubmitting || editTiers.length === 0}
+                    disabled={isSubmitting}
                   >
                     {isSubmitting ? "Cryptographically Signing..." : "Sign & Deploy Scope Contract"}
                   </button>

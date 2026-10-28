@@ -8,6 +8,8 @@ import AuditExplorer from "./components/AuditExplorer";
 import DatasetCurationPanel from "./components/DatasetCurationPanel";
 import BenchmarkLeaderboard from "./components/BenchmarkLeaderboard";
 import ModelEvolutionPanel from "./components/ModelEvolutionPanel";
+import ToolKnowledgeCenter from "./components/ToolKnowledgeCenter";
+import UpdatesPanel from "./components/UpdatesPanel";
 import ClaudeOutputCard, {
   ClaudeSynthesisPayload,
   ClaudeToolSelectionMeta,
@@ -286,7 +288,7 @@ export default function Home() {
   const [isAdvancedOpen, setIsAdvancedOpen] = useState<boolean>(false);
   const [isAdvancedWide, setIsAdvancedWide] = useState<boolean>(false);
   const [advancedTab, setAdvancedTab] = useState<
-    "system" | "events" | "terminal" | "screen" | "graph" | "benchmarks" | "audit" | "devtools" | "evolution"
+    "system" | "events" | "terminal" | "screen" | "graph" | "benchmarks" | "audit" | "devtools" | "evolution" | "knowledge" | "updates"
   >("system");
   const [isMobileSidebarOpen, setIsMobileSidebarOpen] = useState<boolean>(false);
   const [showStatusTooltip, setShowStatusTooltip] = useState<boolean>(false);
@@ -362,6 +364,17 @@ export default function Home() {
     setIsAdvancedOpen(true);
   };
 
+  const handleUsePromptInChat = (promptText: string) => {
+    setInputVal(promptText);
+    setIsAdvancedOpen(false);
+    setTimeout(() => {
+      const textarea = document.querySelector(".claude-composer-input") as HTMLTextAreaElement | null;
+      if (textarea) {
+        textarea.focus();
+      }
+    }, 100);
+  };
+
   // System & Telemetry Data
   const [modelCenter, setModelCenter] = useState<ModelCenterStatus | null>(null);
   const [vmStatus, setVmStatus] = useState<VMStatus | null>(null);
@@ -372,7 +385,7 @@ export default function Home() {
     target: string;
     cidrAllowed: string[];
     cidrExcluded: string[];
-    maxTier: string;
+    authorizationMode: string;
     status: string;
     contractId?: string;
     signatureValid?: boolean;
@@ -381,7 +394,7 @@ export default function Home() {
     target: "192.168.1.0/24",
     cidrAllowed: ["192.168.1.0/24", "10.0.0.0/8"],
     cidrExcluded: ["192.168.1.1", "10.0.0.1"],
-    maxTier: "Tier 2 (Active CLI)",
+    authorizationMode: "Unified Access (ADR-004)",
     status: "Active",
   });
 
@@ -390,12 +403,11 @@ export default function Home() {
       .then((res) => (res.ok ? res.json() : null))
       .then((contract) => {
         if (contract && (contract.targets || contract.contract_id)) {
-          const maxTierNum = Math.max(...(contract.allowed_tool_tiers || [2]));
           setScopeInfo({
             target: (contract.targets && contract.targets[0]) || "127.0.0.1",
             cidrAllowed: contract.targets || ["127.0.0.1"],
             cidrExcluded: contract.metadata?.excluded_targets || ["192.168.1.1"],
-            maxTier: `Tier ${maxTierNum} (${maxTierNum === 1 ? "Read-Only" : maxTierNum === 2 ? "Active CLI" : "Interactive GUI"})`,
+            authorizationMode: "Unified Access (ADR-004)",
             status: contract.is_expired ? "Expired" : "Active",
             contractId: contract.contract_id,
             signatureValid: contract.signature_valid ?? true,
@@ -408,12 +420,11 @@ export default function Home() {
           .then((res) => (res.ok ? res.json() : null))
           .then((contract) => {
             if (contract && (contract.targets || contract.contract_id)) {
-              const maxTierNum = Math.max(...(contract.allowed_tool_tiers || [2]));
               setScopeInfo({
                 target: (contract.targets && contract.targets[0]) || "127.0.0.1",
                 cidrAllowed: contract.targets || ["127.0.0.1"],
                 cidrExcluded: contract.metadata?.excluded_targets || ["192.168.1.1"],
-                maxTier: `Tier ${maxTierNum} (${maxTierNum === 1 ? "Read-Only" : maxTierNum === 2 ? "Active CLI" : "Interactive GUI"})`,
+                authorizationMode: "Unified Access (ADR-004)",
                 status: contract.is_expired ? "Expired" : "Active",
                 contractId: contract.contract_id,
                 signatureValid: contract.signature_valid ?? true,
@@ -584,12 +595,11 @@ export default function Home() {
           } else if (data.type === "active_scope_contract" || data.type === "scope_contract_updated") {
             const contract = data.contract || data.scope_contract || data;
             if (contract && (contract.targets || contract.contract_id)) {
-              const maxTierNum = Math.max(...(contract.allowed_tool_tiers || [2]));
               setScopeInfo({
                 target: (contract.targets && contract.targets[0]) || "127.0.0.1",
                 cidrAllowed: contract.targets || ["127.0.0.1"],
                 cidrExcluded: contract.metadata?.excluded_targets || ["192.168.1.1"],
-                maxTier: `Tier ${maxTierNum} (${maxTierNum === 1 ? "Read-Only" : maxTierNum === 2 ? "Active CLI" : "Interactive GUI"})`,
+                authorizationMode: "Unified Access (ADR-004)",
                 status: contract.is_expired ? "Expired" : "Active",
                 contractId: contract.contract_id,
                 signatureValid: contract.signature_valid ?? true,
@@ -793,7 +803,6 @@ export default function Home() {
           contract_id: scopeInfo.contractId,
           target: scopeInfo.target,
           targets: scopeInfo.cidrAllowed,
-          allowed_tool_tiers: [1, 2],
         },
       })
     );
@@ -1058,6 +1067,44 @@ export default function Home() {
               <span style={{ fontSize: "11px" }}>🖥️</span>
               <span>Kali GUI</span>
             </button>
+
+            <button
+              className={`console-btn ${isAdvancedOpen && advancedTab === "knowledge" ? "active" : ""}`}
+              onClick={() => {
+                if (isAdvancedOpen && advancedTab === "knowledge") {
+                  setIsAdvancedOpen(false);
+                } else {
+                  setAdvancedTab("knowledge");
+                  setIsAdvancedWide(true);
+                  setIsAdvancedOpen(true);
+                }
+              }}
+              aria-label="Toggle Tool Knowledge Center"
+              title="Tool Knowledge Center (13-Section Deep Metadata & Examples)"
+              style={isAdvancedOpen && advancedTab === "knowledge" ? { borderColor: "#58a6ff", color: "#58a6ff", background: "rgba(88, 166, 255, 0.12)" } : undefined}
+            >
+              <span style={{ fontSize: "11px" }}>📚</span>
+              <span>Tools</span>
+            </button>
+
+            <button
+              className={`console-btn ${isAdvancedOpen && advancedTab === "updates" ? "active" : ""}`}
+              onClick={() => {
+                if (isAdvancedOpen && advancedTab === "updates") {
+                  setIsAdvancedOpen(false);
+                } else {
+                  setAdvancedTab("updates");
+                  setIsAdvancedWide(true);
+                  setIsAdvancedOpen(true);
+                }
+              }}
+              aria-label="Toggle Kali & Tool Updates"
+              title="Kali & Tool Updates (Snapshot Rollback Protected)"
+              style={isAdvancedOpen && advancedTab === "updates" ? { borderColor: "#3fb950", color: "#3fb950", background: "rgba(63, 185, 80, 0.12)" } : undefined}
+            >
+              <span style={{ fontSize: "11px" }}>🔄</span>
+              <span>Updates</span>
+            </button>
           </div>
 
           {/* Claude Split Console / Artifacts Button */}
@@ -1114,6 +1161,71 @@ export default function Home() {
             <span className="new-session-shortcut">Ctrl K</span>
           </button>
 
+          <div className="sidebar-section-label">Navigation</div>
+          <div style={{ padding: "0 8px 10px 8px", display: "flex", flexDirection: "column", gap: "2px" }}>
+            <button
+              className={`session-item ${!isAdvancedOpen ? "active" : ""}`}
+              onClick={() => {
+                setIsAdvancedOpen(false);
+                setIsMobileSidebarOpen(false);
+              }}
+              style={{ padding: "6px 10px", borderRadius: "6px", display: "flex", alignItems: "center", gap: "8px" }}
+            >
+              <span>💬</span>
+              <span className="session-title">Chat &amp; Workspace</span>
+            </button>
+            <button
+              className={`session-item ${isAdvancedOpen && advancedTab === "knowledge" ? "active" : ""}`}
+              onClick={() => {
+                setAdvancedTab("knowledge");
+                setIsAdvancedWide(true);
+                setIsAdvancedOpen(true);
+                setIsMobileSidebarOpen(false);
+              }}
+              style={{ padding: "6px 10px", borderRadius: "6px", display: "flex", alignItems: "center", gap: "8px" }}
+            >
+              <span>📚</span>
+              <span className="session-title">Tool Knowledge</span>
+            </button>
+            <button
+              className={`session-item ${isAdvancedOpen && advancedTab === "updates" ? "active" : ""}`}
+              onClick={() => {
+                setAdvancedTab("updates");
+                setIsAdvancedWide(true);
+                setIsAdvancedOpen(true);
+                setIsMobileSidebarOpen(false);
+              }}
+              style={{ padding: "6px 10px", borderRadius: "6px", display: "flex", alignItems: "center", gap: "8px" }}
+            >
+              <span>🔄</span>
+              <span className="session-title">Kali &amp; Updates</span>
+            </button>
+            <button
+              className={`session-item ${isAdvancedOpen && advancedTab === "graph" ? "active" : ""}`}
+              onClick={() => {
+                setAdvancedTab("graph");
+                setIsAdvancedOpen(true);
+                setIsMobileSidebarOpen(false);
+              }}
+              style={{ padding: "6px 10px", borderRadius: "6px", display: "flex", alignItems: "center", gap: "8px" }}
+            >
+              <span>📊</span>
+              <span className="session-title">Workflows (DAG)</span>
+            </button>
+            <button
+              className={`session-item ${isAdvancedOpen && advancedTab === "audit" ? "active" : ""}`}
+              onClick={() => {
+                setAdvancedTab("audit");
+                setIsAdvancedOpen(true);
+                setIsMobileSidebarOpen(false);
+              }}
+              style={{ padding: "6px 10px", borderRadius: "6px", display: "flex", alignItems: "center", gap: "8px" }}
+            >
+              <span>🛡️</span>
+              <span className="session-title">Audit History</span>
+            </button>
+          </div>
+
           <div className="sidebar-section-label">Recent</div>
           <div className="session-list">
             {sessions.map((s, idx) => (
@@ -1136,7 +1248,7 @@ export default function Home() {
             <div className="profile-avatar">OP</div>
             <div className="profile-info">
               <span className="profile-name">Security Operator</span>
-              <span className="profile-tier">Airgap · Tier 2 Authorized</span>
+              <span className="profile-tier">Airgap · Operator Authorized</span>
             </div>
           </div>
         </aside>
@@ -1350,8 +1462,8 @@ export default function Home() {
                     {scopeInfo.cidrExcluded.join(", ")}
                   </div>
                   <div>
-                    <strong style={{ color: "var(--text-primary)" }}>Max Tool Tier:</strong>{" "}
-                    {scopeInfo.maxTier}
+                    <strong style={{ color: "var(--text-primary)" }}>Tool Policy:</strong>{" "}
+                    {scopeInfo.authorizationMode}
                   </div>
                 </div>
               )}
@@ -1478,6 +1590,28 @@ export default function Home() {
                 >
                   <span>Task Graph</span>
                   <span className="drawer-nav-badge">DAG</span>
+                </button>
+
+                <div className="drawer-nav-group-label">Tools &amp; Maintenance</div>
+                <button
+                  className={`drawer-nav-item ${advancedTab === "knowledge" ? "active" : ""}`}
+                  onClick={() => {
+                    setAdvancedTab("knowledge");
+                    setIsAdvancedWide(true);
+                  }}
+                >
+                  <span>Tool Knowledge</span>
+                  <span className="drawer-nav-badge">13-Sec</span>
+                </button>
+                <button
+                  className={`drawer-nav-item ${advancedTab === "updates" ? "active" : ""}`}
+                  onClick={() => {
+                    setAdvancedTab("updates");
+                    setIsAdvancedWide(true);
+                  }}
+                >
+                  <span>Kali Updates</span>
+                  <span className="drawer-nav-badge">Sync</span>
                 </button>
 
                 <div className="drawer-nav-group-label">Security &amp; Models</div>
@@ -1767,6 +1901,21 @@ export default function Home() {
                 {advancedTab === "audit" && (
                   <div style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
                     <AuditExplorer />
+                  </div>
+                )}
+
+                {advancedTab === "knowledge" && (
+                  <div style={{ height: "100%", display: "flex", flexDirection: "column" }}>
+                    <ToolKnowledgeCenter
+                      onUseInChat={handleUsePromptInChat}
+                      apiBaseUrl="http://127.0.0.1:8000"
+                    />
+                  </div>
+                )}
+
+                {advancedTab === "updates" && (
+                  <div style={{ height: "100%", display: "flex", flexDirection: "column" }}>
+                    <UpdatesPanel apiBaseUrl="http://127.0.0.1:8000" />
                   </div>
                 )}
 

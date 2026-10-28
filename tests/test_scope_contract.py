@@ -78,9 +78,9 @@ class TestScopeContract(unittest.TestCase):
         tampered_contract["targets"] = ["192.168.1.0/24", "8.8.8.8"]
         self.assertFalse(verify_scope_signature(tampered_contract))
 
-        # 3. Tamper with allowed tiers
+        # 3. Tamper with network scope
         tampered_contract2 = dict(contract)
-        tampered_contract2["allowed_tool_tiers"] = [1, 2, 3]
+        tampered_contract2["network_scope"] = "unrestricted_internet"
         self.assertFalse(verify_scope_signature(tampered_contract2))
 
         # 4. Tamper with authorized_by
@@ -107,39 +107,29 @@ class TestScopeContract(unittest.TestCase):
         self.assertFalse(is_target_in_scope("google.com", allowed))
         self.assertFalse(is_target_in_scope("corp.external", allowed))
 
-    def test_tool_tier_classification(self):
-        """Tests tool tier assignments (Tier 1 = passive, Tier 2 = active scan, Tier 3 = intrusive/exec)."""
-        self.assertEqual(get_tool_tier("whois.lookup.v1"), 1)
-        self.assertEqual(get_tool_tier("dig.lookup.v1"), 1)
-        self.assertEqual(get_tool_tier("searchsploit.search.v1"), 1)
-        self.assertEqual(get_tool_tier("hello_world"), 1)
-
-        self.assertEqual(get_tool_tier("nmap.scan.v1"), 2)
-        self.assertEqual(get_tool_tier("gobuster.dir.v1"), 2)
-        self.assertEqual(get_tool_tier("ffuf.fuzz.v1"), 2)
-        self.assertEqual(get_tool_tier("nikto.scan.v1"), 2)
-
-        self.assertEqual(get_tool_tier("sqlmap.scan.v1"), 3)
-        self.assertEqual(get_tool_tier("hydra.brute.v1"), 3)
-        self.assertEqual(get_tool_tier("metasploit.rpc.v1"), 3)
-        self.assertEqual(get_tool_tier("kali.exec.v1"), 3)
-        self.assertEqual(get_tool_tier("shell.run.v1"), 3)
+    def test_tool_tier_classification_retired(self):
+        """Verifies that tool tiers are retired and get_tool_tier returns None per ADR-004."""
+        self.assertIsNone(get_tool_tier("whois.lookup.v1"))
+        self.assertIsNone(get_tool_tier("dig.lookup.v1"))
+        self.assertIsNone(get_tool_tier("searchsploit.search.v1"))
+        self.assertIsNone(get_tool_tier("hello_world"))
+        self.assertIsNone(get_tool_tier("nmap.scan.v1"))
+        self.assertIsNone(get_tool_tier("sqlmap.scan.v1"))
+        self.assertIsNone(get_tool_tier("kali.exec.v1"))
 
     def test_scope_validation_rejection_and_event_logging(self):
         """Tests that requests violating scope are rejected and logged to events.db."""
-        # Create restrictive contract (only 192.168.1.0/24 and Tiers [1, 2])
         create_scope_contract(
             targets=["192.168.1.0/24"],
             network_scope="authorized_lab",
             time_window="4h",
-            allowed_tool_tiers=[1, 2],
             authorized_by="secops_lead@kairo.internal",
             db_path=self.db_path,
         )
 
         agent = AgentLoop(db_path=self.db_path)
 
-        # 1. Permitted execution (target in scope, Tier 1)
+        # 1. Permitted execution (target in scope)
         res_ok = agent.execute_task(
             session_id="test_sess",
             message="Check hello_world on 192.168.1.10",
@@ -161,19 +151,27 @@ class TestScopeContract(unittest.TestCase):
         self.assertEqual(res_bad_target.get("error"), "SCOPE_VIOLATION")
         self.assertIn("OUT_OF_SCOPE_TARGET", res_bad_target["scope_violation"]["reason"])
 
-        # 3. Blocked by tool tier (Tier 3 tool shell.run.v1 when only Tiers [1, 2] allowed)
-        res_bad_tier = agent.execute_task(
+        # 3. Permitted execution for active tool within scope without tier friction (ADR-004)
+        res_active_tool = agent.execute_task(
             session_id="test_sess",
-            message="Run raw shell command on 192.168.1.50",
-            task_id="task_bad_tier",
-            explicit_tool="shell.run.v1",
-            explicit_args={"command": "python", "args": ["-c", "print('test')"], "target": "192.168.1.50"},
+            message="Scan port on in-scope target 192.168.1.50",
+            task_id="task_in_scope_scan",
+            explicit_tool="nmap.scan.v1",
+            explicit_args={"target": "192.168.1.50", "scan_type": "sS"},
         )
-        self.assertEqual(res_bad_tier.get("status"), "rejected")
-        self.assertEqual(res_bad_tier.get("error"), "SCOPE_VIOLATION")
-        self.assertIn("TOOL_TIER_EXCEEDED", res_bad_tier["scope_violation"]["reason"])
+        self.assertNotEqual(res_active_tool.get("status"), "rejected")
 
-        # 4. Verify rejection events logged in SQLite event store
+        # 4. Another out-of-scope attempt (to test multiple rejections logged)
+        res_bad_target2 = agent.execute_task(
+            session_id="test_sess",
+            message="Scan unauthorized target 172.16.0.1",
+            task_id="task_bad_target2",
+            explicit_tool="hello_world",
+            explicit_args={"input": "Hello", "target": "172.16.0.1"},
+        )
+        self.assertEqual(res_bad_target2.get("status"), "rejected")
+
+        # 5. Verify rejection events logged in SQLite event store
         events = get_recent_events(limit=10, db_path=self.db_path)
         rejection_events = [e for e in events if e["actor"] == "gateway:scope_guard"]
         self.assertGreaterEqual(len(rejection_events), 2)

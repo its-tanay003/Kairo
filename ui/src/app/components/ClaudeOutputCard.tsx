@@ -789,9 +789,9 @@ export default function ClaudeOutputCard({
                       <span className="overview-val">{durationSec}s</span>
                     </div>
                     <div className="overview-item">
-                      <span className="overview-label">Safety Tier</span>
+                      <span className="overview-label">Scope Policy</span>
                       <span className="overview-val">
-                        Tier {processData?.tier || 2} · Authorized
+                        In-Scope · Authorized
                       </span>
                     </div>
                     <div className="overview-item">

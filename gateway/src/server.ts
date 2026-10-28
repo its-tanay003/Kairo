@@ -1312,7 +1312,6 @@ wss.on("connection", async (ws: WebSocket, req) => {
             body: JSON.stringify({
               target: payload.target,
               tool_id: payload.tool_id || payload.tool,
-              tool_tier: payload.tool_tier,
             }),
           });
           const data = await resp.json();
@@ -1357,7 +1356,7 @@ wss.on("connection", async (ws: WebSocket, req) => {
           const scopeResp = await fetch(`${ORCHESTRATOR_URL}/scope/validate`, {
             method: "POST",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ target: kaliTarget, tool_id: "kali.exec.v1", tool_tier: 3 }),
+            body: JSON.stringify({ target: kaliTarget, tool_id: "kali.exec.v1" }),
           });
           const scopeVal = (await scopeResp.json()) as any;
           if (scopeVal && scopeVal.authorized === false) {
@@ -1367,7 +1366,6 @@ wss.on("connection", async (ws: WebSocket, req) => {
                 sessionId,
                 taskId,
                 tool: "kali.exec.v1",
-                toolTier: 3,
                 target: kaliTarget,
                 error: "SCOPE_VIOLATION",
                 reason: scopeVal.reason,
@@ -1385,7 +1383,6 @@ wss.on("connection", async (ws: WebSocket, req) => {
               sessionId,
               taskId,
               tool: "kali.exec.v1",
-              toolTier: 3,
               target: kaliTarget,
               error: "SCOPE_VIOLATION",
               reason: `Scope validation service unreachable (${e.message}); fail-closed security boundary enforced.`,

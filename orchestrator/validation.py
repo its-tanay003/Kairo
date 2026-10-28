@@ -127,17 +127,14 @@ def is_workflow_approved(
     if tool_id not in BROAD_EXECUTION_TOOLS:
         return True, "Typed security tool adapter approved."
 
-    # 2. Check for trusted operator or cryptographically signed workflow approval token
+    # 2. Check for trusted operator or cryptographically verified workflow approval token
     wf_tok = requested_args.get("workflow_token") or operator_token
     if wf_tok and isinstance(wf_tok, str):
         from orchestrator.auth import auth_manager
         is_valid, session, err = auth_manager.verify_token(wf_tok)
         if is_valid and session and session.role in ("admin", "operator"):
             return True, f"Authorized via verified operator token for {session.user_id} ({session.role})."
-        elif wf_tok.startswith("KAIRO-WF-") or wf_tok.startswith("KAIRO-OP-"):
-            return True, "Authorized via signed workflow authorization token."
-        else:
-            return False, f"Invalid or unauthorized workflow approval token: {err or 'untrusted token'}"
+        return False, f"Invalid or unauthorized workflow approval token: {err or 'untrusted token'}"
 
     # 3. Check active Scope Contract metadata (authoritative configuration)
     if scope_contract:

@@ -616,9 +616,9 @@ class ExecutionGateway:
         - Authenticated operator session (role: admin or operator)
         - Explicit target list without automatic wildcards
         - Truthful authorized_by recorded from session identity
+        - Unified tool authorization per ADR-004 (no tool tiers required)
         """
         active_db_path = Path(db_path) if db_path else self.db_path
-        tiers = allowed_tool_tiers or [1, 2, 3]
 
         # Verify operator token
         is_valid, session, err = auth_manager.verify_token(operator_token)
@@ -644,7 +644,7 @@ class ExecutionGateway:
             targets=clean_targets,
             network_scope=network_scope,
             time_window=time_window,
-            allowed_tool_tiers=tiers,
+            allowed_tool_tiers=allowed_tool_tiers,
             authorized_by=f"{session.user_id} ({session.role})",
             metadata={
                 **(metadata or {}),
