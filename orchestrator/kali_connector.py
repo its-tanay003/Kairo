@@ -534,6 +534,10 @@ class KaliWorkerConnector:
                     res_data["execution_plane"] = info.plane_type.value
                     if res_data.get("status") == "completed" and res_data.get("exit_code") == 0:
                         res_data["status"] = "success"
+                    res_data.setdefault("artifacts", [])
+                    res_data.setdefault("timed_out", False)
+                    res_data.setdefault("stdout", "")
+                    res_data.setdefault("stderr", "")
                     return res_data
             except Exception as e:
                 logger.warning(f"Worker HTTP execution failed ({e}), falling back to direct plane execution")

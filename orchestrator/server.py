@@ -116,6 +116,27 @@ app.add_middleware(
 agent = AgentLoop()
 
 
+@app.on_event("startup")
+def server_startup_event():
+    """
+    On server boot, initiate background auto-start of isolated Kali worker if not already online.
+    Runs in a detached daemon thread so server startup remains immediate and non-blocking.
+    """
+    import threading
+    def _bg_autostart_worker():
+        auto_start_enabled = os.environ.get("KAIRO_AUTOSTART_VM", "true").lower() in ("true", "1", "yes")
+        if not auto_start_enabled:
+            logger.info("[Startup] KAIRO_AUTOSTART_VM is disabled; skipping VM auto-start.")
+            return
+        if not vm_manager.is_worker_online(timeout_sec=1.5):
+            logger.info("[Startup] Kali worker is offline. Initiating background auto-start...")
+            vm_manager.ensure_worker_online(timeout_sec=50, auto_start=True)
+        else:
+            logger.info(f"[Startup] Kali worker is already ONLINE on {vm_manager.worker_url}.")
+
+    threading.Thread(target=_bg_autostart_worker, daemon=True, name="kairo_worker_autostart").start()
+
+
 class RunRequest(BaseModel):
     session_id: str
     message: str
@@ -773,6 +794,18 @@ def list_tools():
 def vm_status():
     """Returns status of Kali VM and in-guest worker agent."""
     return vm_manager.get_status()
+
+
+@app.post("/vm/start")
+def vm_start(headless: bool = True, wait_seconds: int = 40):
+    """Explicitly triggers auto-starting the Kali VM or worker agent."""
+    online = vm_manager.ensure_worker_online(timeout_sec=wait_seconds, auto_start=True)
+    status = vm_manager.get_status()
+    return {
+        "status": "success" if online else "timeout",
+        "worker_online": online,
+        "details": status,
+    }
 
 
 @app.get("/vm/snapshots")

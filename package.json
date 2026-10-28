@@ -11,6 +11,8 @@
     "dev:ui": "npm --prefix ui run dev",
     "dev:gateway": "npm --prefix gateway run dev",
     "dev:orchestrator": "python -m uvicorn orchestrator.server:app --host 127.0.0.1 --port 8000",
+    "worker:start": "python scripts/start_worker.py",
+    "worker:status": "python scripts/start_worker.py --status",
     "init:db": "python -c \"from events.db import init_db; init_db(); print('Database initialized successfully')\"",
     "test:boundary": "python tests/test_boundary.py"
   }

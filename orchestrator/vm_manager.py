@@ -24,7 +24,7 @@ VBOX_MANAGE = os.environ.get(
 )
 VM_NAME = os.environ.get("KAIRO_VM_NAME", "kali-linux-2026.1-virtualbox-amd64")
 WORKER_URL = os.environ.get("KAIRO_WORKER_URL", "http://127.0.0.1:9999")
-BASELINE_SNAPSHOT = os.environ.get("KAIRO_BASELINE_SNAPSHOT", "kairo_worker_ready")
+BASELINE_SNAPSHOT = os.environ.get("KAIRO_BASELINE_SNAPSHOT", "kairo_live_ready")
 
 try:
     from events.db import Artifact, insert_artifact
@@ -176,7 +176,10 @@ class VMManager:
         return {
             "vm_name": self.vm_name,
             "vm_state": vm_state,
+            "virtualbox_available": self._is_vbox_available(),
+            "vm_running": vm_state in ("running", "paused"),
             "running": vm_state in ("running", "paused") or plane_info.get("is_connected", False),
+            "worker_url": self.worker_url,
             "worker_online": worker_online or plane_info.get("worker_online", False),
             "worker_info": worker_info or plane_info.get("worker_info", {}),
             "snapshots_count": len(snapshots),
@@ -292,11 +295,14 @@ class VMManager:
         self._run_vbox(["controlvm", self.vm_name, "poweroff"], check=False)
         time.sleep(1.0)
 
-        # 2. Restore snapshot (with fallback to BASELINE_SNAPSHOT if named snapshot fails)
+        # 2. Restore snapshot (with fallback to BASELINE_SNAPSHOT or kairo_worker_ready if named snapshot fails)
         restore_res = self._run_vbox(["snapshot", self.vm_name, "restore", snapshot_name], check=False)
         if restore_res.returncode != 0 and snapshot_name != BASELINE_SNAPSHOT:
             print(f"[VMManager] Restore of '{snapshot_name}' returned error: {restore_res.stderr.strip()}. Falling back to baseline '{BASELINE_SNAPSHOT}'...")
-            self._run_vbox(["snapshot", self.vm_name, "restore", BASELINE_SNAPSHOT], check=False)
+            restore_res = self._run_vbox(["snapshot", self.vm_name, "restore", BASELINE_SNAPSHOT], check=False)
+        if restore_res.returncode != 0 and snapshot_name != "kairo_worker_ready" and BASELINE_SNAPSHOT != "kairo_worker_ready":
+            print(f"[VMManager] Restore failed. Falling back to 'kairo_worker_ready'...")
+            self._run_vbox(["snapshot", self.vm_name, "restore", "kairo_worker_ready"], check=False)
         time.sleep(0.5)
 
         # 3. Start VM headless
@@ -368,7 +374,7 @@ class VMManager:
         # Check worker health; if offline, attempt reliable auto-start so fallback is rare!
         info = self.connector.get_info()
         if not info.worker_online:
-            if self.ensure_worker_online(timeout_sec=15, auto_start=True):
+            if self.ensure_worker_online(timeout_sec=35, auto_start=True):
                 info = self.connector.get_info(force_refresh=True)
 
         if info.worker_online:
