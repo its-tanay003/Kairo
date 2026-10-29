@@ -10,6 +10,7 @@ import BenchmarkLeaderboard from "./components/BenchmarkLeaderboard";
 import ModelEvolutionPanel from "./components/ModelEvolutionPanel";
 import ToolKnowledgeCenter from "./components/ToolKnowledgeCenter";
 import UpdatesPanel from "./components/UpdatesPanel";
+import AdvancedSettingsPanel from "./components/AdvancedSettingsPanel";
 import ClaudeOutputCard, {
   ClaudeSynthesisPayload,
   ClaudeToolSelectionMeta,
@@ -288,7 +289,7 @@ export default function Home() {
   const [isAdvancedOpen, setIsAdvancedOpen] = useState<boolean>(false);
   const [isAdvancedWide, setIsAdvancedWide] = useState<boolean>(false);
   const [advancedTab, setAdvancedTab] = useState<
-    "system" | "events" | "terminal" | "screen" | "graph" | "benchmarks" | "audit" | "devtools" | "evolution" | "knowledge" | "updates"
+    "system" | "events" | "terminal" | "screen" | "graph" | "benchmarks" | "audit" | "devtools" | "evolution" | "knowledge" | "updates" | "settings"
   >("system");
   const [isMobileSidebarOpen, setIsMobileSidebarOpen] = useState<boolean>(false);
   const [showStatusTooltip, setShowStatusTooltip] = useState<boolean>(false);
@@ -1105,6 +1106,25 @@ export default function Home() {
               <span style={{ fontSize: "11px" }}>🔄</span>
               <span>Updates</span>
             </button>
+
+            <button
+              className={`console-btn ${isAdvancedOpen && advancedTab === "settings" ? "active" : ""}`}
+              onClick={() => {
+                if (isAdvancedOpen && advancedTab === "settings") {
+                  setIsAdvancedOpen(false);
+                } else {
+                  setAdvancedTab("settings");
+                  setIsAdvancedWide(true);
+                  setIsAdvancedOpen(true);
+                }
+              }}
+              aria-label="Toggle Advanced Menu Settings"
+              title="Advanced Menu Settings (Autonomous Policies, Scope, VM Sandbox, Models)"
+              style={isAdvancedOpen && advancedTab === "settings" ? { borderColor: "#38bdf8", color: "#38bdf8", background: "rgba(56, 189, 248, 0.12)" } : undefined}
+            >
+              <span style={{ fontSize: "11px" }}>⚙️</span>
+              <span>Settings</span>
+            </button>
           </div>
 
           {/* Claude Split Console / Artifacts Button */}
@@ -1223,6 +1243,19 @@ export default function Home() {
             >
               <span>🛡️</span>
               <span className="session-title">Audit History</span>
+            </button>
+            <button
+              className={`session-item ${isAdvancedOpen && advancedTab === "settings" ? "active" : ""}`}
+              onClick={() => {
+                setAdvancedTab("settings");
+                setIsAdvancedWide(true);
+                setIsAdvancedOpen(true);
+                setIsMobileSidebarOpen(false);
+              }}
+              style={{ padding: "6px 10px", borderRadius: "6px", display: "flex", alignItems: "center", gap: "8px" }}
+            >
+              <span>⚙️</span>
+              <span className="session-title">Advanced Settings</span>
             </button>
           </div>
 
@@ -1549,6 +1582,21 @@ export default function Home() {
             <div className="drawer-body">
               {/* Categorized Left Nav Rail */}
               <nav className="drawer-nav-rail">
+                <div className="drawer-nav-group-label">Configuration</div>
+                <button
+                  className={`drawer-nav-item ${advancedTab === "settings" ? "active" : ""}`}
+                  onClick={() => {
+                    setAdvancedTab("settings");
+                    setIsAdvancedWide(true);
+                  }}
+                >
+                  <span style={{ display: "flex", alignItems: "center", gap: "6px" }}>
+                    <span>⚙️</span>
+                    <span>Settings</span>
+                  </span>
+                  <span className="drawer-nav-badge" style={{ borderColor: "rgba(56, 189, 248, 0.4)", color: "#38bdf8" }}>Pref</span>
+                </button>
+
                 <div className="drawer-nav-group-label">Core</div>
                 <button
                   className={`drawer-nav-item ${advancedTab === "system" ? "active" : ""}`}
@@ -1916,6 +1964,19 @@ export default function Home() {
                 {advancedTab === "updates" && (
                   <div style={{ height: "100%", display: "flex", flexDirection: "column" }}>
                     <UpdatesPanel apiBaseUrl="http://127.0.0.1:8000" />
+                  </div>
+                )}
+
+                {advancedTab === "settings" && (
+                  <div style={{ height: "100%", display: "flex", flexDirection: "column" }}>
+                    <AdvancedSettingsPanel
+                      apiBaseUrl="http://127.0.0.1:8000"
+                      sessionId={sessionId}
+                      activeModelId={selectedModelId}
+                      onModelChange={handleSelectModel}
+                      onScopeUpdated={fetchActiveScope}
+                      onClose={() => setIsAdvancedOpen(false)}
+                    />
                   </div>
                 )}
 
