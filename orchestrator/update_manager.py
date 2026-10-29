@@ -437,6 +437,63 @@ class UpdateManager:
             "error": error_msg,
         }
 
+    def apply_all_updates(self, create_snapshot: bool = True) -> Dict[str, Any]:
+        """Applies all currently available updates in batch with a single pre-update recovery snapshot."""
+        t0 = time.time()
+        available = self.check_updates()
+        if not available:
+            return {
+                "success": True,
+                "message": "No updates pending. Everything is up to date.",
+                "total": 0,
+                "applied_count": 0,
+                "failed_count": 0,
+                "snapshot_name": None,
+                "results": [],
+                "duration_ms": 0.0,
+            }
+
+        snap_name = None
+        if create_snapshot:
+            ts_str = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
+            snap_name = f"snap_pre_update_batch_{ts_str}"
+            try:
+                logger.info(f"[UpdateManager] Creating pre-batch snapshot: '{snap_name}'...")
+                vm_manager.create_snapshot(snapshot_name=snap_name, description="Pre-update batch recovery point")
+            except Exception as e:
+                logger.warning(f"[UpdateManager] Failed to create pre-batch snapshot '{snap_name}': {e}")
+                snap_name = None
+
+        results = []
+        applied_count = 0
+        failed_count = 0
+
+        for item in available:
+            # Apply individual item without redundant per-item snapshots since batch snapshot covers state
+            res = self.apply_update(item_id=item.id, create_snapshot=False)
+            results.append(res)
+            if res.get("success"):
+                applied_count += 1
+            else:
+                failed_count += 1
+
+        duration_ms = round((time.time() - t0) * 1000, 2)
+        total = len(available)
+        success = failed_count == 0
+
+        logger.info(f"[UpdateManager] Batch update completed: {applied_count}/{total} successful, {failed_count} failed in {duration_ms}ms")
+
+        return {
+            "success": success,
+            "message": f"Updated {applied_count} of {total} components successfully.",
+            "total": total,
+            "applied_count": applied_count,
+            "failed_count": failed_count,
+            "snapshot_name": snap_name,
+            "results": results,
+            "duration_ms": duration_ms,
+        }
+
     def _save_record(self, record: UpdateRecord) -> None:
         """Persists update record into SQLite."""
         conn = get_connection(self.db_path)

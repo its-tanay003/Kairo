@@ -2506,6 +2506,12 @@ def apply_update(req: UpdateApplyRequest):
     return rec
 
 
+@app.post("/updates/apply-all")
+def apply_all_updates():
+    """Applies all available system and tool updates with a single pre-update recovery snapshot."""
+    return update_manager.apply_all_updates(create_snapshot=True)
+
+
 @app.post("/updates/rollback")
 def rollback_update_snapshot(req: UpdateRollbackRequest):
     """Restores a previous system recovery point snapshot."""

@@ -52,6 +52,8 @@ export default function UpdatesPanel({ apiBaseUrl = "" }: UpdatesPanelProps) {
   const [loading, setLoading] = useState<boolean>(true);
   const [checking, setChecking] = useState<boolean>(false);
   const [applyingItemId, setApplyingItemId] = useState<string | null>(null);
+  const [updatingAll, setUpdatingAll] = useState<boolean>(false);
+  const [updateAllProgress, setUpdateAllProgress] = useState<string | null>(null);
   const [rollingBackSnap, setRollingBackSnap] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [feedback, setFeedback] = useState<{ type: "success" | "error"; message: string } | null>(null);
@@ -150,6 +152,47 @@ export default function UpdatesPanel({ apiBaseUrl = "" }: UpdatesPanelProps) {
     }
   };
 
+  // Update All
+  const handleUpdateAll = async () => {
+    const count = status?.available_updates_count || status?.available_updates?.length || 0;
+    if (count === 0) {
+      setFeedback({ type: "success", message: "No updates are currently pending. Everything is up to date." });
+      return;
+    }
+    if (!confirm(`Update all ${count} components in one click?\n\nA single pre-update hypervisor recovery point snapshot will be created before applying packages and vulnerability feeds.`)) {
+      return;
+    }
+
+    setUpdatingAll(true);
+    setUpdateAllProgress(`Preparing pre-update snapshot & executing ${count} updates...`);
+    setFeedback(null);
+
+    try {
+      const res = await fetch(`${apiBaseUrl}/updates/apply-all`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+      });
+      const data = await res.json();
+      if (data.success) {
+        setFeedback({
+          type: "success",
+          message: `⚡ One-click update finished! Successfully updated ${data.applied_count} of ${data.total} components. Recovery snapshot: '${data.snapshot_name || "snapshot_created"}'.`,
+        });
+      } else {
+        setFeedback({
+          type: data.applied_count > 0 ? "success" : "error",
+          message: `Batch update finished with warnings: ${data.applied_count} succeeded, ${data.failed_count} failed. Snapshot: '${data.snapshot_name || "none"}'.`,
+        });
+      }
+      fetchStatus();
+    } catch (err: any) {
+      setFeedback({ type: "error", message: `Batch update error: ${err.message}` });
+    } finally {
+      setUpdatingAll(false);
+      setUpdateAllProgress(null);
+    }
+  };
+
   // Rollback to snapshot
   const handleRollback = async (snapshotName: string) => {
     if (!confirm(`Restore recovery snapshot '${snapshotName}'?\n\nThis will restore the Kali VM filesystem to this exact recovery point.`)) {
@@ -199,7 +242,16 @@ export default function UpdatesPanel({ apiBaseUrl = "" }: UpdatesPanelProps) {
 
         <div className="flex items-center gap-2.5">
           <button
-            disabled={checking}
+            disabled={checking || updatingAll || (status?.available_updates_count === 0)}
+            onClick={handleUpdateAll}
+            className="flex items-center gap-1.5 px-3.5 py-1.5 text-xs font-semibold rounded-md bg-gradient-to-r from-[#1f6feb] to-[#238636] hover:from-[#388bfd] hover:to-[#2ea043] text-white transition-all disabled:opacity-40 shadow-sm border border-[#388bfd]/30"
+          >
+            {updatingAll ? <span className="animate-spin">↻</span> : <span>⚡</span>}
+            <span>{updatingAll ? "Updating All..." : `Update All (${status?.available_updates_count || 0})`}</span>
+          </button>
+
+          <button
+            disabled={checking || updatingAll}
             onClick={handleCheckUpdates}
             className="flex items-center gap-1.5 px-3.5 py-1.5 text-xs font-semibold rounded-md bg-[#238636] hover:bg-[#2ea043] text-white transition-colors disabled:opacity-50 shadow-sm"
           >
@@ -208,8 +260,9 @@ export default function UpdatesPanel({ apiBaseUrl = "" }: UpdatesPanelProps) {
           </button>
 
           <button
+            disabled={updatingAll}
             onClick={fetchStatus}
-            className="px-3 py-1.5 text-xs font-medium rounded-md bg-[#21262d] hover:bg-[#30363d] text-[#c9d1d9] border border-[#30363d] transition-colors"
+            className="px-3 py-1.5 text-xs font-medium rounded-md bg-[#21262d] hover:bg-[#30363d] text-[#c9d1d9] border border-[#30363d] transition-colors disabled:opacity-50"
           >
             ↻ Refresh
           </button>
@@ -300,7 +353,7 @@ export default function UpdatesPanel({ apiBaseUrl = "" }: UpdatesPanelProps) {
 
       {/* Available Updates List */}
       <div className="p-5 rounded-lg bg-[#161b22] border border-[#30363d]">
-        <div className="flex items-center justify-between mb-3">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-3">
           <div>
             <h2 className="text-sm font-bold text-white flex items-center gap-2">
               <span>📦</span> Available System & Tool Updates
@@ -309,10 +362,29 @@ export default function UpdatesPanel({ apiBaseUrl = "" }: UpdatesPanelProps) {
               Last checked: {status?.last_checked_at ? new Date(status.last_checked_at).toLocaleString() : "Never"}
             </span>
           </div>
-          <span className="px-2.5 py-1 text-xs font-bold rounded-full bg-[#1f6feb]/20 text-[#58a6ff] border border-[#1f6feb]/40">
-            {status?.available_updates_count || 0} Updates Pending
-          </span>
+          <div className="flex items-center gap-2.5">
+            <span className="px-2.5 py-1 text-xs font-bold rounded-full bg-[#1f6feb]/20 text-[#58a6ff] border border-[#1f6feb]/40">
+              {status?.available_updates_count || 0} Updates Pending
+            </span>
+            {(status?.available_updates_count || 0) > 0 && (
+              <button
+                disabled={updatingAll}
+                onClick={handleUpdateAll}
+                className="flex items-center gap-1.5 px-3 py-1 text-xs font-semibold rounded bg-[#238636] hover:bg-[#2ea043] text-white transition-colors disabled:opacity-50 shadow-sm"
+              >
+                {updatingAll ? <span className="animate-spin">↻</span> : <span>⚡</span>}
+                <span>Update All</span>
+              </button>
+            )}
+          </div>
         </div>
+
+        {updateAllProgress && (
+          <div className="mb-4 p-3 rounded-lg bg-[#1f6feb]/10 border border-[#1f6feb]/30 text-xs text-[#58a6ff] flex items-center gap-2">
+            <span className="animate-spin">↻</span>
+            <span>{updateAllProgress}</span>
+          </div>
+        )}
 
         {loading ? (
           <div className="py-8 text-center text-xs text-[#8b949e]">
