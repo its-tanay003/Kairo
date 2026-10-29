@@ -1,4 +1,5 @@
 @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Newsreader:ital,opsz,wght@0,6..72,400;0,6..72,500;1,6..72,400&family=JetBrains+Mono:wght@400;500;600&display=swap');
+@import "tailwindcss";
 
 :root {
   /* Anthropic Claude Warm Dark Palette */
@@ -1285,7 +1286,7 @@ body {
 
 /* Drawer Left Nav Rail */
 .drawer-nav-rail {
-  width: 175px;
+  width: 195px;
   border-right: 1px solid var(--border-subtle);
   padding: 10px 6px;
   display: flex;
@@ -7621,4 +7622,19 @@ body {
   background: rgba(63, 185, 80, 0.2);
   color: #56d364;
   border-color: rgba(63, 185, 80, 0.4);
+}
+
+.drawer-nav-item {
+  min-width: 0;
+}
+
+.drawer-nav-item-left {
+  flex: 1;
+  min-width: 0;
+}
+
+.drawer-nav-item-left span:last-child {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }

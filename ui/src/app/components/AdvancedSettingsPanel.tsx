@@ -1044,7 +1044,7 @@ export default function AdvancedSettingsPanel({
           background: var(--bg-surface);
           color: var(--text-primary);
           overflow-y: auto;
-          padding: 4px 6px;
+          padding: 0 4px 16px 4px;
         }
 
         .adv-settings-header {
