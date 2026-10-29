@@ -1674,12 +1674,12 @@ export default function Home() {
                 </button>
 
                 {/* 4. Tools & Maintenance */}
-                <div className="drawer-nav-group-label" style={{ marginTop: "6px" }}>
+                <div className="drawer-nav-group-label" style={{ marginTop: "8px", color: "var(--text-secondary)" }}>
                   <span>🧰</span>
                   <span>Tools &amp; Maintenance</span>
                 </div>
                 <button
-                  className={`drawer-nav-item ${advancedTab === "knowledge" ? "active" : ""}`}
+                  className={`drawer-nav-item knowledge-item ${advancedTab === "knowledge" ? "active" : ""}`}
                   onClick={() => {
                     setAdvancedTab("knowledge");
                     setIsAdvancedWide(true);
@@ -1687,13 +1687,13 @@ export default function Home() {
                   title="Deep 13-section tool documentation, capabilities, and arguments"
                 >
                   <div className="drawer-nav-item-left">
-                    <span className="drawer-nav-icon">📚</span>
+                    <span className="drawer-nav-icon" style={{ color: "#58a6ff" }}>📚</span>
                     <span>Tool Knowledge</span>
                   </div>
                   <span className="drawer-nav-badge">13-Sec</span>
                 </button>
                 <button
-                  className={`drawer-nav-item ${advancedTab === "updates" ? "active" : ""}`}
+                  className={`drawer-nav-item updates-item ${advancedTab === "updates" ? "active" : ""}`}
                   onClick={() => {
                     setAdvancedTab("updates");
                     setIsAdvancedWide(true);
@@ -1701,7 +1701,7 @@ export default function Home() {
                   title="Managed Kali tool updates with automated pre-update snapshots and rollback"
                 >
                   <div className="drawer-nav-item-left">
-                    <span className="drawer-nav-icon">🔄</span>
+                    <span className="drawer-nav-icon" style={{ color: "#3fb950" }}>🔄</span>
                     <span>Kali Updates</span>
                   </div>
                   <span className="drawer-nav-badge">Sync</span>

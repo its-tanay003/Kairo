@@ -1234,8 +1234,8 @@ body {
 }
 
 .drawer-container.wide {
-  width: 840px;
-  max-width: 95vw;
+  width: 980px;
+  max-width: 98vw;
 }
 
 @keyframes slide-in {
@@ -7577,3 +7577,48 @@ body {
 
 
 
+
+/* Tools & Maintenance Navigation Enhancements */
+.drawer-nav-item.knowledge-item {
+  border-left: 2px solid transparent;
+}
+
+.drawer-nav-item.knowledge-item:hover {
+  background: rgba(88, 166, 255, 0.08);
+  border-color: rgba(88, 166, 255, 0.2);
+}
+
+.drawer-nav-item.knowledge-item.active {
+  color: #58a6ff;
+  background: rgba(88, 166, 255, 0.12);
+  border-color: rgba(88, 166, 255, 0.4);
+  box-shadow: 0 0 12px rgba(88, 166, 255, 0.15);
+}
+
+.drawer-nav-item.knowledge-item.active .drawer-nav-badge {
+  background: rgba(88, 166, 255, 0.2);
+  color: #79c0ff;
+  border-color: rgba(88, 166, 255, 0.4);
+}
+
+.drawer-nav-item.updates-item {
+  border-left: 2px solid transparent;
+}
+
+.drawer-nav-item.updates-item:hover {
+  background: rgba(63, 185, 80, 0.08);
+  border-color: rgba(63, 185, 80, 0.2);
+}
+
+.drawer-nav-item.updates-item.active {
+  color: #3fb950;
+  background: rgba(63, 185, 80, 0.12);
+  border-color: rgba(63, 185, 80, 0.4);
+  box-shadow: 0 0 12px rgba(63, 185, 80, 0.15);
+}
+
+.drawer-nav-item.updates-item.active .drawer-nav-badge {
+  background: rgba(63, 185, 80, 0.2);
+  color: #56d364;
+  border-color: rgba(63, 185, 80, 0.4);
+}

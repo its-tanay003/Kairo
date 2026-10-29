@@ -356,7 +356,7 @@ export default function ToolKnowledgeCenter({
 
       {/* 13-Section Slide-Over Drawer for Selected Tool */}
       {activeToolId && (
-        <div className="fixed inset-y-0 right-0 w-full md:w-[680px] bg-[#161b22] border-l border-[#30363d] shadow-2xl z-50 flex flex-col animate-in slide-in-from-right duration-200">
+        <div className="fixed inset-y-0 right-0 w-full md:w-[780px] lg:w-[860px] bg-[#161b22] border-l border-[#30363d] shadow-2xl z-[150] flex flex-col animate-in slide-in-from-right duration-200">
           {/* Drawer Header */}
           <div className="flex items-start justify-between p-5 border-b border-[#30363d] bg-[#0d1117]">
             <div className="flex items-start gap-3">
