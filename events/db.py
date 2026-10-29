@@ -1114,7 +1114,7 @@ def create_scope_contract(
                 json.dumps(clean_targets),
                 network_scope.strip(),
                 time_window.strip(),
-                json.dumps(payload_data["allowed_tool_tiers"]) if "allowed_tool_tiers" in payload_data else None,
+                json.dumps(payload_data["allowed_tool_tiers"]) if "allowed_tool_tiers" in payload_data else "[]",
                 authorized_by.strip(),
                 created_at_iso,
                 expires_at_iso,
