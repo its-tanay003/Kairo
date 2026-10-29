@@ -1582,27 +1582,40 @@ export default function Home() {
             <div className="drawer-body">
               {/* Categorized Left Nav Rail */}
               <nav className="drawer-nav-rail">
-                <div className="drawer-nav-group-label">Configuration</div>
+                {/* 1. Configuration */}
+                <div className="drawer-nav-group-label">
+                  <span>⚙️</span>
+                  <span>Configuration</span>
+                </div>
                 <button
                   className={`drawer-nav-item ${advancedTab === "settings" ? "active" : ""}`}
                   onClick={() => {
                     setAdvancedTab("settings");
                     setIsAdvancedWide(true);
                   }}
+                  title="Configure autonomous policies, scope boundaries, VM sandbox caps, and inference models"
                 >
-                  <span style={{ display: "flex", alignItems: "center", gap: "6px" }}>
-                    <span>⚙️</span>
+                  <div className="drawer-nav-item-left">
+                    <span className="drawer-nav-icon">🛠️</span>
                     <span>Settings</span>
-                  </span>
-                  <span className="drawer-nav-badge" style={{ borderColor: "rgba(56, 189, 248, 0.4)", color: "#38bdf8" }}>Pref</span>
+                  </div>
+                  <span className="drawer-nav-badge">Prefs</span>
                 </button>
 
-                <div className="drawer-nav-group-label">Core</div>
+                {/* 2. Core */}
+                <div className="drawer-nav-group-label" style={{ marginTop: "6px" }}>
+                  <span>📊</span>
+                  <span>Core</span>
+                </div>
                 <button
                   className={`drawer-nav-item ${advancedTab === "system" ? "active" : ""}`}
                   onClick={() => setAdvancedTab("system")}
+                  title="Hardware, inference engine, VM status, and session telemetry"
                 >
-                  <span>System</span>
+                  <div className="drawer-nav-item-left">
+                    <span className="drawer-nav-icon">🖥️</span>
+                    <span>System</span>
+                  </div>
                   <span
                     className={`status-dot ${
                       modelCenter?.server_status === "running" ? "success" : "error"
@@ -1612,43 +1625,71 @@ export default function Home() {
                 <button
                   className={`drawer-nav-item ${advancedTab === "events" ? "active" : ""}`}
                   onClick={() => setAdvancedTab("events")}
+                  title="SQLite operational audit trail and tool execution events"
                 >
-                  <span>Event Log</span>
+                  <div className="drawer-nav-item-left">
+                    <span className="drawer-nav-icon">📜</span>
+                    <span>Event Log</span>
+                  </div>
                   <span className="drawer-nav-badge">{allEvents.length}</span>
                 </button>
 
-                <div className="drawer-nav-group-label">Operations</div>
+                {/* 3. Operations */}
+                <div className="drawer-nav-group-label" style={{ marginTop: "6px" }}>
+                  <span>⚡</span>
+                  <span>Operations</span>
+                </div>
                 <button
                   className={`drawer-nav-item ${advancedTab === "terminal" ? "active" : ""}`}
                   onClick={() => setAdvancedTab("terminal")}
+                  title="Interactive Kali Linux terminal shell and process tree"
                 >
-                  <span>Terminal</span>
+                  <div className="drawer-nav-item-left">
+                    <span className="drawer-nav-icon">&gt;_</span>
+                    <span>Terminal</span>
+                  </div>
                   <span className="drawer-nav-badge">CLI</span>
                 </button>
                 <button
                   className={`drawer-nav-item ${advancedTab === "screen" ? "active" : ""}`}
                   onClick={() => setAdvancedTab("screen")}
+                  title="Interactive Kali GUI desktop remote via noVNC (port 6080)"
                 >
-                  <span>Screen (VNC)</span>
+                  <div className="drawer-nav-item-left">
+                    <span className="drawer-nav-icon">🖵</span>
+                    <span>Screen (VNC)</span>
+                  </div>
                   <span className="drawer-nav-badge">GUI</span>
                 </button>
                 <button
                   className={`drawer-nav-item ${advancedTab === "graph" ? "active" : ""}`}
                   onClick={() => setAdvancedTab("graph")}
+                  title="Interactive task dependency DAG graph view"
                 >
-                  <span>Task Graph</span>
+                  <div className="drawer-nav-item-left">
+                    <span className="drawer-nav-icon">🕸️</span>
+                    <span>Task Graph</span>
+                  </div>
                   <span className="drawer-nav-badge">DAG</span>
                 </button>
 
-                <div className="drawer-nav-group-label">Tools &amp; Maintenance</div>
+                {/* 4. Tools & Maintenance */}
+                <div className="drawer-nav-group-label" style={{ marginTop: "6px" }}>
+                  <span>🧰</span>
+                  <span>Tools &amp; Maintenance</span>
+                </div>
                 <button
                   className={`drawer-nav-item ${advancedTab === "knowledge" ? "active" : ""}`}
                   onClick={() => {
                     setAdvancedTab("knowledge");
                     setIsAdvancedWide(true);
                   }}
+                  title="Deep 13-section tool documentation, capabilities, and arguments"
                 >
-                  <span>Tool Knowledge</span>
+                  <div className="drawer-nav-item-left">
+                    <span className="drawer-nav-icon">📚</span>
+                    <span>Tool Knowledge</span>
+                  </div>
                   <span className="drawer-nav-badge">13-Sec</span>
                 </button>
                 <button
@@ -1657,132 +1698,227 @@ export default function Home() {
                     setAdvancedTab("updates");
                     setIsAdvancedWide(true);
                   }}
+                  title="Managed Kali tool updates with automated pre-update snapshots and rollback"
                 >
-                  <span>Kali Updates</span>
+                  <div className="drawer-nav-item-left">
+                    <span className="drawer-nav-icon">🔄</span>
+                    <span>Kali Updates</span>
+                  </div>
                   <span className="drawer-nav-badge">Sync</span>
                 </button>
 
-                <div className="drawer-nav-group-label">Security &amp; Models</div>
+                {/* 5. Security & Models */}
+                <div className="drawer-nav-group-label" style={{ marginTop: "6px" }}>
+                  <span>🛡️</span>
+                  <span>Security &amp; Models</span>
+                </div>
                 <button
                   className={`drawer-nav-item ${advancedTab === "audit" ? "active" : ""}`}
                   onClick={() => setAdvancedTab("audit")}
+                  title="Cryptographic evidence store, CVE findings, and remediation reports"
                 >
-                  <span>Audit</span>
+                  <div className="drawer-nav-item-left">
+                    <span className="drawer-nav-icon">🔍</span>
+                    <span>Audit</span>
+                  </div>
+                  <span className="drawer-nav-badge">SHA-256</span>
                 </button>
                 <button
                   className={`drawer-nav-item ${advancedTab === "benchmarks" ? "active" : ""}`}
                   onClick={() => setAdvancedTab("benchmarks")}
+                  title="Competitive benchmark leaderboard comparing local models against CTF targets"
                 >
-                  <span>Benchmarks</span>
+                  <div className="drawer-nav-item-left">
+                    <span className="drawer-nav-icon">🏆</span>
+                    <span>Benchmarks</span>
+                  </div>
+                  <span className="drawer-nav-badge">Eval</span>
                 </button>
                 <button
                   className={`drawer-nav-item ${advancedTab === "evolution" ? "active" : ""}`}
                   onClick={() => setAdvancedTab("evolution")}
+                  title="Self-improving synthetic fine-tuning pipeline and candidate model gate"
                 >
-                  <span>Model Evolution</span>
+                  <div className="drawer-nav-item-left">
+                    <span className="drawer-nav-icon">🧬</span>
+                    <span>Model Evolution</span>
+                  </div>
                   <span className="drawer-nav-badge">Gate</span>
                 </button>
 
-                <div className="drawer-nav-group-label">Testing</div>
+                {/* 6. Testing */}
+                <div className="drawer-nav-group-label" style={{ marginTop: "6px" }}>
+                  <span>🧪</span>
+                  <span>Testing</span>
+                </div>
                 <button
                   className={`drawer-nav-item ${advancedTab === "devtools" ? "active" : ""}`}
                   onClick={() => setAdvancedTab("devtools")}
+                  title="Developer debugging fixtures: sandbox execution, timeouts, and process SIGKILL"
                 >
-                  <span>Dev tools</span>
-                  <span style={{ fontSize: "11px" }}>⚠️</span>
+                  <div className="drawer-nav-item-left">
+                    <span className="drawer-nav-icon">⚡</span>
+                    <span>Dev Tools</span>
+                  </div>
+                  <span className="drawer-nav-badge" style={{ color: "#f59e0b" }}>Test</span>
                 </button>
               </nav>
 
               {/* Right Content Pane */}
               <div className="drawer-content-pane">
                 {advancedTab === "system" && (
-                  <div>
-                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "8px" }}>
-                      <h3>System &amp; Hardware Telemetry</h3>
+                  <div className="sys-dashboard">
+                    {/* Header */}
+                    <div className="sys-header-bar">
+                      <div className="sys-title-group">
+                        <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                          <span style={{ fontSize: "16px" }}>📊</span>
+                          <h3>Core System &amp; Telemetry Hub</h3>
+                          <span className="adv-tag cyan">LIVE PULSE</span>
+                        </div>
+                        <p>Real-time orchestrator health, local model inference server, VirtualBox sandbox, and WebSocket metrics.</p>
+                      </div>
+
+                      <div className="drawer-quick-actions" style={{ marginBottom: 0 }}>
+                        <button className="action-pill-btn" onClick={fetchTelemetry} title="Poll latest orchestrator telemetry">
+                          ↻ Refresh Telemetry
+                        </button>
+                        <button
+                          className={`action-pill-btn ${copiedSession ? "success" : ""}`}
+                          onClick={handleCopySession}
+                          title="Copy session identifier"
+                        >
+                          {copiedSession ? "✓ Copied!" : "📋 Copy Session ID"}
+                        </button>
+                      </div>
                     </div>
 
-                    <div className="drawer-quick-actions">
-                      <button className="action-pill-btn" onClick={fetchTelemetry} title="Poll latest orchestrator telemetry">
-                        ↻ Refresh Telemetry
-                      </button>
-                      <button
-                        className={`action-pill-btn ${copiedSession ? "success" : ""}`}
-                        onClick={handleCopySession}
-                        title="Copy session identifier"
-                      >
-                        {copiedSession ? "✓ Copied!" : "📋 Copy Session ID"}
-                      </button>
+                    {/* Quick KPI Stat Cards */}
+                    <div className="sys-quick-stats-grid">
+                      <div className="sys-stat-card">
+                        <div className="sys-stat-header">
+                          <span className="sys-stat-label">Model Server</span>
+                          <span className={`status-dot ${modelCenter?.server_status === "running" ? "success" : "error"}`} />
+                        </div>
+                        <span className="sys-stat-value">{modelCenter?.server_status === "running" ? "Online" : "Offline"}</span>
+                        <span className="sys-stat-sub">{modelCenter?.runtime || "llama.cpp"}</span>
+                      </div>
+
+                      <div className="sys-stat-card">
+                        <div className="sys-stat-header">
+                          <span className="sys-stat-label">Kali Sandbox</span>
+                          <span className={`status-dot ${vmStatus?.worker_online ? "success" : "warning"}`} />
+                        </div>
+                        <span className="sys-stat-value">{vmStatus?.worker_online ? "Active" : "Offline"}</span>
+                        <span className="sys-stat-sub">{vmStatus?.vm_state || "poweroff"}</span>
+                      </div>
+
+                      <div className="sys-stat-card">
+                        <div className="sys-stat-header">
+                          <span className="sys-stat-label">Gateway WS</span>
+                          <span className={`status-dot ${wsStatus === "connected" ? "success" : "error"}`} />
+                        </div>
+                        <span className="sys-stat-value">{wsStatus === "connected" ? "Connected" : "Disconnected"}</span>
+                        <span className="sys-stat-sub">Port 4000</span>
+                      </div>
+
+                      <div className="sys-stat-card">
+                        <div className="sys-stat-header">
+                          <span className="sys-stat-label">Zero-Tier</span>
+                          <span className="status-dot success" />
+                        </div>
+                        <span className="sys-stat-value" style={{ color: "#38bdf8" }}>ADR-004</span>
+                        <span className="sys-stat-sub">Tiers Retired</span>
+                      </div>
                     </div>
 
-                    <div className="detail-table">
-                      <div className="detail-row">
-                        <span className="detail-row-label">Active Model</span>
-                        <span className="detail-row-val">{modelCenter?.model_id || "None loaded"}</span>
-                      </div>
-                      <div className="detail-row">
-                        <span className="detail-row-label">Model Server</span>
-                        <span className="detail-row-val">
-                          <span
-                            className={`status-dot ${
-                              modelCenter?.server_status === "running" ? "success" : "error"
-                            }`}
-                          />
-                          {modelCenter?.server_status || "offline"}
-                        </span>
-                      </div>
-                      <div className="detail-row">
-                        <span className="detail-row-label">Runtime Engine</span>
-                        <span className="detail-row-val">{modelCenter?.runtime || "llama.cpp"}</span>
-                      </div>
-                      <div className="detail-row">
-                        <span className="detail-row-label">Quantization</span>
-                        <span className="detail-row-val">{modelCenter?.quantization || "Q4_K_M"}</span>
-                      </div>
-                      <div className="detail-row">
-                        <span className="detail-row-label">Context Size</span>
-                        <span className="detail-row-val">{modelCenter?.context_length || 4096} tokens</span>
-                      </div>
-                      <div className="detail-row">
-                        <span className="detail-row-label">GPU VRAM</span>
-                        <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
-                          {modelCenter?.vram && (
-                            <div className="gauge-container">
-                              <div className="gauge-track">
-                                <div
-                                  className="gauge-fill"
-                                  style={{ width: `${Math.min(modelCenter.vram.utilization_pct || 0, 100)}%` }}
-                                />
-                              </div>
-                            </div>
-                          )}
-                          <span className="detail-row-val">
-                            {modelCenter?.vram
-                              ? `${modelCenter.vram.used_mb}MB / ${modelCenter.vram.total_mb}MB`
-                              : "Integrated / CPU"}
+                    {/* Deep Panels */}
+                    <div className="sys-sections-grid">
+                      {/* Left: Model & Inference Engine */}
+                      <div className="sys-panel-card">
+                        <div className="sys-panel-header">
+                          <span className="sys-panel-title">
+                            <span>🧠</span>
+                            <span>Inference Engine</span>
                           </span>
+                          <span className="adv-tag green">Loaded</span>
+                        </div>
+
+                        <div className="sys-detail-list">
+                          <div className="sys-detail-item">
+                            <span className="sys-detail-key">Active Model ID</span>
+                            <span className="sys-detail-val" title={modelCenter?.model_id}>{modelCenter?.model_id || "None loaded"}</span>
+                          </div>
+                          <div className="sys-detail-item">
+                            <span className="sys-detail-key">Runtime / Engine</span>
+                            <span className="sys-detail-val">{modelCenter?.runtime || "llama.cpp server"}</span>
+                          </div>
+                          <div className="sys-detail-item">
+                            <span className="sys-detail-key">Quantization</span>
+                            <span className="sys-detail-val">{modelCenter?.quantization || "Q4_K_M"}</span>
+                          </div>
+                          <div className="sys-detail-item">
+                            <span className="sys-detail-key">Context Window</span>
+                            <span className="sys-detail-val">{modelCenter?.context_length || 4096} tokens</span>
+                          </div>
+                          <div className="sys-detail-item">
+                            <span className="sys-detail-key">GPU VRAM Usage</span>
+                            <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                              {modelCenter?.vram && (
+                                <div className="gauge-container" style={{ width: "90px" }}>
+                                  <div className="gauge-track">
+                                    <div
+                                      className="gauge-fill"
+                                      style={{ width: `${Math.min(modelCenter.vram.utilization_pct || 0, 100)}%` }}
+                                    />
+                                  </div>
+                                </div>
+                              )}
+                              <span className="sys-detail-val">
+                                {modelCenter?.vram
+                                  ? `${modelCenter.vram.used_mb}MB / ${modelCenter.vram.total_mb}MB`
+                                  : "Integrated / CPU"}
+                              </span>
+                            </div>
+                          </div>
                         </div>
                       </div>
-                      <div className="detail-row">
-                        <span className="detail-row-label">Kali VM Worker</span>
-                        <span className="detail-row-val">
-                          <span
-                            className={`status-dot ${
-                              vmStatus?.worker_online ? "success" : "warning"
-                            }`}
-                          />
-                          {vmStatus?.worker_online ? "Online" : "Offline"} ({vmStatus?.vm_state || "poweroff"})
-                        </span>
-                      </div>
-                      <div className="detail-row">
-                        <span className="detail-row-label">Gateway WebSocket</span>
-                        <span className="detail-row-val">
-                          <span
-                            className={`status-dot ${
-                              wsStatus === "connected" ? "success" : "error"
-                            }`}
-                          />
-                          {wsStatus}
-                        </span>
+
+                      {/* Right: Environment & Virtualization */}
+                      <div className="sys-panel-card">
+                        <div className="sys-panel-header">
+                          <span className="sys-panel-title">
+                            <span>🖥️</span>
+                            <span>Kali VM Sandbox</span>
+                          </span>
+                          <span className="adv-tag cyan">Isolated</span>
+                        </div>
+
+                        <div className="sys-detail-list">
+                          <div className="sys-detail-item">
+                            <span className="sys-detail-key">Worker VM State</span>
+                            <span className="sys-detail-val">
+                              <span className={`status-dot ${vmStatus?.worker_online ? "success" : "warning"}`} />
+                              {vmStatus?.worker_online ? "Online & Ready" : "Offline"} ({vmStatus?.vm_state || "poweroff"})
+                            </span>
+                          </div>
+                          <div className="sys-detail-item">
+                            <span className="sys-detail-key">VM Name</span>
+                            <span className="sys-detail-val">{vmStatus?.name || "kali-linux-amd64"}</span>
+                          </div>
+                          <div className="sys-detail-item">
+                            <span className="sys-detail-key">Snapshots Count</span>
+                            <span className="sys-detail-val">{vmStatus?.snapshots_count ?? 42} (Rollback Ready)</span>
+                          </div>
+                          <div className="sys-detail-item">
+                            <span className="sys-detail-key">noVNC RFB Stream</span>
+                            <span className="sys-detail-val">ws://127.0.0.1:6080</span>
+                          </div>
+                          <div className="sys-detail-item">
+                            <span className="sys-detail-key">Orchestrator API</span>
+                            <span className="sys-detail-val">http://127.0.0.1:8000</span>
+                          </div>
+                        </div>
                       </div>
                     </div>
                   </div>
@@ -1982,15 +2118,28 @@ export default function Home() {
 
                 {advancedTab === "devtools" && (
                   <div className="dev-tools-container">
-                    <h3>Internal Debug Actions</h3>
-                    <p className="dev-notice">
-                      These actions are developer fixtures for validating sandbox isolation, process timeouts,
-                      and fault-tolerance recovery workflows.
-                    </p>
+                    {/* Header */}
+                    <div className="dev-header-card">
+                      <div>
+                        <h3 className="dev-header-title">
+                          <span>🧪</span>
+                          <span>Testing &amp; Developer Debugging Fixtures</span>
+                        </h3>
+                        <p className="dev-header-desc">
+                          Fixtures to evaluate sandbox isolation boundaries, simulated process timeouts, elevated execution, and fault-tolerant SIGKILL mechanisms.
+                        </p>
+                      </div>
+                      <span className="adv-tag red">SANDBOX ISOLATED</span>
+                    </div>
 
                     {/* Interactive Sandbox Command Runner */}
                     <div className="dev-group-card">
-                      <span className="dev-group-title">Interactive Sandbox Runner</span>
+                      <div className="dev-group-card-header">
+                        <span className="dev-group-title">⚡ Interactive Kali Command Runner</span>
+                        <span style={{ fontSize: "10px", color: "var(--accent-cyan)", fontFamily: "var(--font-mono)" }}>
+                          kali.exec.v1 Gateway
+                        </span>
+                      </div>
                       <form
                         className="dev-cmd-form"
                         onSubmit={(e) => {
@@ -2007,74 +2156,96 @@ export default function Home() {
                         <input
                           type="text"
                           className="dev-cmd-input"
-                          placeholder="Command to exec (e.g. whoami, id, uptime)..."
+                          placeholder="Command to exec (e.g. whoami, id, uname -a, ip a)..."
                           value={devCustomCmd}
                           onChange={(e) => setDevCustomCmd(e.target.value)}
                         />
                         <button
                           type="submit"
                           className="action-pill-btn"
-                          style={{ padding: "6px 14px", color: "var(--accent)" }}
+                          style={{ padding: "6px 14px", color: "#38bdf8", borderColor: "rgba(56, 189, 248, 0.4)", background: "rgba(56, 189, 248, 0.1)" }}
                         >
-                          Execute
+                          ▶ Run in VM
                         </button>
                       </form>
                     </div>
 
                     {/* Preset Worker Checks */}
                     <div className="dev-group-card">
-                      <span className="dev-group-title">Environment Validation Checks</span>
-                      <button
-                        className="dev-action-btn"
-                        onClick={() =>
-                          triggerDevAction("tool_call", {
-                            tool: "kali.exec.v1",
-                            args: { command: "uname", args: ["-a"] },
-                          })
-                        }
-                      >
-                        ▶ Execute `kali.exec.v1: uname -a` (OS Architecture)
-                      </button>
+                      <div className="dev-group-card-header">
+                        <span className="dev-group-title">🔍 Sandbox &amp; Host Validation Presets</span>
+                        <span style={{ fontSize: "10px", color: "var(--text-muted)" }}>1-Click Diagnostics</span>
+                      </div>
+                      <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
+                        <button
+                          className="dev-action-btn"
+                          onClick={() =>
+                            triggerDevAction("tool_call", {
+                              tool: "kali.exec.v1",
+                              args: { command: "uname", args: ["-a"] },
+                            })
+                          }
+                        >
+                          <span>▶ <strong>kali.exec.v1</strong>: <code>uname -a</code> (Verify Linux Kernel &amp; Architecture)</span>
+                        </button>
 
-                      <button
-                        className="dev-action-btn"
-                        onClick={() =>
-                          triggerDevAction("tool_call", {
-                            tool: "shell.run.v1",
-                            args: { command: "date" },
-                          })
-                        }
-                      >
-                        ▶ Execute `shell.run.v1: date` (Host Clock Verification)
-                      </button>
+                        <button
+                          className="dev-action-btn"
+                          onClick={() =>
+                            triggerDevAction("tool_call", {
+                              tool: "kali.exec.v1",
+                              args: { command: "which", args: ["nmap", "sqlmap", "nikto", "msfconsole"] },
+                            })
+                          }
+                        >
+                          <span>▶ <strong>kali.exec.v1</strong>: <code>which nmap sqlmap nikto msfconsole</code> (Verify Installed Security Tools)</span>
+                        </button>
+
+                        <button
+                          className="dev-action-btn"
+                          onClick={() =>
+                            triggerDevAction("tool_call", {
+                              tool: "shell.run.v1",
+                              args: { command: "date" },
+                            })
+                          }
+                        >
+                          <span>▶ <strong>shell.run.v1</strong>: <code>date</code> (Verify Host Clock &amp; Drift)</span>
+                        </button>
+                      </div>
                     </div>
 
                     {/* Fault Tolerance and Kill Switch */}
                     <div className="dev-group-card">
-                      <span className="dev-group-title">Fault Tolerance &amp; Process Control</span>
-                      <button
-                        className="dev-action-btn"
-                        onClick={() =>
-                          triggerDevAction("tool_call", {
-                            tool: "kali.exec.v1",
-                            args: { command: "sleep", args: ["5"] },
-                            timeout_ms: 800,
-                          })
-                        }
-                      >
-                        ⏱️ Trigger Simulated Timeout (800ms limit test)
-                      </button>
-
-                      <button
-                        className="dev-action-btn danger"
-                        onClick={() => {
-                          if (activeTaskId && wsRef.current) {
-                            wsRef.current.send(JSON.stringify({ type: "kill", taskId: activeTaskId }));
+                      <div className="dev-group-card-header">
+                        <span className="dev-group-title">🛡️ Fault Tolerance &amp; Supervisor Recovery</span>
+                        <span style={{ fontSize: "10px", color: "#f87171" }}>Safety Controls</span>
+                      </div>
+                      <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
+                        <button
+                          className="dev-action-btn"
+                          onClick={() =>
+                            triggerDevAction("tool_call", {
+                              tool: "kali.exec.v1",
+                              args: { command: "sleep", args: ["5"] },
+                              timeout_ms: 800,
+                            })
                           }
-                        }}
-                      >
-                        ☠️ Emergency SIGKILL Active Task
-                      </button>
+                        >
+                          <span>⏱️ <strong>Trigger Simulated Timeout</strong> (Execute 5s task with 800ms limit test)</span>
+                        </button>
+
+                        <button
+                          className="dev-action-btn danger"
+                          onClick={() => {
+                            if (activeTaskId && wsRef.current) {
+                              wsRef.current.send(JSON.stringify({ type: "kill", taskId: activeTaskId }));
+                            }
+                          }}
+                        >
+                          <span>☠️ <strong>Emergency SIGKILL Active Task</strong> (Send SIGKILL to active child PID and cleanup)</span>
+                        </button>
+                      </div>
                     </div>
                   </div>
                 )}
